@@ -13,7 +13,7 @@ Transform a proven CLI Modbus tool into a single-binary web application for real
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation and Modbus Service** - Extract proven Modbus code into concurrency-safe packages with project scaffold
-- [ ] **Phase 2: WebSocket Hub, API, and Connection UI** - Build real-time communication backbone with connection management frontend
+- [x] **Phase 2: WebSocket Hub, API, and Connection UI** - Build real-time communication backbone with connection management frontend
 - [ ] **Phase 3: Core Monitoring Sections** - System Info, Grid, EPS, PV sections with tab navigation and desktop layout
 - [ ] **Phase 4: Battery Overview and Statistics** - Global battery info, topology config, electricity statistics, and fault display
 - [ ] **Phase 5: Deep Battery Pack Diagnostics** - Hierarchical pack navigation with cell voltages, temperatures, and fault decoding
@@ -65,8 +65,13 @@ Plans:
   3. User can view grid frequency, per-phase voltage/current/power, PCC power, line voltages, load power, and power factor in the Grid section
   4. User can view EPS load power, output voltage/frequency, per-phase inverter output, and emergency load voltages in the EPS section
   5. User can view per-channel PV voltage/current/power and total PV power, with a dropdown to configure 2-16 channels
-**Plans**: TBD
+**Plans:** 3 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 03-01-PLAN.md -- ProbeGroup struct, enum tables, full register definitions, fault decoder, PV generator
+- [ ] 03-02-PLAN.md -- Hub grouped section data, fault reading, system time composition, configure message, CLI flag
+- [ ] 03-03-PLAN.md -- Frontend grouped renderer, fault card, PV dropdown, multi-column layout, nav changes
 
 ### Phase 4: Battery Overview and Statistics
 **Goal**: Users can view global battery status per channel, BMS summary info, online battery bitmap, configurable topology, and electricity generation/consumption statistics
@@ -100,7 +105,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation and Modbus Service | 3/3 | Done | - |
-| 2. WebSocket Hub, API, and Connection UI | 0/3 | Planning complete | - |
-| 3. Core Monitoring Sections | 0/0 | Not started | - |
+| 2. WebSocket Hub, API, and Connection UI | 3/3 | Done | 2026-04-10 |
+| 3. Core Monitoring Sections | 0/3 | In progress | - |
 | 4. Battery Overview and Statistics | 0/0 | Not started | - |
 | 5. Deep Battery Pack Diagnostics | 0/0 | Not started | - |
