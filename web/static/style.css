@@ -50,6 +50,28 @@
     --flash-success: rgba(40, 167, 69, 0.15);
     --flash-error: rgba(220, 53, 69, 0.15);
 
+    /* Subheading (Phase 3) */
+    --font-size-subheading: 14px;
+    --line-height-subheading: 1.4;
+
+    /* Fault / warning (Phase 3) */
+    --color-warning-bg: #fff8e1;
+    --color-warning-border: #ffb300;
+    --color-warning-text: #e65100;
+
+    /* Success subtle (Phase 3) */
+    --color-success-subtle: #e8f5e9;
+    --color-success-border: #66bb6a;
+    --color-success-text: #2e7d32;
+
+    /* Row separator (Phase 3) */
+    --color-row-separator: #f0f0f0;
+
+    /* Bitmap grid (Phase 4) */
+    --bitmap-online: #43a047;
+    --bitmap-offline: #bdbdbd;
+    --bitmap-cell-border: #e0e0e0;
+
     /* Layout */
     --sidebar-width: 280px;
     --sidebar-collapsed: 48px;
@@ -507,4 +529,284 @@ body {
     color: var(--color-destructive);
     font-size: var(--font-size-body);
     padding: var(--space-lg);
+}
+
+/* === Group Card (Phase 3) === */
+
+.group-card {
+    background: var(--color-card);
+    border: 1px solid var(--color-card-border);
+    border-radius: var(--border-radius);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-md);
+}
+
+.group-card__name {
+    font-size: var(--font-size-subheading);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-subheading);
+    color: var(--color-text);
+    margin: 0 0 var(--space-sm) 0;
+}
+
+.group-card__separator {
+    border: none;
+    border-top: 1px solid var(--color-card-border);
+    margin: 0 0 var(--space-md) 0;
+}
+
+.group-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+/* === Horizontal Data Row (Phase 3) === */
+
+.data-row-h {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 0 var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-row-separator);
+}
+
+.data-row-h:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.data-row-h__key {
+    font-size: var(--font-size-label);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: var(--line-height-label);
+}
+
+.data-row-h__value {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text);
+    line-height: var(--line-height-body);
+    text-align: right;
+}
+
+/* === Multi-Column Group Grid (Phase 3, INFRA-04) === */
+
+.group-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.group-grid .group-card {
+    margin-bottom: 0;
+}
+
+/* === Fault Card (Phase 3) === */
+
+.fault-card {
+    border-radius: var(--border-radius);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-md);
+}
+
+.fault-card--active {
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+}
+
+.fault-card--clear {
+    background: var(--color-success-subtle);
+    border: 1px solid var(--color-success-border);
+}
+
+.fault-card__heading {
+    font-size: var(--font-size-subheading);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-subheading);
+    margin: 0 0 var(--space-sm) 0;
+}
+
+.fault-card--active .fault-card__heading {
+    color: var(--color-warning-text);
+}
+
+.fault-card--clear .fault-card__heading {
+    color: var(--color-success-text);
+}
+
+.fault-card__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.fault-card__item {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-warning-text);
+    line-height: var(--line-height-body);
+}
+
+.fault-card__clear-text {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-regular);
+    color: var(--color-success-text);
+    line-height: var(--line-height-body);
+    margin: 0;
+}
+
+/* === PV Channel Dropdown (Phase 3) === */
+
+.pv-channel-select {
+    height: 32px;
+    padding: 0 var(--space-sm);
+    font-size: var(--font-size-body);
+    font-family: var(--font-family);
+    color: var(--color-text);
+    background: var(--color-card);
+    border: 1px solid #cccccc;
+    border-radius: var(--border-radius);
+    outline: none;
+    cursor: pointer;
+    transition: border-color var(--transition-speed) ease;
+}
+
+.pv-channel-select:focus {
+    border-color: var(--color-accent);
+}
+
+/* === Content Header Controls (Phase 3) === */
+
+.content__header-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+/* === Phase 4: Bitmap Grid Widget === */
+
+.bitmap-group {
+    padding: 0 4px;
+}
+
+.bitmap-detected {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    margin-bottom: 8px;
+}
+
+.bitmap-mismatch {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-warning-text);
+}
+
+.bitmap-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.bitmap-row__label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    min-width: 60px;
+    flex-shrink: 0;
+}
+
+.bitmap-grid {
+    display: grid;
+    gap: 4px;
+}
+
+.bitmap-cell {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--bitmap-cell-border);
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: default;
+}
+
+.bitmap-cell--online {
+    background: var(--bitmap-online);
+    color: #ffffff;
+}
+
+.bitmap-cell--offline {
+    background: var(--bitmap-offline);
+    color: #757575;
+}
+
+.bitmap-legend {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.bitmap-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.bitmap-legend__swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+
+.bitmap-legend__label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+}
+
+.bitmap-legend__swatch.bitmap-cell--online,
+.bitmap-legend__swatch.bitmap-cell--offline {
+    width: 12px;
+    height: 12px;
+    border: none;
+}
+
+/* === Phase 4: Topology Controls === */
+
+.topology-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.topology-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-right: 4px;
+}
+
+.topology-select {
+    height: 32px;
+    font-size: 14px;
+    color: #333333;
+    background: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 0 8px;
+    cursor: pointer;
+}
+
+.topology-select:focus {
+    border-color: var(--color-accent);
+    outline: none;
 }
