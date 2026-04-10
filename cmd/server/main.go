@@ -93,10 +93,10 @@ func main() {
 	}
 
 	// Start HTTP server in goroutine
+	serverErr := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("http server error", "error", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
@@ -104,8 +104,12 @@ func main() {
 	logger.Info("server started", "addr", *listenAddr, "inverter", inverterAddr, "mode", *modbusMode)
 	fmt.Printf("Sofar HYD Diagnostic Tool listening on http://localhost%s\n", *listenAddr)
 
-	// Wait for shutdown signal
-	<-ctx.Done()
+	// Wait for shutdown signal or server error
+	select {
+	case <-ctx.Done():
+	case err := <-serverErr:
+		logger.Error("http server error", "error", err)
+	}
 	logger.Info("shutting down...")
 
 	// Graceful shutdown with timeout (D-27)
