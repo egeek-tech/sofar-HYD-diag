@@ -3,6 +3,15 @@
 'use strict';
 
 const STORAGE_KEY = 'sofar_connection';
+var PV_STORAGE_KEY = 'sofar_pv_channels';
+var PV_DEFAULT_CHANNELS = 2;
+
+var BAT_INPUTS_KEY = 'sofar_bat_inputs';
+var BAT_TOWERS_KEY = 'sofar_bat_towers';
+var BAT_PACKS_KEY = 'sofar_bat_packs';
+var BAT_DEFAULT_INPUTS = 1;
+var BAT_DEFAULT_TOWERS = 2;
+var BAT_DEFAULT_PACKS = 10;
 
 // === DOM Helpers ===
 
@@ -29,9 +38,10 @@ class WSClient {
         this.ws.onopen = () => {
             this.connected = true;
             this.reconnectDelay = 1000;
-            // Re-subscribe to active section if any
+            // Re-subscribe to active section via navigateToSection so PV config
+            // and auto-refresh state are synced with the (possibly restarted) backend
             if (App.activeSection) {
-                this.send({ type: 'subscribe', section: App.activeSection });
+                navigateToSection(App.activeSection);
             }
         };
 
@@ -105,6 +115,8 @@ document.addEventListener('DOMContentLoaded', function () {
     setupSectionNav();
     setupSidebarToggle();
     setupAutoRefreshToggle();
+    initPVDropdown();
+    initTopologyDropdowns();
 });
 
 // === Connection Form (CONN-01, CONN-03) ===
@@ -160,6 +172,7 @@ function setupFormHandler() {
         saveConnectionSettings(host, port, slaveId);
 
         // Send connect command
+        App.userInitiatedConnect = true;  // D-23: flag for auto-navigate
         App.ws.send({
             type: 'connect',
             host: host,
@@ -246,9 +259,34 @@ function navigateToSection(section) {
     // Set active section
     App.activeSection = section;
 
-    // Update content title
-    var title = section.charAt(0).toUpperCase() + section.slice(1);
+    // Update content title (per UI-SPEC copywriting contract)
+    var sectionTitles = {
+        system: 'System',
+        grid: 'Grid',
+        eps: 'EPS',
+        pv: 'PV',
+        battery: 'Battery',
+        bms: 'BMS',
+        stats: 'Statistics'
+    };
+    var title = sectionTitles[section] || section.charAt(0).toUpperCase() + section.slice(1);
     $('#content-title').textContent = title;
+
+    // Show/hide PV dropdown based on active section (per UI-SPEC)
+    var pvSelect = $('#pv-channel-select');
+    if (section === 'pv') {
+        pvSelect.style.display = '';
+    } else {
+        pvSelect.style.display = 'none';
+    }
+
+    // Show/hide topology dropdowns based on active section (per UI-SPEC)
+    var topoControls = $('#topology-controls');
+    if (section === 'bms') {
+        topoControls.style.display = '';
+    } else {
+        topoControls.style.display = 'none';
+    }
 
     // Show loading spinner
     showLoading();
@@ -263,6 +301,28 @@ function navigateToSection(section) {
 
     // Send subscribe via WebSocket (D-17; auto-unsubscribes previous per D-18; triggers immediate read per D-20)
     App.ws.send({ type: 'subscribe', section: section });
+
+    // Sync PV channel config with backend
+    if (section === 'pv') {
+        var pvChannels = loadPVChannels() || PV_DEFAULT_CHANNELS;
+        App.ws.send({
+            type: 'configure',
+            section: 'pv',
+            config: { channels: pvChannels }
+        });
+    }
+
+    // Sync BMS topology config with backend
+    if (section === 'bms') {
+        var batInputs = loadTopologyValue(BAT_INPUTS_KEY) || BAT_DEFAULT_INPUTS;
+        var batTowers = loadTopologyValue(BAT_TOWERS_KEY) || BAT_DEFAULT_TOWERS;
+        var batPacks = loadTopologyValue(BAT_PACKS_KEY) || BAT_DEFAULT_PACKS;
+        App.ws.send({
+            type: 'configure',
+            section: 'bms',
+            config: { bat_inputs: batInputs, bat_towers: batTowers, bat_packs: batPacks }
+        });
+    }
 }
 
 // === Sidebar Toggle ===
@@ -332,6 +392,11 @@ function handleConnectionState(msg) {
             btn.className = 'btn btn--disconnect';
             btn.disabled = false;
             setFormInputsDisabled(true);
+            // D-23: Auto-navigate to System section on user-initiated connect
+            if (App.userInitiatedConnect) {
+                App.userInitiatedConnect = false;
+                navigateToSection('system');
+            }
             break;
         case 'connecting':
             dot.classList.add('status-dot--connecting');
@@ -368,40 +433,18 @@ function handleConnectionState(msg) {
 }
 
 function handleSectionData(msg) {
-    // Ignore data for non-active section
-    if (msg.section !== App.activeSection) {
-        return;
-    }
+    if (msg.section !== App.activeSection) return;
 
-    // Build data card using safe DOM API (T-02-11: never use innerHTML with variable data)
-    var card = document.createElement('div');
-    card.className = 'data-card';
-
-    var data = msg.data || {};
-    var keys = Object.keys(data);
-    for (var i = 0; i < keys.length; i++) {
-        var row = document.createElement('div');
-        row.className = 'data-row';
-
-        var keyEl = document.createElement('div');
-        keyEl.className = 'data-row__key';
-        keyEl.textContent = keys[i].replace(/_/g, ' ').toUpperCase();
-
-        var valEl = document.createElement('div');
-        valEl.className = 'data-row__value';
-        valEl.textContent = data[keys[i]];
-
-        row.appendChild(keyEl);
-        row.appendChild(valEl);
-        card.appendChild(row);
-    }
-
-    // Replace content body children with data card
     var body = $('#content-body');
     body.textContent = '';
-    body.appendChild(card);
 
-    // Update timestamp (D-10)
+    // Render grouped data
+    if (msg.groups && msg.groups.length > 0) {
+        var container = renderGroupedData(msg);
+        body.appendChild(container);
+    }
+
+    // Update timestamp
     if (msg.timestamp) {
         var ts = $('#content-timestamp');
         var d = new Date(msg.timestamp);
@@ -409,8 +452,129 @@ function handleSectionData(msg) {
         ts.style.display = '';
     }
 
-    // Trigger green flash (RT-03)
     triggerFlash('success');
+}
+
+// === Grouped Data Renderer (Phase 3) ===
+
+function renderGroupedData(msg) {
+    var container = document.createElement('div');
+    var gridContainer = null;
+
+    var groups = msg.groups || [];
+    for (var i = 0; i < groups.length; i++) {
+        var group = groups[i];
+
+        // Type-based widget dispatch
+        if (group.type === 'bitmap') {
+            gridContainer = null;
+            container.appendChild(renderBitmapGroup(group));
+        } else if (group.type === 'protection') {
+            gridContainer = null;
+            container.appendChild(renderProtectionGroup(group));
+        } else if (group.layout === 'column') {
+            if (!gridContainer) {
+                gridContainer = document.createElement('div');
+                gridContainer.className = 'group-grid';
+                container.appendChild(gridContainer);
+            }
+            gridContainer.appendChild(renderGroupCard(group));
+        } else {
+            gridContainer = null;
+            container.appendChild(renderGroupCard(group));
+        }
+    }
+
+    // Render faults card (system section only, per D-09, D-11)
+    if (Array.isArray(msg.faults)) {
+        gridContainer = null;
+        container.appendChild(renderFaultCard(msg.faults));
+    }
+
+    return container;
+}
+
+function renderGroupCard(group) {
+    var card = document.createElement('div');
+    card.className = 'group-card';
+
+    // Group name heading
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    card.appendChild(heading);
+
+    // Separator
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    card.appendChild(sep);
+
+    // Data rows
+    var body = document.createElement('div');
+    body.className = 'group-card__body';
+
+    var items = group.items || {};
+    var keys = Object.keys(items);
+    for (var i = 0; i < keys.length; i++) {
+        var row = document.createElement('div');
+        row.className = 'data-row-h';
+
+        var keyEl = document.createElement('span');
+        keyEl.className = 'data-row-h__key';
+        keyEl.textContent = keys[i].toUpperCase();
+
+        var valEl = document.createElement('span');
+        valEl.className = 'data-row-h__value';
+        valEl.textContent = items[keys[i]];
+
+        row.appendChild(keyEl);
+        row.appendChild(valEl);
+        body.appendChild(row);
+    }
+
+    card.appendChild(body);
+    return card;
+}
+
+function renderFaultCard(faults) {
+    var card = document.createElement('div');
+
+    if (faults && faults.length > 0) {
+        // Active faults -- amber warning styling
+        card.className = 'fault-card fault-card--active';
+
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u26A0 Faults';  // warning sign
+        card.appendChild(heading);
+
+        var list = document.createElement('div');
+        list.className = 'fault-card__list';
+
+        for (var i = 0; i < faults.length; i++) {
+            var item = document.createElement('div');
+            item.className = 'fault-card__item';
+            item.textContent = '\u2022 ' + faults[i].name;  // bullet
+            list.appendChild(item);
+        }
+
+        card.appendChild(list);
+    } else {
+        // No faults -- green success styling
+        card.className = 'fault-card fault-card--clear';
+
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u2713 Faults';  // checkmark
+        card.appendChild(heading);
+
+        var clearText = document.createElement('p');
+        clearText.className = 'fault-card__clear-text';
+        clearText.textContent = 'No active faults';
+        card.appendChild(clearText);
+    }
+
+    return card;
 }
 
 function handleSectionError(msg) {
@@ -509,4 +673,296 @@ function loadConnectionSettings() {
     } catch (e) {
         return null;
     }
+}
+
+// === PV Channel Dropdown (D-14, D-15, D-16) ===
+
+function initPVDropdown() {
+    var select = $('#pv-channel-select');
+    // Populate options 2-16
+    for (var i = 2; i <= 16; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = i + ' channels';
+        select.appendChild(opt);
+    }
+
+    // Load default: localStorage > /api/defaults > 2
+    var stored = loadPVChannels();
+    if (stored) {
+        select.value = String(stored);
+    }
+
+    // Also try /api/defaults if no localStorage value
+    if (!stored) {
+        fetch('/api/defaults')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.pv_channels && !loadPVChannels()) {
+                    select.value = String(data.pv_channels);
+                    PV_DEFAULT_CHANNELS = data.pv_channels;
+                }
+            })
+            .catch(function() {});
+    }
+
+    // On change: send configure, save to localStorage
+    select.addEventListener('change', function() {
+        var channels = parseInt(select.value, 10);
+        savePVChannels(channels);
+        App.ws.send({
+            type: 'configure',
+            section: 'pv',
+            config: { channels: channels }
+        });
+    });
+}
+
+function loadPVChannels() {
+    try {
+        var val = localStorage.getItem(PV_STORAGE_KEY);
+        if (val) return parseInt(val, 10);
+        return null;
+    } catch(e) { return null; }
+}
+
+function savePVChannels(channels) {
+    try {
+        localStorage.setItem(PV_STORAGE_KEY, String(channels));
+    } catch(e) {}
+}
+
+// === Topology Dropdowns (BAT-06, D-10, D-11, D-12) ===
+
+function initTopologyDropdowns() {
+    var inputsSel = $('#bat-inputs-select');
+    var towersSel = $('#bat-towers-select');
+    var packsSel = $('#bat-packs-select');
+
+    // Populate options
+    for (var i = 1; i <= 2; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = String(i);
+        inputsSel.appendChild(opt);
+    }
+    for (var i = 1; i <= 4; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = String(i);
+        towersSel.appendChild(opt);
+    }
+    for (var i = 4; i <= 10; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = String(i);
+        packsSel.appendChild(opt);
+    }
+
+    // Load defaults: localStorage > /api/defaults > hardcoded
+    var storedInputs = loadTopologyValue(BAT_INPUTS_KEY);
+    var storedTowers = loadTopologyValue(BAT_TOWERS_KEY);
+    var storedPacks = loadTopologyValue(BAT_PACKS_KEY);
+
+    if (storedInputs) inputsSel.value = String(storedInputs);
+    if (storedTowers) towersSel.value = String(storedTowers);
+    if (storedPacks) packsSel.value = String(storedPacks);
+
+    // Also try /api/defaults if no localStorage values
+    if (!storedInputs || !storedTowers || !storedPacks) {
+        fetch('/api/defaults')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (!loadTopologyValue(BAT_INPUTS_KEY) && data.bat_inputs) {
+                    inputsSel.value = String(data.bat_inputs);
+                    BAT_DEFAULT_INPUTS = data.bat_inputs;
+                }
+                if (!loadTopologyValue(BAT_TOWERS_KEY) && data.bat_towers) {
+                    towersSel.value = String(data.bat_towers);
+                    BAT_DEFAULT_TOWERS = data.bat_towers;
+                }
+                if (!loadTopologyValue(BAT_PACKS_KEY) && data.bat_packs) {
+                    packsSel.value = String(data.bat_packs);
+                    BAT_DEFAULT_PACKS = data.bat_packs;
+                }
+            })
+            .catch(function() {});
+    }
+
+    // On change: save to localStorage and send configure
+    inputsSel.addEventListener('change', sendTopologyConfigure);
+    towersSel.addEventListener('change', sendTopologyConfigure);
+    packsSel.addEventListener('change', sendTopologyConfigure);
+}
+
+function sendTopologyConfigure() {
+    var inputs = parseInt($('#bat-inputs-select').value, 10);
+    var towers = parseInt($('#bat-towers-select').value, 10);
+    var packs = parseInt($('#bat-packs-select').value, 10);
+    saveTopologyValue(BAT_INPUTS_KEY, inputs);
+    saveTopologyValue(BAT_TOWERS_KEY, towers);
+    saveTopologyValue(BAT_PACKS_KEY, packs);
+    App.ws.send({
+        type: 'configure',
+        section: 'bms',
+        config: { bat_inputs: inputs, bat_towers: towers, bat_packs: packs }
+    });
+}
+
+function loadTopologyValue(key) {
+    try {
+        var val = localStorage.getItem(key);
+        if (val) return parseInt(val, 10);
+        return null;
+    } catch(e) { return null; }
+}
+
+function saveTopologyValue(key, val) {
+    try { localStorage.setItem(key, String(val)); }
+    catch(e) {}
+}
+
+// === Bitmap Grid Renderer (BAT-05, D-06, D-07, D-08) ===
+
+function renderBitmapGroup(group) {
+    var card = document.createElement('div');
+    card.className = 'group-card';
+
+    // Heading
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    card.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    card.appendChild(sep);
+
+    var body = document.createElement('div');
+    body.className = 'bitmap-group';
+
+    var bm = group.bitmap;
+    if (!bm) { card.appendChild(body); return card; }
+
+    // Detected topology label (D-14)
+    if (bm.detected_topology) {
+        var detLabel = document.createElement('div');
+        detLabel.className = 'bitmap-detected';
+        detLabel.textContent = 'Detected: ' + bm.detected_topology;
+
+        // Mismatch warning
+        if (bm.mismatch) {
+            var warn = document.createElement('span');
+            warn.className = 'bitmap-mismatch';
+            warn.textContent = ' \u26A0 Config mismatch';
+            detLabel.appendChild(warn);
+        }
+        body.appendChild(detLabel);
+    }
+
+    // Grid rows (one per tower)
+    for (var t = 0; t < bm.towers; t++) {
+        var rowWrap = document.createElement('div');
+        rowWrap.className = 'bitmap-row';
+
+        var rowLabel = document.createElement('span');
+        rowLabel.className = 'bitmap-row__label';
+        rowLabel.textContent = 'Tower ' + (t + 1);
+        rowWrap.appendChild(rowLabel);
+
+        var grid = document.createElement('div');
+        grid.className = 'bitmap-grid';
+        grid.style.gridTemplateColumns = 'repeat(' + bm.packs_per_tower + ', 28px)';
+
+        var online = bm.online[t] || 0;
+        for (var p = 0; p < bm.packs_per_tower; p++) {
+            var cell = document.createElement('div');
+            var isOnline = (online >> p) & 1;
+            cell.className = 'bitmap-cell ' + (isOnline ? 'bitmap-cell--online' : 'bitmap-cell--offline');
+            cell.textContent = String(p + 1);
+            grid.appendChild(cell);
+        }
+        rowWrap.appendChild(grid);
+        body.appendChild(rowWrap);
+    }
+
+    // Legend
+    var legend = document.createElement('div');
+    legend.className = 'bitmap-legend';
+
+    var onItem = document.createElement('div');
+    onItem.className = 'bitmap-legend__item';
+    var onSwatch = document.createElement('span');
+    onSwatch.className = 'bitmap-legend__swatch bitmap-cell--online';
+    onItem.appendChild(onSwatch);
+    var onLabel = document.createElement('span');
+    onLabel.className = 'bitmap-legend__label';
+    onLabel.textContent = 'Online';
+    onItem.appendChild(onLabel);
+    legend.appendChild(onItem);
+
+    var offItem = document.createElement('div');
+    offItem.className = 'bitmap-legend__item';
+    var offSwatch = document.createElement('span');
+    offSwatch.className = 'bitmap-legend__swatch bitmap-cell--offline';
+    offItem.appendChild(offSwatch);
+    var offLabel = document.createElement('span');
+    offLabel.className = 'bitmap-legend__label';
+    offLabel.textContent = 'Offline';
+    offItem.appendChild(offLabel);
+    legend.appendChild(offItem);
+
+    body.appendChild(legend);
+    card.appendChild(body);
+    return card;
+}
+
+// === Protection & Alarms Renderer (D-04) ===
+
+function renderProtectionGroup(group) {
+    var card = document.createElement('div');
+    var items = group.items || {};
+    var keys = Object.keys(items);
+
+    // Check if any non-zero values
+    var hasActive = false;
+    for (var i = 0; i < keys.length; i++) {
+        if (items[keys[i]] !== '0x0000') {
+            hasActive = true;
+            break;
+        }
+    }
+
+    if (hasActive) {
+        card.className = 'fault-card fault-card--active';
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u26A0 Protection & Alarms';
+        card.appendChild(heading);
+
+        var list = document.createElement('div');
+        list.className = 'fault-card__list';
+        for (var i = 0; i < keys.length; i++) {
+            if (items[keys[i]] !== '0x0000') {
+                var item = document.createElement('div');
+                item.className = 'fault-card__item';
+                item.textContent = '\u2022 ' + keys[i] + ': ' + items[keys[i]];
+                list.appendChild(item);
+            }
+        }
+        card.appendChild(list);
+    } else {
+        card.className = 'fault-card fault-card--clear';
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u2713 Protection & Alarms';
+        card.appendChild(heading);
+
+        var clearText = document.createElement('p');
+        clearText.className = 'fault-card__clear-text';
+        clearText.textContent = 'No active protections or alarms';
+        card.appendChild(clearText);
+    }
+
+    return card;
 }
