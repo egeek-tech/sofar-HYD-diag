@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -11,16 +12,28 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	"sofar-hyd-diag/internal/broker"
+	"sofar-hyd-diag/internal/hub"
 	"sofar-hyd-diag/web"
 )
 
-// newTestRouter creates a chi router with web routes wired to a disconnected broker.
+// newTestRouter creates a chi router with web routes wired to a disconnected broker and hub.
 func newTestRouter() *chi.Mux {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
+	h := hub.NewHub(b, logger)
+	ctx, cancel := context.WithCancel(context.Background())
+	go h.Run(ctx)
+	_ = cancel // cleanup happens when test ends (short-lived)
+
+	defaults := web.DefaultsConfig{
+		Host:    "10.5.99.29",
+		Port:    4192,
+		SlaveID: 1,
+	}
 	r := chi.NewRouter()
-	web.SetupRoutes(r, b, time.Now())
+	web.SetupRoutes(r, b, h, defaults, time.Now(), logger)
 	return r
 }
 
@@ -48,6 +61,87 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 	if resp.Uptime == "" {
 		t.Error("expected non-empty uptime")
+	}
+}
+
+func TestDefaultsEndpoint(t *testing.T) {
+	r := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/api/defaults", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+
+	var resp web.DefaultsConfig
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+	if resp.Host != "10.5.99.29" {
+		t.Errorf("expected host '10.5.99.29', got %q", resp.Host)
+	}
+	if resp.Port != 4192 {
+		t.Errorf("expected port 4192, got %d", resp.Port)
+	}
+	if resp.SlaveID != 1 {
+		t.Errorf("expected slave_id 1, got %d", resp.SlaveID)
+	}
+}
+
+func TestWSUpgrade(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b := broker.New(logger, "127.0.0.1:1", 1, false)
+	h := hub.NewHub(b, logger)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	defaults := web.DefaultsConfig{Host: "10.5.99.29", Port: 4192, SlaveID: 1}
+	r := chi.NewRouter()
+	web.SetupRoutes(r, b, h, defaults, time.Now(), logger)
+
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("ws dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	if resp.StatusCode != 101 {
+		t.Errorf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Should receive initial connection_state message
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read initial message failed: %v", err)
+	}
+	if !strings.Contains(string(msg), "connection_state") {
+		t.Errorf("expected connection_state message, got: %s", msg)
+	}
+}
+
+func TestWSUpgradeWithoutHeaders(t *testing.T) {
+	r := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	// Without upgrade headers, the WS upgrader should reject with 400
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 
