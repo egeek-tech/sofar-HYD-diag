@@ -73,8 +73,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Application builds as single Go binary with embedded HTML/JS/CSS
-- [ ] **INFRA-02**: Backend uses structured logging (slog) with configurable log level
+- [x] **INFRA-01**: Application builds as single Go binary with embedded HTML/JS/CSS
+- [x] **INFRA-02**: Backend uses structured logging (slog) with configurable log level
 - [x] **INFRA-03**: Modbus request/response details logged for troubleshooting
 - [ ] **INFRA-04**: Desktop-optimized layout using full page width for parameter display
 
@@ -156,8 +156,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RT-03 | Phase 2 | Pending |
 | RT-04 | Phase 2 | Pending |
 | RT-05 | Phase 2 | Pending |
-| INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
+| INFRA-01 | Phase 1 | Complete |
+| INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 3 | Pending |
 
