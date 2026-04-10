@@ -12,7 +12,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **CONN-01**: User can configure IP address, port, and slave ID for inverter connection
 - [ ] **CONN-02**: User can connect/disconnect with a button showing connection status
 - [ ] **CONN-03**: Connection state persists across page refreshes (saved to browser localStorage)
-- [ ] **CONN-04**: Backend auto-reconnects on connection loss with exponential backoff
+- [x] **CONN-04**: Backend auto-reconnects on connection loss with exponential backoff
 - [x] **CONN-05**: Modbus operations serialized through single-goroutine command channel (concurrency safety)
 
 ### System Information
@@ -75,7 +75,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **INFRA-01**: Application builds as single Go binary with embedded HTML/JS/CSS
 - [ ] **INFRA-02**: Backend uses structured logging (slog) with configurable log level
-- [ ] **INFRA-03**: Modbus request/response details logged for troubleshooting
+- [x] **INFRA-03**: Modbus request/response details logged for troubleshooting
 - [ ] **INFRA-04**: Desktop-optimized layout using full page width for parameter display
 
 ## v2 Requirements
@@ -119,7 +119,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONN-01 | Phase 2 | Pending |
 | CONN-02 | Phase 2 | Pending |
 | CONN-03 | Phase 2 | Pending |
-| CONN-04 | Phase 1 | Pending |
+| CONN-04 | Phase 1 | Complete |
 | CONN-05 | Phase 1 | Complete |
 | SYS-01 | Phase 3 | Pending |
 | SYS-02 | Phase 3 | Pending |
@@ -158,7 +158,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RT-05 | Phase 2 | Pending |
 | INFRA-01 | Phase 1 | Pending |
 | INFRA-02 | Phase 1 | Pending |
-| INFRA-03 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 3 | Pending |
 
 **Coverage:**
