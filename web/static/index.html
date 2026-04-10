@@ -7,15 +7,99 @@
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <header>
-        <h1>Sofar HYD Diagnostic Tool</h1>
+    <header class="header">
+        <h1 class="header__title">Sofar HYD Diagnostic Tool</h1>
     </header>
-    <nav id="nav-placeholder">
-        <!-- Navigation tabs added in Phase 2+ -->
-    </nav>
-    <main id="content">
-        <p>Server is running. Sections will be added in subsequent phases.</p>
+
+    <aside id="sidebar" class="sidebar">
+        <!-- Connection Status (D-31) -->
+        <div class="sidebar__section">
+            <h2 class="sidebar__heading">Connection</h2>
+            <div class="status-indicator">
+                <span id="status-dot" class="status-dot status-dot--disconnected"></span>
+                <span id="status-text" class="status-text">Disconnected</span>
+            </div>
+        </div>
+
+        <!-- Connection Form (CONN-01, CONN-02) -->
+        <div class="sidebar__section">
+            <h2 class="sidebar__heading">Inverter</h2>
+            <form id="connection-form" class="connection-form" novalidate>
+                <div class="form-group">
+                    <label class="form-label" for="input-host">IP Address</label>
+                    <input type="text" id="input-host" class="form-input"
+                           pattern="^(\d{1,3}\.){3}\d{1,3}$|^[a-zA-Z0-9.-]+$"
+                           placeholder="192.168.1.1" required>
+                    <span class="form-error" id="error-host"></span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="input-port">Port</label>
+                    <input type="number" id="input-port" class="form-input"
+                           min="1" max="65535" placeholder="4192" required>
+                    <span class="form-error" id="error-port"></span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="input-slave">Slave ID</label>
+                    <input type="number" id="input-slave" class="form-input"
+                           min="1" max="247" placeholder="1" required>
+                    <span class="form-error" id="error-slave"></span>
+                </div>
+                <button type="submit" id="btn-connect" class="btn btn--connect">Connect</button>
+            </form>
+        </div>
+
+        <!-- Section Navigation (D-32) -->
+        <div class="sidebar__section">
+            <h2 class="sidebar__heading">Sections</h2>
+            <nav class="section-nav" id="section-nav">
+                <button class="section-nav__item" data-section="status">
+                    <span class="section-nav__icon">&#x2139;</span>
+                    <span class="section-nav__label">Status</span>
+                </button>
+                <button class="section-nav__item section-nav__item--disabled" data-section="system" disabled title="Available in a future update">
+                    <span class="section-nav__icon">&#x2699;</span>
+                    <span class="section-nav__label">System</span>
+                </button>
+                <button class="section-nav__item section-nav__item--disabled" data-section="grid" disabled title="Available in a future update">
+                    <span class="section-nav__icon">&#x26A1;</span>
+                    <span class="section-nav__label">Grid</span>
+                </button>
+                <button class="section-nav__item section-nav__item--disabled" data-section="eps" disabled title="Available in a future update">
+                    <span class="section-nav__icon">&#x2B50;</span>
+                    <span class="section-nav__label">EPS</span>
+                </button>
+                <button class="section-nav__item section-nav__item--disabled" data-section="pv" disabled title="Available in a future update">
+                    <span class="section-nav__icon">&#x2600;</span>
+                    <span class="section-nav__label">PV</span>
+                </button>
+                <button class="section-nav__item section-nav__item--disabled" data-section="battery" disabled title="Available in a future update">
+                    <span class="section-nav__icon">&#x1F50B;</span>
+                    <span class="section-nav__label">Battery</span>
+                </button>
+                <button class="section-nav__item section-nav__item--disabled" data-section="stats" disabled title="Available in a future update">
+                    <span class="section-nav__icon">&#x1F4CA;</span>
+                    <span class="section-nav__label">Statistics</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Sidebar Collapse Toggle -->
+        <button id="sidebar-toggle" class="sidebar__toggle">
+            <span id="sidebar-toggle-icon">&laquo;</span>
+        </button>
+    </aside>
+
+    <main id="content" class="content content-flash">
+        <div id="content-header" class="content__header">
+            <h2 id="content-title" class="content__title">Not Connected</h2>
+            <button id="btn-auto-refresh" class="btn-auto-refresh" style="display:none;">Auto</button>
+        </div>
+        <div id="content-body" class="content__body">
+            <p class="content__empty">Enter your inverter connection details in the sidebar and click Connect.</p>
+        </div>
+        <div id="content-timestamp" class="content__timestamp" style="display:none;"></div>
     </main>
+
     <script src="/app.js"></script>
 </body>
 </html>
