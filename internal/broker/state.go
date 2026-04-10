@@ -4,15 +4,18 @@ package broker
 type State int
 
 const (
-	StateDisconnected State = iota
-	StateConnecting
-	StateConnected
-	StateReconnecting
+	StateDormant      State = -1
+	StateDisconnected State = 0
+	StateConnecting   State = 1
+	StateConnected    State = 2
+	StateReconnecting State = 3
 )
 
 // String returns a human-readable state name.
 func (s State) String() string {
 	switch s {
+	case StateDormant:
+		return "dormant"
 	case StateDisconnected:
 		return "disconnected"
 	case StateConnecting:

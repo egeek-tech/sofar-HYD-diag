@@ -22,7 +22,15 @@ const (
 	CmdRead CmdType = iota
 	CmdWrite
 	CmdReadBatch
+	CmdReconfigure
+	CmdDisconnect
 )
+
+// ReconfigureRequest carries the new address and slave ID for runtime reconfiguration.
+type ReconfigureRequest struct {
+	Addr    string
+	SlaveID byte
+}
 
 // ReadRequest describes a register read operation.
 type ReadRequest struct {
@@ -63,34 +71,36 @@ type command struct {
 // It owns the TCP connection, handles auto-reconnection with exponential backoff,
 // and emits connection state change events.
 type Broker struct {
-	commands      chan command
-	done          chan struct{}
-	logger        *slog.Logger
-	addr          string
-	slaveID       byte
-	useRTU        bool
-	conn          net.Conn
-	state         atomic.Int32
-	stateCh       chan StateEvent
-	backoff       *Backoff
+	commands       chan command
+	done           chan struct{}
+	logger         *slog.Logger
+	addr           string
+	slaveID        byte
+	useRTU         bool
+	conn           net.Conn
+	state          atomic.Int32
+	stateCh        chan StateEvent
+	backoff        *Backoff
 	interReadDelay time.Duration
-	lastReadTime  time.Time
+	lastReadTime   time.Time
+	dormant        bool
 }
 
 // New creates a new Broker. Call Run() in a goroutine to start processing commands.
 func New(logger *slog.Logger, addr string, slaveID byte, useRTU bool) *Broker {
 	b := &Broker{
-		commands:      make(chan command, 32),
-		done:          make(chan struct{}),
-		logger:        logger,
-		addr:          addr,
-		slaveID:       slaveID,
-		useRTU:        useRTU,
-		stateCh:       make(chan StateEvent, 16),
-		backoff:       NewBackoff(1*time.Second, 30*time.Second),
+		commands:       make(chan command, 32),
+		done:           make(chan struct{}),
+		logger:         logger,
+		addr:           addr,
+		slaveID:        slaveID,
+		useRTU:         useRTU,
+		stateCh:        make(chan StateEvent, 16),
+		backoff:        NewBackoff(1*time.Second, 30*time.Second),
 		interReadDelay: 500 * time.Millisecond,
+		dormant:        true,
 	}
-	b.state.Store(int32(StateDisconnected))
+	b.state.Store(int32(StateDormant))
 	return b
 }
 
@@ -107,11 +117,8 @@ func (b *Broker) SetBackoff(base, max time.Duration) {
 }
 
 // Run starts the broker's command processing loop. It blocks until ctx is cancelled.
-// Call this in a goroutine.
+// The broker starts in dormant state -- call Reconfigure() to initiate a connection.
 func (b *Broker) Run(ctx context.Context) {
-	// Attempt initial connection so status reflects connected state immediately
-	b.ensureConnected(ctx)
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -232,6 +239,55 @@ func (b *Broker) Close() {
 	close(b.done)
 }
 
+// Reconfigure closes any existing connection and connects to a new address with a new slave ID.
+// The operation is serialized through the command channel.
+func (b *Broker) Reconfigure(ctx context.Context, addr string, slaveID byte) error {
+	respCh := make(chan interface{}, 1)
+	select {
+	case b.commands <- command{
+		cmdType:  CmdReconfigure,
+		request:  ReconfigureRequest{Addr: addr, SlaveID: slaveID},
+		response: respCh,
+	}:
+	case <-b.done:
+		return ErrBrokerClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case resp := <-respCh:
+		if err, ok := resp.(error); ok {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Disconnect closes the current connection without triggering auto-reconnect.
+// The broker returns to a disconnected state and will not reconnect until Reconfigure is called.
+func (b *Broker) Disconnect(ctx context.Context) error {
+	respCh := make(chan interface{}, 1)
+	select {
+	case b.commands <- command{
+		cmdType:  CmdDisconnect,
+		request:  nil,
+		response: respCh,
+	}:
+	case <-b.done:
+		return ErrBrokerClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-respCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // setState updates the broker's connection state and emits a state event.
 func (b *Broker) setState(s State, err error) {
 	b.state.Store(int32(s))
@@ -262,6 +318,13 @@ func (b *Broker) execute(ctx context.Context, cmd command) {
 		req := cmd.request.(BatchReadRequest)
 		result := b.executeBatch(ctx, req)
 		cmd.response <- result
+	case CmdReconfigure:
+		req := cmd.request.(ReconfigureRequest)
+		b.executeReconfigure(ctx, req)
+		cmd.response <- Result{}
+	case CmdDisconnect:
+		b.executeDisconnect()
+		cmd.response <- Result{}
 	}
 }
 
@@ -352,6 +415,34 @@ func (b *Broker) executeBatch(ctx context.Context, req BatchReadRequest) BatchRe
 	return BatchResult{Results: results}
 }
 
+// executeReconfigure closes any existing connection and connects to a new address.
+func (b *Broker) executeReconfigure(ctx context.Context, req ReconfigureRequest) {
+	// Close existing connection if any
+	if b.conn != nil {
+		b.conn.Close()
+		b.conn = nil
+	}
+	b.addr = req.Addr
+	b.slaveID = req.SlaveID
+	b.dormant = false
+	b.backoff.Reset()
+	b.logger.Info("broker reconfigured", "addr", req.Addr, "slaveID", req.SlaveID)
+	// Attempt connection immediately
+	b.ensureConnected(ctx)
+}
+
+// executeDisconnect closes the connection and enters dormant-like disconnected state.
+// No auto-reconnect will occur until Reconfigure is called again.
+func (b *Broker) executeDisconnect() {
+	if b.conn != nil {
+		b.conn.Close()
+		b.conn = nil
+	}
+	b.dormant = true
+	b.setState(StateDisconnected, nil)
+	b.logger.Info("broker disconnected by request")
+}
+
 // enforceInterReadDelay sleeps if needed to maintain the minimum delay between reads.
 func (b *Broker) enforceInterReadDelay() {
 	elapsed := time.Since(b.lastReadTime)
@@ -361,10 +452,15 @@ func (b *Broker) enforceInterReadDelay() {
 }
 
 // ensureConnected establishes a connection if one doesn't exist.
+// Returns an error if the broker is dormant (no address configured).
 // On failure, enters reconnection loop with exponential backoff.
 func (b *Broker) ensureConnected(ctx context.Context) error {
 	if b.conn != nil {
 		return nil
+	}
+
+	if b.dormant {
+		return fmt.Errorf("broker is dormant -- call Reconfigure to connect")
 	}
 
 	b.setState(StateConnecting, nil)
@@ -394,13 +490,19 @@ func (b *Broker) ensureConnected(ctx context.Context) error {
 }
 
 // handleError closes the connection and updates state on communication errors.
+// If the broker is dormant, it transitions to StateDisconnected instead of StateReconnecting
+// to prevent auto-reconnection after an explicit Disconnect.
 func (b *Broker) handleError(err error) {
 	b.logger.Error("modbus operation failed", "error", err)
 	if b.conn != nil {
 		b.conn.Close()
 		b.conn = nil
 	}
-	b.setState(StateReconnecting, err)
+	if b.dormant {
+		b.setState(StateDisconnected, err)
+	} else {
+		b.setState(StateReconnecting, err)
+	}
 }
 
 // cleanup closes resources when the broker stops.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -138,6 +139,175 @@ func TestBackoff(t *testing.T) {
 	}
 }
 
+func TestBrokerDormantStart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create broker -- no mock server needed since it should NOT connect
+	b := broker.New(discardLogger(), "127.0.0.1:1", 1, false)
+	go b.Run(ctx)
+	defer b.Close()
+
+	// Give Run() a moment to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Broker must be in StateDormant, not StateConnecting
+	state := b.CurrentState()
+	if state != broker.StateDormant {
+		t.Fatalf("expected StateDormant, got %v", state)
+	}
+
+	// Attempting a read while dormant should return an error mentioning "dormant"
+	_, err := b.ReadRegisters(ctx, 0x0404, 1)
+	if err == nil {
+		t.Fatal("expected error reading from dormant broker, got nil")
+	}
+	if !strings.Contains(err.Error(), "dormant") {
+		t.Fatalf("expected error containing 'dormant', got: %v", err)
+	}
+}
+
+func TestBrokerReconfigure(t *testing.T) {
+	// Start mock server
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().String()
+	go mockModbusServer(t, listener, 1, 0xCAFE)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 0, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	// Should start dormant
+	time.Sleep(50 * time.Millisecond)
+	if s := b.CurrentState(); s != broker.StateDormant {
+		t.Fatalf("expected StateDormant before Reconfigure, got %v", s)
+	}
+
+	// Reconfigure to connect to mock server
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	// Should now be connected
+	if s := b.CurrentState(); s != broker.StateConnected {
+		t.Fatalf("expected StateConnected after Reconfigure, got %v", s)
+	}
+
+	// Read should succeed
+	data, err := b.ReadRegisters(ctx, 0x0404, 1)
+	if err != nil {
+		t.Fatalf("read after Reconfigure failed: %v", err)
+	}
+	val := binary.BigEndian.Uint16(data)
+	if val != 0xCAFE {
+		t.Errorf("expected 0xCAFE, got 0x%04X", val)
+	}
+}
+
+func TestBrokerDisconnect(t *testing.T) {
+	// Start mock server
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().String()
+	go mockModbusServer(t, listener, 1, 0xBEEF)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 0, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	b.SetBackoff(50*time.Millisecond, 200*time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	// Connect via Reconfigure
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+	if s := b.CurrentState(); s != broker.StateConnected {
+		t.Fatalf("expected StateConnected, got %v", s)
+	}
+
+	// Disconnect
+	if err := b.Disconnect(ctx); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+
+	// Should be StateDisconnected, not reconnecting
+	time.Sleep(100 * time.Millisecond)
+	if s := b.CurrentState(); s != broker.StateDisconnected {
+		t.Fatalf("expected StateDisconnected after Disconnect, got %v", s)
+	}
+}
+
+func TestBrokerReconfigureWhileConnected(t *testing.T) {
+	// Start two mock servers
+	listener1, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener1: %v", err)
+	}
+	defer listener1.Close()
+	addr1 := listener1.Addr().String()
+	go mockModbusServer(t, listener1, 1, 0x1111)
+
+	listener2, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener2: %v", err)
+	}
+	defer listener2.Close()
+	addr2 := listener2.Addr().String()
+	go mockModbusServer(t, listener2, 1, 0x2222)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 0, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	// Connect to first server
+	if err := b.Reconfigure(ctx, addr1, 1); err != nil {
+		t.Fatalf("first Reconfigure failed: %v", err)
+	}
+
+	// Read from first server
+	data, err := b.ReadRegisters(ctx, 0x0404, 1)
+	if err != nil {
+		t.Fatalf("first read failed: %v", err)
+	}
+	if val := binary.BigEndian.Uint16(data); val != 0x1111 {
+		t.Errorf("first read: expected 0x1111, got 0x%04X", val)
+	}
+
+	// Reconfigure to second server
+	if err := b.Reconfigure(ctx, addr2, 1); err != nil {
+		t.Fatalf("second Reconfigure failed: %v", err)
+	}
+
+	// Read from second server
+	data, err = b.ReadRegisters(ctx, 0x0404, 1)
+	if err != nil {
+		t.Fatalf("second read failed: %v", err)
+	}
+	if val := binary.BigEndian.Uint16(data); val != 0x2222 {
+		t.Errorf("second read: expected 0x2222, got 0x%04X", val)
+	}
+}
+
 func TestBrokerSerialization(t *testing.T) {
 	// Start a mock TCP server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -155,13 +325,15 @@ func TestBrokerSerialization(t *testing.T) {
 	defer cancel()
 
 	// Create broker with very short inter-read delay for test speed
-	b := broker.New(discardLogger(), addr, 1, false)
+	b := broker.New(discardLogger(), "", 1, false)
 	b.SetInterReadDelay(10 * time.Millisecond) // fast for tests
 
 	go b.Run(ctx)
 
-	// Wait for broker to connect
-	time.Sleep(100 * time.Millisecond)
+	// Reconfigure to connect (broker starts dormant now)
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Fire 3 concurrent reads
 	var wg sync.WaitGroup
@@ -210,7 +382,7 @@ func TestBrokerReconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	b := broker.New(discardLogger(), addr, 1, false)
+	b := broker.New(discardLogger(), "", 1, false)
 	b.SetInterReadDelay(10 * time.Millisecond)
 	b.SetBackoff(100*time.Millisecond, 500*time.Millisecond)
 
@@ -226,6 +398,11 @@ func TestBrokerReconnect(t *testing.T) {
 			eventsMu.Unlock()
 		}
 	}()
+
+	// Reconfigure to connect (broker starts dormant now)
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// First read should succeed
 	data, err := b.ReadRegisters(ctx, 0x0404, 1)
@@ -321,13 +498,15 @@ func TestBrokerReadBatch(t *testing.T) {
 	defer cancel()
 
 	// Use 500ms inter-read delay to verify timing
-	b := broker.New(discardLogger(), addr, 1, false)
+	b := broker.New(discardLogger(), "", 1, false)
 	b.SetInterReadDelay(500 * time.Millisecond)
 
 	go b.Run(ctx)
 
-	// Wait for connection
-	time.Sleep(100 * time.Millisecond)
+	// Reconfigure to connect (broker starts dormant now)
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	reads := []broker.ReadRequest{
 		{Addr: 0x0404, Count: 1},
