@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -32,11 +33,17 @@ func SetupRoutes(r chi.Router, b *broker.Broker, startTime time.Time) {
 			InverterAddr:    b.Address(),
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			// Connection likely dropped; log for diagnostics but nothing to send back
+			_ = err
+		}
 	})
 
 	// Serve embedded static files at root /
-	staticFS, _ := fs.Sub(staticFiles, "static")
+	staticFS, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		panic(fmt.Sprintf("embedded static FS not found: %v", err))
+	}
 	fileServer(r, "/", http.FS(staticFS))
 }
 
