@@ -1,0 +1,391 @@
+package broker
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"time"
+
+	"sofar-hyd-diag/internal/modbus"
+)
+
+// CmdType represents the type of command sent to the broker.
+type CmdType int
+
+const (
+	CmdRead CmdType = iota
+	CmdWrite
+	CmdReadBatch
+)
+
+// ReadRequest describes a register read operation.
+type ReadRequest struct {
+	Addr  uint16
+	Count uint16
+}
+
+// WriteRequest describes a register write operation.
+type WriteRequest struct {
+	Addr  uint16
+	Value uint16
+}
+
+// BatchReadRequest describes multiple register read operations.
+type BatchReadRequest struct {
+	Reads []ReadRequest
+}
+
+// Result contains the outcome of a single register operation.
+type Result struct {
+	Data []byte
+	Err  error
+}
+
+// BatchResult contains the outcomes of multiple register operations.
+type BatchResult struct {
+	Results []Result
+}
+
+// command is an internal message sent through the broker's command channel.
+type command struct {
+	cmdType  CmdType
+	request  interface{}
+	response chan<- interface{}
+}
+
+// Broker serializes all Modbus operations through a single goroutine.
+// It owns the TCP connection, handles auto-reconnection with exponential backoff,
+// and emits connection state change events.
+type Broker struct {
+	commands      chan command
+	logger        *slog.Logger
+	addr          string
+	slaveID       byte
+	useRTU        bool
+	conn          net.Conn
+	state         State
+	stateCh       chan StateEvent
+	backoff       *Backoff
+	interReadDelay time.Duration
+	lastReadTime  time.Time
+}
+
+// New creates a new Broker. Call Run() in a goroutine to start processing commands.
+func New(logger *slog.Logger, addr string, slaveID byte, useRTU bool) *Broker {
+	return &Broker{
+		commands:      make(chan command, 32),
+		logger:        logger,
+		addr:          addr,
+		slaveID:       slaveID,
+		useRTU:        useRTU,
+		state:         StateDisconnected,
+		stateCh:       make(chan StateEvent, 16),
+		backoff:       NewBackoff(1*time.Second, 30*time.Second),
+		interReadDelay: 500 * time.Millisecond,
+	}
+}
+
+// SetInterReadDelay overrides the default 500ms inter-read delay.
+// Must be called before Run().
+func (b *Broker) SetInterReadDelay(d time.Duration) {
+	b.interReadDelay = d
+}
+
+// SetBackoff overrides the default backoff parameters.
+// Must be called before Run().
+func (b *Broker) SetBackoff(base, max time.Duration) {
+	b.backoff = NewBackoff(base, max)
+}
+
+// Run starts the broker's command processing loop. It blocks until ctx is cancelled.
+// Call this in a goroutine.
+func (b *Broker) Run(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			b.cleanup()
+			return
+		case cmd, ok := <-b.commands:
+			if !ok {
+				b.cleanup()
+				return
+			}
+			b.execute(ctx, cmd)
+		}
+	}
+}
+
+// ReadRegisters reads holding registers from the inverter.
+// Safe for concurrent callers -- operations are serialized through the command channel.
+func (b *Broker) ReadRegisters(ctx context.Context, addr uint16, count uint16) ([]byte, error) {
+	respCh := make(chan interface{}, 1)
+	select {
+	case b.commands <- command{
+		cmdType:  CmdRead,
+		request:  ReadRequest{Addr: addr, Count: count},
+		response: respCh,
+	}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case res := <-respCh:
+		r := res.(Result)
+		return r.Data, r.Err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// WriteRegister writes a value to a single register on the inverter.
+// Safe for concurrent callers.
+func (b *Broker) WriteRegister(ctx context.Context, addr uint16, value uint16) error {
+	respCh := make(chan interface{}, 1)
+	select {
+	case b.commands <- command{
+		cmdType:  CmdWrite,
+		request:  WriteRequest{Addr: addr, Value: value},
+		response: respCh,
+	}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case res := <-respCh:
+		r := res.(Result)
+		return r.Err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ReadBatch reads multiple register groups in a single queued operation.
+// Inter-read delays are enforced between each read.
+func (b *Broker) ReadBatch(ctx context.Context, reads []ReadRequest) []Result {
+	respCh := make(chan interface{}, 1)
+	select {
+	case b.commands <- command{
+		cmdType:  CmdReadBatch,
+		request:  BatchReadRequest{Reads: reads},
+		response: respCh,
+	}:
+	case <-ctx.Done():
+		results := make([]Result, len(reads))
+		for i := range results {
+			results[i] = Result{Err: ctx.Err()}
+		}
+		return results
+	}
+	select {
+	case res := <-respCh:
+		r := res.(BatchResult)
+		return r.Results
+	case <-ctx.Done():
+		results := make([]Result, len(reads))
+		for i := range results {
+			results[i] = Result{Err: ctx.Err()}
+		}
+		return results
+	}
+}
+
+// CurrentState returns the broker's current connection state.
+func (b *Broker) CurrentState() State {
+	return b.state
+}
+
+// StateEvents returns a read-only channel for connection state change events.
+func (b *Broker) StateEvents() <-chan StateEvent {
+	return b.stateCh
+}
+
+// Address returns the configured inverter address.
+func (b *Broker) Address() string {
+	return b.addr
+}
+
+// Close shuts down the broker by closing the command channel.
+func (b *Broker) Close() {
+	close(b.commands)
+}
+
+// setState updates the broker's connection state and emits a state event.
+func (b *Broker) setState(s State, err error) {
+	b.state = s
+	select {
+	case b.stateCh <- StateEvent{State: s, Err: err}:
+	default:
+		// Don't block if nobody is listening
+	}
+	if err != nil {
+		b.logger.Info("connection state changed", "state", s.String(), "error", err)
+	} else {
+		b.logger.Info("connection state changed", "state", s.String())
+	}
+}
+
+// execute dispatches a command to the appropriate handler.
+func (b *Broker) execute(ctx context.Context, cmd command) {
+	switch cmd.cmdType {
+	case CmdRead:
+		req := cmd.request.(ReadRequest)
+		result := b.executeRead(ctx, req)
+		cmd.response <- result
+	case CmdWrite:
+		req := cmd.request.(WriteRequest)
+		result := b.executeWrite(ctx, req)
+		cmd.response <- result
+	case CmdReadBatch:
+		req := cmd.request.(BatchReadRequest)
+		result := b.executeBatch(ctx, req)
+		cmd.response <- result
+	}
+}
+
+// executeRead performs a single register read with inter-read delay enforcement.
+// On communication error, it closes the connection, reconnects, and retries once
+// (matching the original readWithRetry pattern from main.go.bak).
+func (b *Broker) executeRead(ctx context.Context, req ReadRequest) Result {
+	const maxAttempts = 2
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := b.ensureConnected(ctx); err != nil {
+			return Result{Err: err}
+		}
+
+		b.enforceInterReadDelay()
+
+		var data []byte
+		var err error
+		if b.useRTU {
+			data, err = modbus.ReadHoldingRegistersRTU(b.conn, b.logger, b.slaveID, req.Addr, req.Count)
+		} else {
+			data, err = modbus.ReadHoldingRegistersTCP(b.conn, b.logger, b.slaveID, req.Addr, req.Count)
+		}
+
+		b.lastReadTime = time.Now()
+
+		if err == nil {
+			return Result{Data: data}
+		}
+
+		b.handleError(err)
+
+		if attempt == maxAttempts {
+			return Result{Err: err}
+		}
+
+		b.logger.Debug("retrying read after error", "addr", fmt.Sprintf("0x%04X", req.Addr), "attempt", attempt)
+	}
+
+	// Unreachable, but satisfies compiler
+	return Result{Err: fmt.Errorf("exhausted retry attempts")}
+}
+
+// executeWrite performs a single register write with one retry on failure.
+func (b *Broker) executeWrite(ctx context.Context, req WriteRequest) Result {
+	const maxAttempts = 2
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := b.ensureConnected(ctx); err != nil {
+			return Result{Err: err}
+		}
+
+		var err error
+		if b.useRTU {
+			err = modbus.WriteSingleRegisterRTU(b.conn, b.logger, b.slaveID, req.Addr, req.Value)
+		} else {
+			err = modbus.WriteMultipleRegistersTCP(b.conn, b.logger, b.slaveID, req.Addr, req.Value)
+		}
+
+		if err == nil {
+			return Result{}
+		}
+
+		b.handleError(err)
+
+		if attempt == maxAttempts {
+			return Result{Err: err}
+		}
+
+		b.logger.Debug("retrying write after error", "addr", fmt.Sprintf("0x%04X", req.Addr), "attempt", attempt)
+	}
+
+	return Result{Err: fmt.Errorf("exhausted retry attempts")}
+}
+
+// executeBatch performs multiple reads with inter-read delays between each.
+func (b *Broker) executeBatch(ctx context.Context, req BatchReadRequest) BatchResult {
+	results := make([]Result, len(req.Reads))
+	for i, read := range req.Reads {
+		if ctx.Err() != nil {
+			for j := i; j < len(req.Reads); j++ {
+				results[j] = Result{Err: ctx.Err()}
+			}
+			break
+		}
+		results[i] = b.executeRead(ctx, read)
+	}
+	return BatchResult{Results: results}
+}
+
+// enforceInterReadDelay sleeps if needed to maintain the minimum delay between reads.
+func (b *Broker) enforceInterReadDelay() {
+	elapsed := time.Since(b.lastReadTime)
+	if elapsed < b.interReadDelay {
+		time.Sleep(b.interReadDelay - elapsed)
+	}
+}
+
+// ensureConnected establishes a connection if one doesn't exist.
+// On failure, enters reconnection loop with exponential backoff.
+func (b *Broker) ensureConnected(ctx context.Context) error {
+	if b.conn != nil {
+		return nil
+	}
+
+	b.setState(StateConnecting, nil)
+
+	for {
+		conn, err := modbus.Connect(b.addr)
+		if err == nil {
+			b.conn = conn
+			b.backoff.Reset()
+			b.setState(StateConnected, nil)
+			return nil
+		}
+
+		b.setState(StateReconnecting, err)
+
+		delay := b.backoff.Next()
+		b.logger.Debug("reconnect backoff", "delay", delay, "error", err)
+
+		select {
+		case <-ctx.Done():
+			b.setState(StateDisconnected, ctx.Err())
+			return ctx.Err()
+		case <-time.After(delay):
+			// Try again
+		}
+	}
+}
+
+// handleError closes the connection and updates state on communication errors.
+func (b *Broker) handleError(err error) {
+	b.logger.Error("modbus operation failed", "error", err)
+	if b.conn != nil {
+		b.conn.Close()
+		b.conn = nil
+	}
+	b.setState(StateReconnecting, err)
+}
+
+// cleanup closes resources when the broker stops.
+func (b *Broker) cleanup() {
+	if b.conn != nil {
+		b.conn.Close()
+		b.conn = nil
+	}
+	b.setState(StateDisconnected, nil)
+}
