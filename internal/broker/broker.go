@@ -407,4 +407,5 @@ func (b *Broker) cleanup() {
 		b.conn = nil
 	}
 	b.setState(StateDisconnected, nil)
+	close(b.stateCh) // signal consumers the broker is done
 }
