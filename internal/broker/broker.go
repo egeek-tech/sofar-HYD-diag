@@ -416,7 +416,9 @@ func (b *Broker) executeBatch(ctx context.Context, req BatchReadRequest) BatchRe
 }
 
 // executeReconfigure closes any existing connection and connects to a new address.
-func (b *Broker) executeReconfigure(ctx context.Context, req ReconfigureRequest) {
+// Uses a single dial attempt (5s timeout) to avoid blocking the command loop.
+// If connection fails, the broker returns to StateDisconnected so the user can retry.
+func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) {
 	// Close existing connection if any
 	if b.conn != nil {
 		b.conn.Close()
@@ -427,8 +429,17 @@ func (b *Broker) executeReconfigure(ctx context.Context, req ReconfigureRequest)
 	b.dormant = false
 	b.backoff.Reset()
 	b.logger.Info("broker reconfigured", "addr", req.Addr, "slaveID", req.SlaveID)
-	// Attempt connection immediately
-	b.ensureConnected(ctx)
+
+	// Single dial attempt — don't use ensureConnected (infinite retry loop would block command channel)
+	b.setState(StateConnecting, nil)
+	conn, err := modbus.Connect(b.addr)
+	if err != nil {
+		b.setState(StateDisconnected, err)
+		b.logger.Error("connection failed", "addr", b.addr, "error", err)
+		return
+	}
+	b.conn = conn
+	b.setState(StateConnected, nil)
 }
 
 // executeDisconnect closes the connection and enters dormant-like disconnected state.

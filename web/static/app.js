@@ -336,9 +336,9 @@ function handleConnectionState(msg) {
         case 'connecting':
             dot.classList.add('status-dot--connecting');
             text.textContent = 'Connecting...';
-            btn.textContent = 'Connecting...';
-            btn.className = 'btn btn--connect';
-            btn.disabled = true;
+            btn.textContent = 'Disconnect';
+            btn.className = 'btn btn--disconnect';
+            btn.disabled = false;
             setFormInputsDisabled(true);
             break;
         case 'reconnecting':

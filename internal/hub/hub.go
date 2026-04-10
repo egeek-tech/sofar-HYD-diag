@@ -155,13 +155,19 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 	switch msg.Type {
 	case MsgTypeConnect:
 		addr := fmt.Sprintf("%s:%d", msg.Host, msg.Port)
-		if err := h.broker.Reconfigure(h.ctx, addr, byte(msg.SlaveID)); err != nil {
-			h.sendToClient(cmd.Client, NewSectionError("", err.Error()))
-		}
+		// Run async so the hub event loop can still process state events and disconnect commands
+		// while the broker's single dial attempt (5s timeout) is in progress.
+		go func() {
+			if err := h.broker.Reconfigure(h.ctx, addr, byte(msg.SlaveID)); err != nil {
+				h.logger.Error("connect failed", "addr", addr, "error", err)
+			}
+		}()
 	case MsgTypeDisconnect:
-		if err := h.broker.Disconnect(h.ctx); err != nil {
-			h.logger.Error("disconnect failed", "error", err)
-		}
+		go func() {
+			if err := h.broker.Disconnect(h.ctx); err != nil {
+				h.logger.Error("disconnect failed", "error", err)
+			}
+		}()
 	case MsgTypeSubscribe:
 		h.subscribeClient(cmd.Client, msg.Section)
 	case MsgTypeUnsubscribe:
