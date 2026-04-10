@@ -9,9 +9,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Connection
 
-- [ ] **CONN-01**: User can configure IP address, port, and slave ID for inverter connection
+- [x] **CONN-01**: User can configure IP address, port, and slave ID for inverter connection
 - [x] **CONN-02**: User can connect/disconnect with a button showing connection status
-- [ ] **CONN-03**: Connection state persists across page refreshes (saved to browser localStorage)
+- [x] **CONN-03**: Connection state persists across page refreshes (saved to browser localStorage)
 - [x] **CONN-04**: Backend auto-reconnects on connection loss with exponential backoff
 - [x] **CONN-05**: Modbus operations serialized through single-goroutine command channel (concurrency safety)
 
@@ -116,9 +116,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONN-01 | Phase 2 | Pending |
+| CONN-01 | Phase 2 | Complete |
 | CONN-02 | Phase 2 | Complete |
-| CONN-03 | Phase 2 | Pending |
+| CONN-03 | Phase 2 | Complete |
 | CONN-04 | Phase 1 | Complete |
 | CONN-05 | Phase 1 | Complete |
 | SYS-01 | Phase 3 | Pending |
