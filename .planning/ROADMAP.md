@@ -69,9 +69,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01-PLAN.md -- ProbeGroup struct, enum tables, full register definitions, fault decoder, PV generator
-- [ ] 03-02-PLAN.md -- Hub grouped section data, fault reading, system time composition, configure message, CLI flag
-- [ ] 03-03-PLAN.md -- Frontend grouped renderer, fault card, PV dropdown, multi-column layout, nav changes
+- [x] 03-01-PLAN.md -- ProbeGroup struct, enum tables, full register definitions, fault decoder, PV generator
+- [x] 03-02-PLAN.md -- Hub grouped section data, fault reading, system time composition, configure message, CLI flag
+- [x] 03-03-PLAN.md -- Frontend grouped renderer, fault card, PV dropdown, multi-column layout, nav changes
 
 ### Phase 4: Battery Overview and Statistics
 **Goal**: Users can view global battery status per channel, BMS summary info, online battery bitmap, configurable topology, and electricity generation/consumption statistics
@@ -82,8 +82,13 @@ Plans:
   2. User can view BMS global info (manufacturer, protocol, cell type, total voltage, current, SOC, SOH) and the online battery bitmap showing which packs are online
   3. User can configure battery topology (inputs 1-2, towers per input 1-4, packs per tower 4-10) with sensible defaults (1/2/10)
   4. User can view daily and total electricity statistics: generation, consumption, bought, sold, battery charge, battery discharge
-**Plans**: TBD
+**Plans:** 3 plans
 **UI hint**: yes
+
+Plans:
+- [x] 04-01-PLAN.md -- U32 register support, battery state enum, register definitions for Battery/BMS/Statistics sections
+- [ ] 04-02-PLAN.md -- Hub section registration, BMS write-read cycle, topology configure, CLI flags, API defaults
+- [ ] 04-03-PLAN.md -- Frontend bitmap grid widget, protection card, topology dropdowns, nav enablement, CSS
 
 ### Phase 5: Deep Battery Pack Diagnostics
 **Goal**: Users can drill into individual battery packs to inspect cell-level voltages, temperatures, and fault states -- the tool's primary differentiator
@@ -107,5 +112,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. Foundation and Modbus Service | 3/3 | Done | - |
 | 2. WebSocket Hub, API, and Connection UI | 3/3 | Done | 2026-04-10 |
 | 3. Core Monitoring Sections | 0/3 | In progress | - |
-| 4. Battery Overview and Statistics | 0/0 | Not started | - |
+| 4. Battery Overview and Statistics | 0/3 | Planned | - |
 | 5. Deep Battery Pack Diagnostics | 0/0 | Not started | - |

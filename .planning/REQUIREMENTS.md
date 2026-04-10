@@ -17,39 +17,39 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### System Information
 
-- [ ] **SYS-01**: User can view device serial number and firmware versions (HW, comm SW, master/slave DSP, safety cert)
-- [ ] **SYS-02**: User can view system running state with human-readable label (Wait/Detect/Grid/EPS/Fault/etc.)
-- [ ] **SYS-03**: User can view system time, ambient temperatures, radiator/module temperatures
-- [ ] **SYS-04**: User can view insulation impedance and fan speed
-- [ ] **SYS-05**: User can view active faults with human-readable descriptions (decoded from fault registers 0x0405-0x043D)
+- [x] **SYS-01**: User can view device serial number and firmware versions (HW, comm SW, master/slave DSP, safety cert)
+- [x] **SYS-02**: User can view system running state with human-readable label (Wait/Detect/Grid/EPS/Fault/etc.)
+- [x] **SYS-03**: User can view system time, ambient temperatures, radiator/module temperatures
+- [x] **SYS-04**: User can view insulation impedance and fan speed
+- [x] **SYS-05**: User can view active faults with human-readable descriptions (decoded from fault registers 0x0405-0x043D)
 
 ### Grid Connected
 
-- [ ] **GRID-01**: User can view grid frequency and total active/reactive/apparent power
-- [ ] **GRID-02**: User can view per-phase data: voltage, current, active power, reactive power, power factor (R/S/T)
-- [ ] **GRID-03**: User can view PCC active/reactive power
-- [ ] **GRID-04**: User can view line voltages (L1/L2/L3), total load power, total power factor, generation efficiency
+- [x] **GRID-01**: User can view grid frequency and total active/reactive/apparent power
+- [x] **GRID-02**: User can view per-phase data: voltage, current, active power, reactive power, power factor (R/S/T)
+- [x] **GRID-03**: User can view PCC active/reactive power
+- [x] **GRID-04**: User can view line voltages (L1/L2/L3), total load power, total power factor, generation efficiency
 
 ### EPS / Grid Disconnected
 
-- [ ] **EPS-01**: User can view EPS load active/reactive/apparent power
-- [ ] **EPS-02**: User can view output voltage frequency
-- [ ] **EPS-03**: User can view per-phase inverter output voltage and load current (R/S/T)
-- [ ] **EPS-04**: User can view emergency load voltage per phase
+- [x] **EPS-01**: User can view EPS load active/reactive/apparent power
+- [x] **EPS-02**: User can view output voltage frequency
+- [x] **EPS-03**: User can view per-phase inverter output voltage and load current (R/S/T)
+- [x] **EPS-04**: User can view emergency load voltage per phase
 
 ### PV Input
 
-- [ ] **PV-01**: User can view per-channel voltage, current, and power for each PV input
-- [ ] **PV-02**: User can configure number of PV channels (2-16, default 2) via dropdown
-- [ ] **PV-03**: User can view total PV power
+- [x] **PV-01**: User can view per-channel voltage, current, and power for each PV input
+- [x] **PV-02**: User can configure number of PV channels (2-16, default 2) via dropdown
+- [x] **PV-03**: User can view total PV power
 
 ### Battery
 
-- [ ] **BAT-01**: User can view global battery info per channel: voltage, current, power, env temp, SOC, SOH, cycles
-- [ ] **BAT-02**: User can view battery state per channel (charge/discharge/sleep/fault/loss) with human-readable labels
-- [ ] **BAT-03**: User can view charge/discharge limits, total charge/discharge power, average SOC, total capacity
-- [ ] **BAT-04**: User can view BMS global info: manufacturer, protocol version, cell type, total voltage, current, avg temp, SOC, SOH
-- [ ] **BAT-05**: User can view online battery bitmap showing which packs are online
+- [x] **BAT-01**: User can view global battery info per channel: voltage, current, power, env temp, SOC, SOH, cycles
+- [x] **BAT-02**: User can view battery state per channel (charge/discharge/sleep/fault/loss) with human-readable labels
+- [x] **BAT-03**: User can view charge/discharge limits, total charge/discharge power, average SOC, total capacity
+- [x] **BAT-04**: User can view BMS global info: manufacturer, protocol version, cell type, total voltage, current, avg temp, SOC, SOH
+- [x] **BAT-05**: User can view online battery bitmap showing which packs are online
 - [ ] **BAT-06**: User can configure battery topology: number of inputs (1-2), towers per input (1-4), packs per tower (4-10), with defaults 1/2/10
 - [ ] **BAT-07**: User can navigate hierarchically: select input → select tower → select pack to view details
 - [ ] **BAT-08**: User can view individual pack details: SN, total voltage, SOC, current, remaining/full capacity, cycles, cell count
@@ -59,9 +59,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Electricity Statistics
 
-- [ ] **STAT-01**: User can view daily and total: power generation, load consumption
-- [ ] **STAT-02**: User can view daily and total: power bought from grid, power sold to grid
-- [ ] **STAT-03**: User can view daily and total: battery charge, battery discharge
+- [x] **STAT-01**: User can view daily and total: power generation, load consumption
+- [x] **STAT-02**: User can view daily and total: power bought from grid, power sold to grid
+- [x] **STAT-03**: User can view daily and total: battery charge, battery discharge
 
 ### Real-time Updates
 
@@ -76,7 +76,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **INFRA-01**: Application builds as single Go binary with embedded HTML/JS/CSS
 - [x] **INFRA-02**: Backend uses structured logging (slog) with configurable log level
 - [x] **INFRA-03**: Modbus request/response details logged for troubleshooting
-- [ ] **INFRA-04**: Desktop-optimized layout using full page width for parameter display
+- [x] **INFRA-04**: Desktop-optimized layout using full page width for parameter display
 
 ## v2 Requirements
 
@@ -121,36 +121,36 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONN-03 | Phase 2 | Complete |
 | CONN-04 | Phase 1 | Complete |
 | CONN-05 | Phase 1 | Complete |
-| SYS-01 | Phase 3 | Pending |
-| SYS-02 | Phase 3 | Pending |
-| SYS-03 | Phase 3 | Pending |
-| SYS-04 | Phase 3 | Pending |
-| SYS-05 | Phase 3 | Pending |
-| GRID-01 | Phase 3 | Pending |
-| GRID-02 | Phase 3 | Pending |
-| GRID-03 | Phase 3 | Pending |
-| GRID-04 | Phase 3 | Pending |
-| EPS-01 | Phase 3 | Pending |
-| EPS-02 | Phase 3 | Pending |
-| EPS-03 | Phase 3 | Pending |
-| EPS-04 | Phase 3 | Pending |
-| PV-01 | Phase 3 | Pending |
-| PV-02 | Phase 3 | Pending |
-| PV-03 | Phase 3 | Pending |
-| BAT-01 | Phase 4 | Pending |
-| BAT-02 | Phase 4 | Pending |
-| BAT-03 | Phase 4 | Pending |
-| BAT-04 | Phase 4 | Pending |
-| BAT-05 | Phase 4 | Pending |
+| SYS-01 | Phase 3 | Complete |
+| SYS-02 | Phase 3 | Complete |
+| SYS-03 | Phase 3 | Complete |
+| SYS-04 | Phase 3 | Complete |
+| SYS-05 | Phase 3 | Complete |
+| GRID-01 | Phase 3 | Complete |
+| GRID-02 | Phase 3 | Complete |
+| GRID-03 | Phase 3 | Complete |
+| GRID-04 | Phase 3 | Complete |
+| EPS-01 | Phase 3 | Complete |
+| EPS-02 | Phase 3 | Complete |
+| EPS-03 | Phase 3 | Complete |
+| EPS-04 | Phase 3 | Complete |
+| PV-01 | Phase 3 | Complete |
+| PV-02 | Phase 3 | Complete |
+| PV-03 | Phase 3 | Complete |
+| BAT-01 | Phase 4 | Complete |
+| BAT-02 | Phase 4 | Complete |
+| BAT-03 | Phase 4 | Complete |
+| BAT-04 | Phase 4 | Complete |
+| BAT-05 | Phase 4 | Complete |
 | BAT-06 | Phase 4 | Pending |
 | BAT-07 | Phase 5 | Pending |
 | BAT-08 | Phase 5 | Pending |
 | BAT-09 | Phase 5 | Pending |
 | BAT-10 | Phase 5 | Pending |
 | BAT-11 | Phase 5 | Pending |
-| STAT-01 | Phase 4 | Pending |
-| STAT-02 | Phase 4 | Pending |
-| STAT-03 | Phase 4 | Pending |
+| STAT-01 | Phase 4 | Complete |
+| STAT-02 | Phase 4 | Complete |
+| STAT-03 | Phase 4 | Complete |
 | RT-01 | Phase 2 | Complete |
 | RT-02 | Phase 2 | Complete |
 | RT-03 | Phase 2 | Complete |
@@ -159,7 +159,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
-| INFRA-04 | Phase 3 | Pending |
+| INFRA-04 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 44 total
