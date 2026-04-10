@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	"sofar-hyd-diag/internal/broker"
+	"sofar-hyd-diag/internal/hub"
 )
 
 //go:embed static/*
@@ -23,8 +26,25 @@ type StatusResponse struct {
 	InverterAddr    string `json:"inverter_addr"`
 }
 
-// SetupRoutes configures the chi router with API endpoints and embedded static file serving.
-func SetupRoutes(r chi.Router, b *broker.Broker, startTime time.Time) {
+// DefaultsConfig holds CLI default values for the /api/defaults endpoint (D-14).
+type DefaultsConfig struct {
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	SlaveID int    `json:"slave_id"`
+}
+
+// upgrader configures WebSocket upgrade. CheckOrigin returns true because this is
+// a local network diagnostic tool with no public internet exposure (T-02-10).
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+// SetupRoutes configures the chi router with API endpoints, WebSocket handler, and embedded static file serving.
+func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsConfig, startTime time.Time, logger *slog.Logger) {
 	// API routes
 	r.Get("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		status := StatusResponse{
@@ -37,6 +57,28 @@ func SetupRoutes(r chi.Router, b *broker.Broker, startTime time.Time) {
 			// Connection likely dropped; log for diagnostics but nothing to send back
 			_ = err
 		}
+	})
+
+	// GET /api/defaults returns CLI flag defaults as JSON (D-14).
+	// Browser uses this to pre-populate the connection form.
+	r.Get("/api/defaults", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(defaults); err != nil {
+			_ = err
+		}
+	})
+
+	// GET /ws upgrades HTTP to WebSocket and registers the client with the hub (D-06).
+	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			logger.Error("websocket upgrade failed", "error", err)
+			return
+		}
+		client := hub.NewClient(h, conn, logger.With("component", "ws-client"))
+		h.Register(client)
+		go client.WritePump()
+		go client.ReadPump()
 	})
 
 	// Serve embedded static files at root /

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"sofar-hyd-diag/internal/broker"
+	"sofar-hyd-diag/internal/hub"
 	"sofar-hyd-diag/web"
 )
 
@@ -71,6 +72,10 @@ func main() {
 	b := broker.New(logger.With("component", "broker"), inverterAddr, byte(*slaveID), useRTU)
 	go b.Run(ctx)
 
+	// Create WebSocket hub (D-03, D-29)
+	wsHub := hub.NewHub(b, logger.With("component", "hub"))
+	go wsHub.Run(ctx)
+
 	// Create chi router with middleware
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -84,7 +89,12 @@ func main() {
 
 	// Setup web routes
 	startTime := time.Now()
-	web.SetupRoutes(r, b, startTime)
+	defaults := web.DefaultsConfig{
+		Host:    *inverterHost,
+		Port:    *inverterPort,
+		SlaveID: *slaveID,
+	}
+	web.SetupRoutes(r, b, wsHub, defaults, startTime, logger)
 
 	// Create HTTP server
 	srv := &http.Server{
