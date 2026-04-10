@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -10,6 +11,9 @@ import (
 
 	"sofar-hyd-diag/internal/modbus"
 )
+
+// ErrBrokerClosed is returned when an operation is attempted on a closed broker.
+var ErrBrokerClosed = errors.New("broker closed")
 
 // CmdType represents the type of command sent to the broker.
 type CmdType int
@@ -60,6 +64,7 @@ type command struct {
 // and emits connection state change events.
 type Broker struct {
 	commands      chan command
+	done          chan struct{}
 	logger        *slog.Logger
 	addr          string
 	slaveID       byte
@@ -76,6 +81,7 @@ type Broker struct {
 func New(logger *slog.Logger, addr string, slaveID byte, useRTU bool) *Broker {
 	b := &Broker{
 		commands:      make(chan command, 32),
+		done:          make(chan struct{}),
 		logger:        logger,
 		addr:          addr,
 		slaveID:       slaveID,
@@ -108,11 +114,10 @@ func (b *Broker) Run(ctx context.Context) {
 		case <-ctx.Done():
 			b.cleanup()
 			return
-		case cmd, ok := <-b.commands:
-			if !ok {
-				b.cleanup()
-				return
-			}
+		case <-b.done:
+			b.cleanup()
+			return
+		case cmd := <-b.commands:
 			b.execute(ctx, cmd)
 		}
 	}
@@ -128,6 +133,8 @@ func (b *Broker) ReadRegisters(ctx context.Context, addr uint16, count uint16) (
 		request:  ReadRequest{Addr: addr, Count: count},
 		response: respCh,
 	}:
+	case <-b.done:
+		return nil, ErrBrokerClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -150,6 +157,8 @@ func (b *Broker) WriteRegister(ctx context.Context, addr uint16, value uint16) e
 		request:  WriteRequest{Addr: addr, Value: value},
 		response: respCh,
 	}:
+	case <-b.done:
+		return ErrBrokerClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -172,6 +181,12 @@ func (b *Broker) ReadBatch(ctx context.Context, reads []ReadRequest) []Result {
 		request:  BatchReadRequest{Reads: reads},
 		response: respCh,
 	}:
+	case <-b.done:
+		results := make([]Result, len(reads))
+		for i := range results {
+			results[i] = Result{Err: ErrBrokerClosed}
+		}
+		return results
 	case <-ctx.Done():
 		results := make([]Result, len(reads))
 		for i := range results {
@@ -208,9 +223,10 @@ func (b *Broker) Address() string {
 	return b.addr
 }
 
-// Close shuts down the broker by closing the command channel.
+// Close shuts down the broker. Safe to call from any goroutine.
+// Signals the Run loop and all pending callers to return.
 func (b *Broker) Close() {
-	close(b.commands)
+	close(b.done)
 }
 
 // setState updates the broker's connection state and emits a state event.
