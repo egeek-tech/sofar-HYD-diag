@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"sofar-hyd-diag/internal/modbus"
@@ -64,7 +65,7 @@ type Broker struct {
 	slaveID       byte
 	useRTU        bool
 	conn          net.Conn
-	state         State
+	state         atomic.Int32
 	stateCh       chan StateEvent
 	backoff       *Backoff
 	interReadDelay time.Duration
@@ -73,17 +74,18 @@ type Broker struct {
 
 // New creates a new Broker. Call Run() in a goroutine to start processing commands.
 func New(logger *slog.Logger, addr string, slaveID byte, useRTU bool) *Broker {
-	return &Broker{
+	b := &Broker{
 		commands:      make(chan command, 32),
 		logger:        logger,
 		addr:          addr,
 		slaveID:       slaveID,
 		useRTU:        useRTU,
-		state:         StateDisconnected,
 		stateCh:       make(chan StateEvent, 16),
 		backoff:       NewBackoff(1*time.Second, 30*time.Second),
 		interReadDelay: 500 * time.Millisecond,
 	}
+	b.state.Store(int32(StateDisconnected))
+	return b
 }
 
 // SetInterReadDelay overrides the default 500ms inter-read delay.
@@ -191,8 +193,9 @@ func (b *Broker) ReadBatch(ctx context.Context, reads []ReadRequest) []Result {
 }
 
 // CurrentState returns the broker's current connection state.
+// Safe for concurrent use from any goroutine.
 func (b *Broker) CurrentState() State {
-	return b.state
+	return State(b.state.Load())
 }
 
 // StateEvents returns a read-only channel for connection state change events.
@@ -212,7 +215,7 @@ func (b *Broker) Close() {
 
 // setState updates the broker's connection state and emits a state event.
 func (b *Broker) setState(s State, err error) {
-	b.state = s
+	b.state.Store(int32(s))
 	select {
 	case b.stateCh <- StateEvent{State: s, Err: err}:
 	default:
