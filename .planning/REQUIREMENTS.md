@@ -10,7 +10,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Connection
 
 - [ ] **CONN-01**: User can configure IP address, port, and slave ID for inverter connection
-- [ ] **CONN-02**: User can connect/disconnect with a button showing connection status
+- [x] **CONN-02**: User can connect/disconnect with a button showing connection status
 - [ ] **CONN-03**: Connection state persists across page refreshes (saved to browser localStorage)
 - [x] **CONN-04**: Backend auto-reconnects on connection loss with exponential backoff
 - [x] **CONN-05**: Modbus operations serialized through single-goroutine command channel (concurrency safety)
@@ -69,7 +69,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **RT-02**: User can toggle auto-refresh per section via button
 - [ ] **RT-03**: Successfully refreshed parameters show light-green background flash
 - [ ] **RT-04**: Failed parameter reads show light-red background
-- [ ] **RT-05**: Real-time updates delivered via WebSocket (not polling)
+- [x] **RT-05**: Real-time updates delivered via WebSocket (not polling)
 
 ### Infrastructure
 
@@ -117,7 +117,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CONN-01 | Phase 2 | Pending |
-| CONN-02 | Phase 2 | Pending |
+| CONN-02 | Phase 2 | Complete |
 | CONN-03 | Phase 2 | Pending |
 | CONN-04 | Phase 1 | Complete |
 | CONN-05 | Phase 1 | Complete |
@@ -155,7 +155,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RT-02 | Phase 2 | Pending |
 | RT-03 | Phase 2 | Pending |
 | RT-04 | Phase 2 | Pending |
-| RT-05 | Phase 2 | Pending |
+| RT-05 | Phase 2 | Complete |
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
