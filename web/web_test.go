@@ -40,8 +40,8 @@ func TestStatusEndpoint(t *testing.T) {
 		t.Fatalf("failed to decode JSON: %v", err)
 	}
 
-	if resp.ConnectionState != "disconnected" {
-		t.Errorf("expected connection_state 'disconnected', got %q", resp.ConnectionState)
+	if resp.ConnectionState != "dormant" {
+		t.Errorf("expected connection_state 'dormant', got %q", resp.ConnectionState)
 	}
 	if resp.InverterAddr != "127.0.0.1:1" {
 		t.Errorf("expected inverter_addr '127.0.0.1:1', got %q", resp.InverterAddr)
