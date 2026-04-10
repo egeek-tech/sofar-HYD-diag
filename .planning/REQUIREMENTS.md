@@ -50,7 +50,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **BAT-03**: User can view charge/discharge limits, total charge/discharge power, average SOC, total capacity
 - [x] **BAT-04**: User can view BMS global info: manufacturer, protocol version, cell type, total voltage, current, avg temp, SOC, SOH
 - [x] **BAT-05**: User can view online battery bitmap showing which packs are online
-- [ ] **BAT-06**: User can configure battery topology: number of inputs (1-2), towers per input (1-4), packs per tower (4-10), with defaults 1/2/10
+- [x] **BAT-06**: User can configure battery topology: number of inputs (1-2), towers per input (1-4), packs per tower (4-10), with defaults 1/2/10
 - [ ] **BAT-07**: User can navigate hierarchically: select input → select tower → select pack to view details
 - [ ] **BAT-08**: User can view individual pack details: SN, total voltage, SOC, current, remaining/full capacity, cycles, cell count
 - [ ] **BAT-09**: User can view 24 cell voltages per pack with min/max/spread highlighting
@@ -142,7 +142,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BAT-03 | Phase 4 | Complete |
 | BAT-04 | Phase 4 | Complete |
 | BAT-05 | Phase 4 | Complete |
-| BAT-06 | Phase 4 | Pending |
+| BAT-06 | Phase 4 | Complete |
 | BAT-07 | Phase 5 | Pending |
 | BAT-08 | Phase 5 | Pending |
 | BAT-09 | Phase 5 | Pending |

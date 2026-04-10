@@ -87,7 +87,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md -- U32 register support, battery state enum, register definitions for Battery/BMS/Statistics sections
-- [ ] 04-02-PLAN.md -- Hub section registration, BMS write-read cycle, topology configure, CLI flags, API defaults
+- [x] 04-02-PLAN.md -- Hub section registration, BMS write-read cycle, topology configure, CLI flags, API defaults
 - [ ] 04-03-PLAN.md -- Frontend bitmap grid widget, protection card, topology dropdowns, nav enablement, CSS
 
 ### Phase 5: Deep Battery Pack Diagnostics
