@@ -13,7 +13,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **CONN-02**: User can connect/disconnect with a button showing connection status
 - [ ] **CONN-03**: Connection state persists across page refreshes (saved to browser localStorage)
 - [ ] **CONN-04**: Backend auto-reconnects on connection loss with exponential backoff
-- [ ] **CONN-05**: Modbus operations serialized through single-goroutine command channel (concurrency safety)
+- [x] **CONN-05**: Modbus operations serialized through single-goroutine command channel (concurrency safety)
 
 ### System Information
 
@@ -120,7 +120,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONN-02 | Phase 2 | Pending |
 | CONN-03 | Phase 2 | Pending |
 | CONN-04 | Phase 1 | Pending |
-| CONN-05 | Phase 1 | Pending |
+| CONN-05 | Phase 1 | Complete |
 | SYS-01 | Phase 3 | Pending |
 | SYS-02 | Phase 3 | Pending |
 | SYS-03 | Phase 3 | Pending |
