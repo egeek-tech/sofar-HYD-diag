@@ -30,7 +30,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All Modbus operations are serialized through a single-goroutine command channel -- concurrent callers never corrupt the TCP connection
   4. Backend logs are structured (JSON via slog) with configurable log level, and Modbus request/response details appear in debug logs
   5. Auto-reconnect recovers from connection drops with exponential backoff without manual intervention
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md -- Project scaffold and Modbus TCP/RTU protocol extraction
+- [ ] 01-02-PLAN.md -- Register definitions and concurrency-safe broker with auto-reconnect
+- [ ] 01-03-PLAN.md -- Web package, HTTP server entry point, and integration wiring
 
 ### Phase 2: WebSocket Hub, API, and Connection UI
 **Goal**: Users can configure and manage the inverter connection through the browser, and the real-time WebSocket infrastructure is operational for all subsequent sections
@@ -89,7 +94,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and Modbus Service | 0/0 | Not started | - |
+| 1. Foundation and Modbus Service | 0/3 | Planned | - |
 | 2. WebSocket Hub, API, and Connection UI | 0/0 | Not started | - |
 | 3. Core Monitoring Sections | 0/0 | Not started | - |
 | 4. Battery Overview and Statistics | 0/0 | Not started | - |
