@@ -52,7 +52,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md -- Broker dormant start, Reconfigure, Disconnect + hub message types and broker interface
-- [ ] 02-02-PLAN.md -- Hub event loop, client read/write pumps, section registry, timer management, demo section
+- [x] 02-02-PLAN.md -- Hub event loop, client read/write pumps, section registry, timer management, demo section
 - [ ] 02-03-PLAN.md -- API endpoints, server wiring, and complete frontend rewrite with sidebar layout
 
 ### Phase 3: Core Monitoring Sections

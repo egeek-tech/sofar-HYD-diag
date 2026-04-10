@@ -65,10 +65,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Real-time Updates
 
-- [ ] **RT-01**: Parameters load lazily -- only when user navigates to a section
-- [ ] **RT-02**: User can toggle auto-refresh per section via button
-- [ ] **RT-03**: Successfully refreshed parameters show light-green background flash
-- [ ] **RT-04**: Failed parameter reads show light-red background
+- [x] **RT-01**: Parameters load lazily -- only when user navigates to a section
+- [x] **RT-02**: User can toggle auto-refresh per section via button
+- [x] **RT-03**: Successfully refreshed parameters show light-green background flash
+- [x] **RT-04**: Failed parameter reads show light-red background
 - [x] **RT-05**: Real-time updates delivered via WebSocket (not polling)
 
 ### Infrastructure
@@ -151,10 +151,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STAT-01 | Phase 4 | Pending |
 | STAT-02 | Phase 4 | Pending |
 | STAT-03 | Phase 4 | Pending |
-| RT-01 | Phase 2 | Pending |
-| RT-02 | Phase 2 | Pending |
-| RT-03 | Phase 2 | Pending |
-| RT-04 | Phase 2 | Pending |
+| RT-01 | Phase 2 | Complete |
+| RT-02 | Phase 2 | Complete |
+| RT-03 | Phase 2 | Complete |
+| RT-04 | Phase 2 | Complete |
 | RT-05 | Phase 2 | Complete |
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
