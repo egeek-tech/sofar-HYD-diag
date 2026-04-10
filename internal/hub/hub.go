@@ -352,6 +352,7 @@ func (h *Hub) handleTimerTick(sectionName string) {
 
 // triggerSectionRead initiates a Modbus read for all probes in a section.
 // The read runs in a goroutine; results are broadcast to section subscribers.
+// BMS and battery sections have custom read cycles; all others use the standard path.
 func (h *Hub) triggerSectionRead(sectionName string) {
 	sec, ok := h.sections[sectionName]
 	if !ok {
@@ -360,6 +361,23 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 
 	sec.reading.Store(true)
 
+	// Dispatch to custom read handlers for special sections
+	switch sectionName {
+	case "bms":
+		h.triggerBMSRead(sec)
+		return
+	case "battery":
+		h.triggerBatteryRead(sec)
+		return
+	}
+
+	// Standard read path for system, grid, eps, pv, stats
+	h.triggerStandardRead(sectionName, sec)
+}
+
+// triggerStandardRead performs a standard grouped read for a section.
+// Handles system time composition and fault decoding for the system section.
+func (h *Hub) triggerStandardRead(sectionName string, sec *Section) {
 	// Build read requests from probes
 	reads := make([]broker.ReadRequest, len(sec.Probes))
 	for i, p := range sec.Probes {
@@ -525,6 +543,308 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 	}()
 }
 
+// triggerBatteryRead performs a battery section read with auto-detection of channel count.
+// If the pack count register (0x066A) indicates a different channel count than currently
+// configured, the section is rebuilt and re-read with the correct number of channels.
+func (h *Hub) triggerBatteryRead(sec *Section) {
+	groups := sec.Groups
+	probes := sec.Probes
+
+	reads := make([]broker.ReadRequest, len(probes))
+	for i, p := range probes {
+		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
+	}
+
+	go func() {
+		defer sec.reading.Store(false)
+		results := h.broker.ReadBatch(h.ctx, reads)
+
+		// Find pack count value from 0x066A result to auto-detect channel count
+		packCountIdx := -1
+		for i, p := range probes {
+			if p.Addr == 0x066A {
+				packCountIdx = i
+				break
+			}
+		}
+		if packCountIdx >= 0 && results[packCountIdx].Err == nil && len(results[packCountIdx].Data) >= 2 {
+			detected := int(binary.BigEndian.Uint16(results[packCountIdx].Data[:2]))
+			if detected > 0 && detected <= 8 {
+				// Subtract Global Stats group to get current channel count
+				currentChannels := len(groups) - 1
+				if detected != currentChannels {
+					// Rebuild battery section with detected channel count
+					newGroups := register.GenerateBatteryGroups(detected)
+					h.funcs <- func() {
+						sec.Groups = newGroups
+						sec.Probes = flattenProbeGroups(newGroups)
+						h.logger.Info("battery section auto-detected channels", "channels", detected)
+						// Re-trigger read with new probes
+						h.triggerSectionRead("battery")
+					}
+					return
+				}
+			}
+		}
+
+		// Build grouped data using standard group building logic
+		msg := h.buildGroupedResult("battery", groups, probes, results)
+		h.results <- sectionResult{section: "battery", msg: msg}
+	}()
+}
+
+// triggerBMSRead performs the BMS section's custom write-read cycle (D-09, D-14).
+// It reads BMS info registers, detects topology from 0x900D, performs write-0x9020/read-0x9022
+// per tower for bitmap, and composes the BMS clock from 0x9004+0x9005.
+func (h *Hub) triggerBMSRead(sec *Section) {
+	groups := sec.Groups
+	probes := sec.Probes
+	inputs := h.defaultBatInputs
+	towers := h.defaultBatTowers
+	packs := h.defaultBatPacks
+
+	// Build standard read requests for BMS info probes
+	reads := make([]broker.ReadRequest, len(probes))
+	for i, p := range probes {
+		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
+	}
+
+	// Also read protection registers
+	protectionProbes := register.BMSProtectionProbes()
+	for _, p := range protectionProbes {
+		reads = append(reads, broker.ReadRequest{Addr: p.Addr, Count: p.Count})
+	}
+
+	go func() {
+		defer sec.reading.Store(false)
+
+		// Step 1: Read BMS info + protection registers
+		results := h.broker.ReadBatch(h.ctx, reads)
+
+		// Step 2: Detect topology from 0x900D
+		var detectedStr string
+		var mismatch bool
+		for i, p := range probes {
+			if p.Addr == 0x900D && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
+				val := binary.BigEndian.Uint16(results[i].Data[:2])
+				pStr, pPack := register.DecodeTopology(val)
+				detectedStr = fmt.Sprintf("%d strings x %d packs", pStr, pPack)
+				totalTowers := inputs * towers
+				if pStr != totalTowers || pPack != packs {
+					mismatch = true
+				}
+				break
+			}
+		}
+
+		// Step 3: Write-read cycle for bitmap per tower (D-09, T-04-04)
+		totalTowers := inputs * towers
+		onlineBitmaps := make([]uint16, totalTowers)
+		for t := 0; t < totalTowers; t++ {
+			// Encode group number in bits 8-11 (T-04-04: constrained to 0-15)
+			queryVal := uint16(t&0x0F) << 8
+			if err := h.broker.WriteRegister(h.ctx, 0x9020, queryVal); err != nil {
+				h.logger.Error("BMS bitmap write failed", "tower", t, "error", err)
+				continue
+			}
+			time.Sleep(1 * time.Second) // BMS pack-switch delay per D-09
+			bitmapReads := []broker.ReadRequest{{Addr: 0x9022, Count: 1}}
+			bitmapResults := h.broker.ReadBatch(h.ctx, bitmapReads)
+			if len(bitmapResults) > 0 && bitmapResults[0].Err == nil && len(bitmapResults[0].Data) >= 2 {
+				onlineBitmaps[t] = binary.BigEndian.Uint16(bitmapResults[0].Data[:2])
+			}
+		}
+
+		// Step 4: Build BMS info GroupData
+		groupDataSlice := h.buildBMSGroupData(groups, probes, results[:len(probes)])
+
+		// Step 5: Add bitmap group (Type="bitmap")
+		bitmapGroup := GroupData{
+			Name: "Battery Topology",
+			Type: "bitmap",
+			Bitmap: &BitmapData{
+				Towers:           totalTowers,
+				PacksPerTower:    packs,
+				Online:           onlineBitmaps,
+				DetectedTopology: detectedStr,
+				Mismatch:         mismatch,
+			},
+		}
+		groupDataSlice = append(groupDataSlice, bitmapGroup)
+
+		// Step 6: Add protection group (Type="protection")
+		protResults := results[len(probes):]
+		protGroup := h.buildProtectionGroup(protectionProbes, protResults)
+		groupDataSlice = append(groupDataSlice, protGroup)
+
+		h.results <- sectionResult{
+			section: "bms",
+			msg:     NewGroupedSectionData("bms", groupDataSlice, nil),
+		}
+	}()
+}
+
+// buildGroupedResult builds a standard grouped OutboundMessage from probe groups and results.
+// Used by battery and stats sections that have no special composition logic.
+func (h *Hub) buildGroupedResult(section string, groups []register.ProbeGroup, probes []register.Probe, results []broker.Result) OutboundMessage {
+	var hasError bool
+	var errMsg string
+
+	for _, r := range results {
+		if r.Err != nil {
+			hasError = true
+			errMsg = r.Err.Error()
+		}
+	}
+
+	groupDataSlice := make([]GroupData, 0, len(groups))
+	probeIdx := 0
+	for _, g := range groups {
+		gd := GroupData{
+			Name:   g.Name,
+			Layout: g.Layout,
+			Items:  make(map[string]string),
+		}
+		for _, p := range g.Probes {
+			if probeIdx >= len(results) {
+				break
+			}
+			r := results[probeIdx]
+			probeIdx++
+			if r.Err != nil {
+				continue
+			}
+			gd.Items[p.Name] = FormatValue(p, r.Data)
+		}
+		groupDataSlice = append(groupDataSlice, gd)
+	}
+
+	if hasError {
+		return NewSectionError(section, errMsg)
+	}
+	return NewGroupedSectionData(section, groupDataSlice, nil)
+}
+
+// buildBMSGroupData builds GroupData for BMS info groups with special handling for
+// BMS system clock composition (0x9004+0x9005 -> DecodeBMSClock) and SW version composition.
+func (h *Hub) buildBMSGroupData(groups []register.ProbeGroup, probes []register.Probe, results []broker.Result) []GroupData {
+	groupDataSlice := make([]GroupData, 0, len(groups))
+	probeIdx := 0
+
+	for _, g := range groups {
+		gd := GroupData{
+			Name:   g.Name,
+			Layout: g.Layout,
+			Items:  make(map[string]string),
+		}
+
+		// Collect BMS clock registers for composition
+		var clockHi, clockLo uint16
+		var hasClockHi, hasClockLo bool
+
+		// Collect SW version components
+		var swChar string
+		var swMajor, swNonStd, swMinor uint16
+		var hasSWChar, hasSWMajor, hasSWNonStd, hasSWMinor bool
+
+		for _, p := range g.Probes {
+			if probeIdx >= len(results) {
+				break
+			}
+			r := results[probeIdx]
+			probeIdx++
+
+			if r.Err != nil {
+				continue
+			}
+
+			// Handle BMS clock composition: 0x9004 (hi) + 0x9005 (lo) -> DecodeBMSClock
+			switch p.Addr {
+			case 0x9004:
+				if len(r.Data) >= 2 {
+					clockHi = binary.BigEndian.Uint16(r.Data[:2])
+					hasClockHi = true
+				}
+				continue
+			case 0x9005:
+				if len(r.Data) >= 2 {
+					clockLo = binary.BigEndian.Uint16(r.Data[:2])
+					hasClockLo = true
+				}
+				continue
+			// Handle SW version composition: 0x9018 (char) + 0x9019 (major) + 0x901A (non-std) + 0x901B (minor)
+			case 0x9018:
+				swChar = FormatValue(p, r.Data)
+				hasSWChar = true
+				continue
+			case 0x9019:
+				if len(r.Data) >= 2 {
+					swMajor = binary.BigEndian.Uint16(r.Data[:2])
+					hasSWMajor = true
+				}
+				continue
+			case 0x901A:
+				if len(r.Data) >= 2 {
+					swNonStd = binary.BigEndian.Uint16(r.Data[:2])
+					hasSWNonStd = true
+				}
+				continue
+			case 0x901B:
+				if len(r.Data) >= 2 {
+					swMinor = binary.BigEndian.Uint16(r.Data[:2])
+					hasSWMinor = true
+				}
+				continue
+			case 0x900D:
+				// Topology: decode and show human-readable
+				if len(r.Data) >= 2 {
+					val := binary.BigEndian.Uint16(r.Data[:2])
+					pStr, pPack := register.DecodeTopology(val)
+					gd.Items[p.Name] = fmt.Sprintf("%d strings x %d packs (0x%04X)", pStr, pPack, val)
+				}
+				continue
+			}
+
+			gd.Items[p.Name] = FormatValue(p, r.Data)
+		}
+
+		// Compose BMS clock if both halves present
+		if hasClockHi && hasClockLo {
+			clockVal := uint32(clockHi)<<16 | uint32(clockLo)
+			gd.Items["System Clock"] = register.DecodeBMSClock(clockVal)
+		}
+
+		// Compose SW version if all components present
+		if hasSWChar && hasSWMajor && hasSWNonStd && hasSWMinor {
+			gd.Items["SW Version"] = fmt.Sprintf("%s%d.%d.%d", swChar, swMajor, swNonStd, swMinor)
+		}
+
+		groupDataSlice = append(groupDataSlice, gd)
+	}
+
+	return groupDataSlice
+}
+
+// buildProtectionGroup creates a GroupData with Type="protection" from BMS protection/alarm registers.
+// Values are formatted as hex for bitmap inspection.
+func (h *Hub) buildProtectionGroup(probes []register.Probe, results []broker.Result) GroupData {
+	gd := GroupData{
+		Name:  "Protection & Alarms",
+		Type:  "protection",
+		Items: make(map[string]string),
+	}
+	for i, p := range probes {
+		if i >= len(results) || results[i].Err != nil {
+			continue
+		}
+		if len(results[i].Data) >= 2 {
+			val := binary.BigEndian.Uint16(results[i].Data[:2])
+			gd.Items[p.Name] = fmt.Sprintf("0x%04X", val)
+		}
+	}
+	return gd
+}
+
 // sendToClient marshals a message and sends it to a single client.
 // Non-blocking: if the client's send buffer is full, the client is closed.
 func (h *Hub) sendToClient(c *Client, msg OutboundMessage) {
@@ -604,45 +924,97 @@ func (h *Hub) shutdown() {
 	h.logger.Info("hub shut down")
 }
 
-// registerBuiltinSections registers the 4 core monitoring sections (D-24: demo "status" retired).
+// registerBuiltinSections registers core monitoring sections on hub startup.
 func (h *Hub) registerBuiltinSections() {
 	h.RegisterGroupedSection("system", register.SystemGroups)
 	h.RegisterGroupedSection("grid", register.GridGroups)
 	h.RegisterGroupedSection("eps", register.EPSGroups)
 	h.RegisterGroupedSection("pv", register.GeneratePVGroups(h.defaultPVChannels))
+	h.RegisterGroupedSection("battery", register.GenerateBatteryGroups(2)) // default 2 channels, auto-detect on read
+	h.registerBMSSection()
+	h.RegisterGroupedSection("stats", register.StatisticsGroups())
+}
+
+// registerBMSSection creates the BMS section. BMS has a custom read cycle
+// (write-read for bitmap), so it is registered separately.
+func (h *Hub) registerBMSSection() {
+	groups := register.BMSInfoGroups()
+	sec := newGroupedSection("bms", groups, h.timerCh, h.logger)
+	if h.refreshOverride > 0 {
+		sec.SetInterval(h.refreshOverride)
+	}
+	h.sections["bms"] = sec
 }
 
 // handleConfigure handles configure messages (D-15).
-// Currently only "pv" section supports reconfiguration (channel count).
+// Supports "pv" (channel count) and "bms" (topology: inputs, towers, packs).
 func (h *Hub) handleConfigure(cmd ClientCommand) {
 	msg := cmd.Message
-	if msg.Section != "pv" || msg.Config == nil {
-		return // silently ignore non-pv configure or missing config
-	}
-
-	channels := msg.Config.Channels
-	// Clamp to valid range (T-03-03)
-	if channels < 2 {
-		channels = 2
-	}
-	if channels > 16 {
-		channels = 16
-	}
-
-	// Rebuild PV section with new channel count
-	newGroups := register.GeneratePVGroups(channels)
-	sec, ok := h.sections["pv"]
-	if !ok {
+	if msg.Config == nil {
 		return
 	}
 
-	sec.Groups = newGroups
-	sec.Probes = flattenProbeGroups(newGroups)
+	switch msg.Section {
+	case "pv":
+		channels := msg.Config.Channels
+		// Clamp to valid range (T-03-03)
+		if channels < 2 {
+			channels = 2
+		}
+		if channels > 16 {
+			channels = 16
+		}
 
-	h.logger.Info("pv section reconfigured", "channels", channels)
+		// Rebuild PV section with new channel count
+		newGroups := register.GeneratePVGroups(channels)
+		sec, ok := h.sections["pv"]
+		if !ok {
+			return
+		}
 
-	// Trigger immediate re-read if connected and section has subscribers
-	if h.connected && sec.SubscriberCount() > 0 {
-		h.triggerSectionRead("pv")
+		sec.Groups = newGroups
+		sec.Probes = flattenProbeGroups(newGroups)
+
+		h.logger.Info("pv section reconfigured", "channels", channels)
+
+		// Trigger immediate re-read if connected and section has subscribers
+		if h.connected && sec.SubscriberCount() > 0 {
+			h.triggerSectionRead("pv")
+		}
+
+	case "bms":
+		inputs := msg.Config.BatInputs
+		towers := msg.Config.BatTowers
+		packs := msg.Config.BatPacks
+		// Clamp to valid ranges (T-04-03)
+		if inputs < 1 {
+			inputs = 1
+		}
+		if inputs > 2 {
+			inputs = 2
+		}
+		if towers < 1 {
+			towers = 1
+		}
+		if towers > 4 {
+			towers = 4
+		}
+		if packs < 4 {
+			packs = 4
+		}
+		if packs > 10 {
+			packs = 10
+		}
+		h.defaultBatInputs = inputs
+		h.defaultBatTowers = towers
+		h.defaultBatPacks = packs
+		h.logger.Info("bms section reconfigured", "inputs", inputs, "towers", towers, "packs", packs)
+		sec, ok := h.sections["bms"]
+		if !ok {
+			return
+		}
+		if h.connected && sec.SubscriberCount() > 0 {
+			h.triggerSectionRead("bms")
+		}
 	}
 }

@@ -22,15 +22,16 @@ import (
 func newTestRouter() *chi.Mux {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
-	h := hub.NewHub(b, logger)
+	h := hub.NewHub(b, logger, 2, 1, 2, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	go h.Run(ctx)
 	_ = cancel // cleanup happens when test ends (short-lived)
 
 	defaults := web.DefaultsConfig{
-		Host:    "10.5.99.29",
-		Port:    4192,
-		SlaveID: 1,
+		Host:       "10.5.99.29",
+		Port:       4192,
+		SlaveID:    1,
+		PVChannels: 2,
 	}
 	r := chi.NewRouter()
 	web.SetupRoutes(r, b, h, defaults, time.Now(), logger)
@@ -93,17 +94,20 @@ func TestDefaultsEndpoint(t *testing.T) {
 	if resp.SlaveID != 1 {
 		t.Errorf("expected slave_id 1, got %d", resp.SlaveID)
 	}
+	if resp.PVChannels != 2 {
+		t.Errorf("expected pv_channels 2, got %d", resp.PVChannels)
+	}
 }
 
 func TestWSUpgrade(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
-	h := hub.NewHub(b, logger)
+	h := hub.NewHub(b, logger, 2, 1, 2, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.Run(ctx)
 
-	defaults := web.DefaultsConfig{Host: "10.5.99.29", Port: 4192, SlaveID: 1}
+	defaults := web.DefaultsConfig{Host: "10.5.99.29", Port: 4192, SlaveID: 1, PVChannels: 2}
 	r := chi.NewRouter()
 	web.SetupRoutes(r, b, h, defaults, time.Now(), logger)
 
