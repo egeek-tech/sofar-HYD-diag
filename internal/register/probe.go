@@ -10,4 +10,6 @@ type Probe struct {
 	Signed  bool
 	Unit    string
 	Scale   float64
+	Enum    map[uint16]string // optional: value -> human-readable label (D-04)
+	U32     bool              // when true, Count must be 2; FormatValue reads 4 bytes as 32-bit unsigned
 }

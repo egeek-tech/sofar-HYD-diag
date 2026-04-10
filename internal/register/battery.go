@@ -1,50 +1,47 @@
 package register
 
-// BatteryProbes contains battery pack channel 1 register definitions (section 5.1.7).
-// Extracted from main.go.bak scanRegisters() lines 346-352.
-var BatteryProbes = []Probe{
-	{"Bat voltage ch1", 0x0604, 1, false, false, "V", 0.1},
-	{"Bat current ch1", 0x0605, 1, false, true, "A", 0.01},
-	{"Bat power ch1", 0x0606, 1, false, true, "kW", 0.01},
-	{"Bat env temp ch1", 0x0607, 1, false, true, "\u00b0C", 1},
-	{"Bat SOC ch1", 0x0608, 1, false, false, "%", 1},
-	{"Bat SOH ch1", 0x0609, 1, false, false, "%", 1},
-	{"Bat cycles ch1", 0x060A, 1, false, false, "cycles", 1},
-}
+import "fmt"
 
-// BatteryStateProbes contains battery state register definitions (section 5.1.8).
-// Extracted from main.go.bak scanRegisters() lines 355-362.
-var BatteryStateProbes = []Probe{
-	{"Bat charge limit ch1", 0x0644, 1, false, false, "A", 0.01},
-	{"Bat discharge limit ch1", 0x0645, 1, false, false, "A", 0.01},
-	{"Bat state ch1", 0x0646, 1, false, false, "", 0},
-	{"Bat ch/disch power", 0x0667, 1, false, true, "kW", 0.1},
-	{"Avg electricity level", 0x0668, 1, false, false, "%", 1},
-	{"Battery pack SOH", 0x0669, 1, false, false, "%", 1},
-	{"RT battery pack count", 0x066A, 1, false, false, "", 0},
-	{"Total battery capacity", 0x066B, 1, false, false, "Ah", 1},
-}
+// GenerateBatteryGroups dynamically generates ProbeGroup definitions for N battery channels.
+// Each channel has 7 pack info probes (section 5.1.7) at base 0x0604 + 7*(ch-1)
+// and 3 state probes (section 5.1.8) at state base 0x0644 + 4*(ch-1).
+// A final full-width "Global Stats" group is appended with aggregate battery metrics.
+// From Sofar Modbus-G3 V1.38 sections 5.1.7-5.1.8.
+func GenerateBatteryGroups(channels int) []ProbeGroup {
+	groups := make([]ProbeGroup, 0, channels+1)
+	for ch := 1; ch <= channels; ch++ {
+		baseAddr := uint16(0x0604 + 7*(ch-1))
+		stateBase := uint16(0x0644 + 4*(ch-1))
+		groups = append(groups, ProbeGroup{
+			Name:   fmt.Sprintf("Channel %d", ch),
+			Layout: "column",
+			Probes: []Probe{
+				// 7 pack info probes (section 5.1.7)
+				{Name: "Voltage", Addr: baseAddr, Count: 1, Unit: "V", Scale: 0.1},
+				{Name: "Current", Addr: baseAddr + 1, Count: 1, Signed: true, Unit: "A", Scale: 0.01},
+				{Name: "Power", Addr: baseAddr + 2, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+				{Name: "Env Temp", Addr: baseAddr + 3, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
+				{Name: "SOC", Addr: baseAddr + 4, Count: 1, Unit: "%", Scale: 1},
+				{Name: "SOH", Addr: baseAddr + 5, Count: 1, Unit: "%", Scale: 1},
+				{Name: "Cycles", Addr: baseAddr + 6, Count: 1, Unit: "cycles", Scale: 1},
+				// 3 state probes (section 5.1.8)
+				{Name: "Charge Limit", Addr: stateBase, Count: 1, Unit: "A", Scale: 0.01},
+				{Name: "Discharge Limit", Addr: stateBase + 1, Count: 1, Unit: "A", Scale: 0.01},
+				{Name: "State", Addr: stateBase + 2, Count: 1, Enum: BatteryStateEnum},
+			},
+		})
+	}
 
-// BMSProbes contains BMS info register definitions (section 5.10.1).
-// Extracted from main.go.bak scanRegisters() lines 369-380.
-var BMSProbes = []Probe{
-	{"BMS CAN protocol ver", 0x9006, 1, false, false, "", 0},
-	{"BMS Manufacturer", 0x9007, 4, true, false, "", 0},
-	{"BMS Version number", 0x900B, 1, false, false, "", 0},
-	{"BMS Cell type", 0x900C, 1, false, false, "", 0},
-	{"BMS Remaining capacity", 0x900E, 1, false, false, "%", 1},
-	{"BMS Total voltage", 0x900F, 1, false, false, "V", 0.1},
-	{"BMS Total current", 0x9010, 1, false, true, "A", 0.1},
-	{"BMS Avg cell temp", 0x9011, 1, false, true, "\u00b0C", 0.1},
-	{"BMS SOC", 0x9012, 1, false, false, "%", 1},
-	{"BMS Health level", 0x9013, 1, false, false, "%", 1},
-	{"BMS Online bitmap", 0x9022, 1, false, false, "", 0},
-	{"BMS Battery pack params", 0x900D, 1, false, false, "", 0},
-}
-
-// BDUProbes contains BDU area register definitions (section 5.9).
-// Extracted from main.go.bak scanRegisters() lines 365-366.
-var BDUProbes = []Probe{
-	{"BDU total online", 0x6084, 1, false, false, "", 0},
-	{"BDU Code", 0x6090, 1, false, false, "", 0},
+	// Global Stats group (full-width)
+	groups = append(groups, ProbeGroup{
+		Name: "Global Stats",
+		Probes: []Probe{
+			{Name: "Total charge/discharge power", Addr: 0x0667, Count: 1, Signed: true, Unit: "kW", Scale: 0.1},
+			{Name: "Average SOC", Addr: 0x0668, Count: 1, Unit: "%", Scale: 1},
+			{Name: "Battery SOH", Addr: 0x0669, Count: 1, Unit: "%", Scale: 1},
+			{Name: "Pack count", Addr: 0x066A, Count: 1},
+			{Name: "Total capacity", Addr: 0x066B, Count: 1, Unit: "Ah", Scale: 1},
+		},
+	})
+	return groups
 }
