@@ -1,0 +1,706 @@
+package main
+
+import (
+	"encoding/binary"
+	"flag"
+	"fmt"
+	"log"
+	"net"
+	"strings"
+	"sync/atomic"
+	"time"
+)
+
+var transactionID atomic.Uint32
+
+// Known working registers (verified 2026-03-16):
+// [ OK ] Inverter SN                    (0x0445): "SP2ES108N6R462"
+// [ OK ] System running state           (0x0404): 0 (Waiting)
+// [ OK ] System time                    (0x042C-0x0431): 2026-03-16 19:55
+// [ OK ] Ambient temp 1                 (0x0418): 42°C
+// [ OK ] Insulation impedance           (0x042B): 500 kΩ
+// [ OK ] Grid frequency                 (0x0484): 50.01 Hz
+// [ OK ] Grid voltage R/S/T             (0x048D/0498/04A3): ~234V
+// [ OK ] Total PCC active power         (0x0488): -0.83 kW
+// [ OK ] Total load power               (0x04AF): 0.83 kW
+// [ OK ] Bat voltage ch1                (0x0604): 528.8V
+// [ OK ] Bat SOC/SOH ch1                (0x0608/0609): 27% / 99%
+// [ OK ] Bat cycles ch1                 (0x060A): 164
+// [ OK ] Bat state ch1                  (0x0646): 2 (Discharging)
+// [ OK ] BMS Manufacturer               (0x9007): "AMASS"
+// [ OK ] BMS Total voltage              (0x900F): 527.4V
+// [ OK ] BMS SOC/Health                 (0x9012/9013): 27% / 99%
+// [ OK ] Pack RT Cell Voltages 1-16     (0x9051-0x9060): 3.298-3.301V
+// [ OK ] Pack RT Temps 1-4              (0x906B-906E): 22.5-23.5°C
+// [ OK ] Pack RT MOS/Env temp           (0x906F/9070): 25.0/26.7°C
+// [FAIL] Battery cluster 1 (0x9400+)    - timeout (BDU not online)
+//
+// Battery pack selection: write pack number to 0x9020 (BMS_Inquire),
+// then read 0x9044+ for that pack's data.
+// Online bitmap at 0x9022 shows which packs are online.
+
+func main() {
+	host := flag.String("host", "10.5.99.29", "IP address of the Modbus TCP-to-RTU converter")
+	port := flag.Int("port", 4192, "TCP port")
+	slaveID := flag.Int("slave", 1, "Modbus slave ID (1-247)")
+	mode := flag.String("mode", "tcp", "Protocol mode: 'tcp' or 'rtu'")
+	pack := flag.Int("pack", -1, "Read specific battery pack (0-15). If not set, reads general info only.")
+	group := flag.Int("group", 0, "Battery group/string number (0-3). Default 0 = first string.")
+	flag.Parse()
+
+	addr := fmt.Sprintf("%s:%d", *host, *port)
+	useRTU := *mode == "rtu"
+
+	if *group < 0 || *group > 15 {
+		log.Fatalf("Invalid group %d: must be 0-15", *group)
+	}
+	if *pack >= 0 {
+		if *pack > 15 {
+			log.Fatalf("Invalid pack %d: must be 0-15", *pack)
+		}
+		readBatteryPack(addr, byte(*slaveID), useRTU, *pack, *group)
+	} else {
+		scanRegisters(addr, byte(*slaveID), useRTU)
+	}
+}
+
+func connect(addr string) (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+const maxRetries = 3
+
+type probe struct {
+	name    string
+	addr    uint16
+	count   uint16
+	isASCII bool
+	signed  bool
+	unit    string
+	scale   float64
+}
+
+// readWithRetry reads holding registers with up to maxRetries attempts.
+// On timeout, it closes the connection, reconnects, and retries.
+// Returns data, connection (possibly new), retry count, error.
+func readWithRetry(conn net.Conn, addr string, slaveID byte, regAddr uint16, count uint16, useRTU bool) ([]byte, net.Conn, int, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if conn == nil {
+			var err error
+			conn, err = connect(addr)
+			if err != nil {
+				lastErr = err
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+		}
+		data, err := readHoldingRegisters(conn, slaveID, regAddr, count, useRTU)
+		if err == nil {
+			return data, conn, attempt, nil
+		}
+		lastErr = err
+		conn.Close()
+		conn = nil
+		if attempt < maxRetries {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	return nil, conn, maxRetries, lastErr
+}
+
+func readBatteryPack(addr string, slaveID byte, useRTU bool, packNum int, groupNum int) {
+	conn, err := connect(addr)
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	// First check which packs are online (0x9022)
+	fmt.Println("=== Battery Pack Reader ===")
+	fmt.Printf("=== %s slave=%d group=%d ===\n\n", addr, slaveID, groupNum)
+
+	var data []byte
+	data, conn, _, err = readWithRetry(conn, addr, slaveID, 0x9022, 1, useRTU)
+	if err != nil {
+		fmt.Printf("[WARN] Cannot read online bitmap (0x9022): %v\n", err)
+	} else {
+		bitmap := binary.BigEndian.Uint16(data[:2])
+		fmt.Printf("Online bitmap: 0x%04X\n", bitmap)
+		fmt.Print("Packs online: ")
+		any := false
+		for i := range 16 {
+			if bitmap&(1<<uint(i)) != 0 {
+				if any {
+					fmt.Print(", ")
+				}
+				fmt.Printf("%d", i)
+				any = true
+			}
+		}
+		if !any {
+			fmt.Print("none")
+		}
+		fmt.Println()
+
+		if bitmap&(1<<uint(packNum)) == 0 {
+			fmt.Printf("\n[WARN] Pack %d appears offline in bitmap!\n", packNum)
+		}
+		fmt.Println()
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Read 0x900D: low 8 bits = packs per string, high 8 bits = number of parallel strings
+	data, conn, _, err = readWithRetry(conn, addr, slaveID, 0x900D, 1, useRTU)
+	if err != nil {
+		fmt.Printf("[WARN] Cannot read pack params (0x900D): %v\n", err)
+	} else {
+		params := binary.BigEndian.Uint16(data[:2])
+		numPacks := int(params & 0xFF)
+		numParallel := int(params >> 8)
+		fmt.Printf("Battery config: %d packs, %d parallel strings\n", numPacks, numParallel)
+		if packNum >= numPacks {
+			fmt.Printf("[WARN] Requested pack %d but only %d packs available (0-%d)\n", packNum, numPacks, numPacks-1)
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Write BMS_Inquire (0x9020) to select the pack using function 0x10
+	// Bit0-7: pack serial number (0-15), Bit8-11: battery group/string number (0-3), Bit12-15: fault serial (0)
+	queryWord := uint16(packNum&0xFF) | uint16((groupNum&0x0F)<<8)
+	fmt.Printf("Selecting battery pack %d group %d (writing 0x%04X to 0x9020 via func 0x10)...\n", packNum, groupNum, queryWord)
+
+	if conn == nil {
+		conn, err = connect(addr)
+		if err != nil {
+			log.Fatalf("Failed to reconnect: %v", err)
+		}
+	}
+	err = writeRegister(conn, slaveID, 0x9020, queryWord, useRTU)
+	if err != nil {
+		fmt.Printf("[ERROR] Write to 0x9020 failed: %v\n", err)
+		log.Fatalf("Cannot select pack - aborting")
+	}
+	fmt.Println("Pack selected OK")
+	time.Sleep(1 * time.Second) // give BMS time to switch pack
+
+	// Now read pack RT data
+	fmt.Printf("\n--- Battery Pack %d (group %d): Info ---\n", packNum, groupNum)
+
+	// Pack RT ID
+	readOne := func(name string, regAddr uint16, count uint16, ascii bool, signed bool, unit string, scale float64) {
+		d, newConn, attempts, err := readWithRetry(conn, addr, slaveID, regAddr, count, useRTU)
+		conn = newConn
+		if err != nil {
+			fmt.Printf("  [FAIL] %-28s (0x%04X): %v (retried %d/%d)\n", name, regAddr, err, attempts, maxRetries)
+			time.Sleep(500 * time.Millisecond)
+			return
+		}
+		retryNote := ""
+		if attempts > 1 {
+			retryNote = fmt.Sprintf(" (retry %d/%d)", attempts, maxRetries)
+		}
+		formatResult(probe{name, regAddr, count, ascii, signed, unit, scale}, d, retryNote)
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	readOne("Pack RT ID", 0x9044, 1, false, false, "", 0)
+	readOne("Pack RT SN", 0x9047, 10, true, false, "", 0)
+	readOne("Pack RT Total Voltage", 0x9079, 1, false, false, "V", 0.1)
+	readOne("Pack RT SOC", 0x907A, 1, false, false, "%", 1)
+	readOne("Pack RT Current", 0x9071, 1, false, true, "A", 0.1)
+	readOne("Pack RT Remaining Cap", 0x9072, 1, false, false, "Ah", 0.1)
+	readOne("Pack RT FullCharge Cap", 0x9073, 1, false, false, "Ah", 0.1)
+	readOne("Pack RT Cycles", 0x9074, 1, false, false, "cycles", 1)
+	readOne("Battery pack SOH", 0x0669, 1, false, false, "%", 1)
+	readOne("BMS Health level", 0x9013, 1, false, false, "%", 1)
+	readOne("Pack RT Cell Max V", 0x9069, 1, false, false, "V", 0.001)
+	readOne("Pack RT Cell Min V", 0x906A, 1, false, false, "V", 0.001)
+	readOne("Pack RT Pack Number", 0x907B, 1, false, false, "", 0)
+	readOne("Pack RT Cell Number", 0x907C, 1, false, false, "", 0)
+	readOne("Pack RT Balance State", 0x9075, 1, false, false, "", 0)
+	readOne("Pack RT Alarm State", 0x9076, 1, false, false, "", 0)
+	readOne("Pack RT Protect State", 0x9077, 1, false, false, "", 0)
+	readOne("Pack RT Fault State", 0x9078, 1, false, false, "", 0)
+	// Fault data for this pack
+	fmt.Printf("\n--- Battery Pack %d (group %d): Fault Data ---\n", packNum, groupNum)
+	readOne("Fault Pack ID", 0x9084, 1, false, false, "", 0)
+	readOne("Fault Total Voltage", 0x90B4, 1, false, false, "V", 0.01)
+	readOne("Fault State", 0x90B7, 1, false, false, "", 0)
+	readOne("Fault Pack Number", 0x90B8, 1, false, false, "", 0)
+	readOne("Fault Cell Number", 0x90B9, 1, false, false, "", 0)
+
+	// Cell Voltages 1-24
+	fmt.Printf("\n--- Battery Pack %d (group %d): Cell Voltages ---\n", packNum, groupNum)
+	data, conn, attempts, err := readWithRetry(conn, addr, slaveID, 0x9051, 24, useRTU)
+	if err != nil {
+		fmt.Printf("  [FAIL] Cell Voltages: %v (retried %d/%d)\n", err, attempts, maxRetries)
+	} else {
+		retryNote := ""
+		if attempts > 1 {
+			retryNote = fmt.Sprintf(" (retry %d/%d)", attempts, maxRetries)
+		}
+		for i := 0; i < 24 && i*2+1 < len(data); i++ {
+			val := binary.BigEndian.Uint16(data[i*2 : i*2+2])
+			if val > 0 {
+				fmt.Printf("  Cell %2d: %.3f V%s\n", i+1, float64(val)*0.001, retryNote)
+			}
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Temperatures 1-4 + MOS + Env
+	fmt.Printf("\n--- Battery Pack %d (group %d): Temperatures ---\n", packNum, groupNum)
+	data, conn, attempts, err = readWithRetry(conn, addr, slaveID, 0x906B, 6, useRTU)
+	if err != nil {
+		fmt.Printf("  [FAIL] Temps 1-4 + MOS + Env: %v (retried %d/%d)\n", err, attempts, maxRetries)
+	} else {
+		retryNote := ""
+		if attempts > 1 {
+			retryNote = fmt.Sprintf(" (retry %d/%d)", attempts, maxRetries)
+		}
+		names := []string{"Pack Temp 1", "Pack Temp 2", "Pack Temp 3", "Pack Temp 4", "MOS Temp", "Env Temp"}
+		for i := 0; i < 6 && i*2+1 < len(data); i++ {
+			val := int16(binary.BigEndian.Uint16(data[i*2 : i*2+2]))
+			fmt.Printf("  %-12s: %.1f °C%s\n", names[i], float64(val)*0.1, retryNote)
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Temperatures 5-8
+	data, conn, attempts, err = readWithRetry(conn, addr, slaveID, 0x90BC, 4, useRTU)
+	if err != nil {
+		fmt.Printf("  [FAIL] Temps 5-8: %v (retried %d/%d)\n", err, attempts, maxRetries)
+	} else {
+		retryNote := ""
+		if attempts > 1 {
+			retryNote = fmt.Sprintf(" (retry %d/%d)", attempts, maxRetries)
+		}
+		for i := 0; i < 4 && i*2+1 < len(data); i++ {
+			val := int16(binary.BigEndian.Uint16(data[i*2 : i*2+2]))
+			if val != 0 {
+				fmt.Printf("  Pack Temp %d: %.1f °C%s\n", i+5, float64(val)*0.1, retryNote)
+			}
+		}
+	}
+}
+
+func scanRegisters(addr string, slaveID byte, useRTU bool) {
+	probes := []probe{
+		// === System Info (5.1.1) ===
+		{"Inverter SN", 0x0445, 10, true, false, "", 0},
+		{"System running state", 0x0404, 1, false, false, "", 0},
+		{"System time (Year+2000)", 0x042C, 1, false, false, "", 0},
+		{"System time (Month)", 0x042D, 1, false, false, "", 0},
+		{"System time (Day)", 0x042E, 1, false, false, "", 0},
+		{"System time (Hour)", 0x042F, 1, false, false, "", 0},
+		{"System time (Min)", 0x0430, 1, false, false, "", 0},
+		{"System time (Sec)", 0x0431, 1, false, false, "", 0},
+		{"Ambient temp 1", 0x0418, 1, false, true, "°C", 1},
+		{"Ambient temp 2", 0x0419, 1, false, true, "°C", 1},
+		{"Insulation impedance", 0x042B, 1, false, false, "kΩ", 1},
+
+		// === Grid-connected output (5.1.3) ===
+		{"Grid frequency", 0x0484, 1, false, false, "Hz", 0.01},
+		{"Total active power", 0x0485, 1, false, true, "kW", 0.01},
+		{"Total reactive power", 0x0486, 1, false, true, "kVar", 0.01},
+		{"Total apparent power", 0x0487, 1, false, true, "kVA", 0.01},
+		{"Total PCC active power", 0x0488, 1, false, true, "kW", 0.01},
+		{"Grid voltage R", 0x048D, 1, false, false, "V", 0.1},
+		{"Output current R", 0x048E, 1, false, false, "A", 0.01},
+		{"Output active power R", 0x048F, 1, false, true, "kW", 0.01},
+		{"Grid voltage S", 0x0498, 1, false, false, "V", 0.1},
+		{"Output current S", 0x0499, 1, false, false, "A", 0.01},
+		{"Grid voltage T", 0x04A3, 1, false, false, "V", 0.1},
+		{"Output current T", 0x04A4, 1, false, false, "A", 0.01},
+		{"Line voltage L1 (R/S)", 0x04BA, 1, false, false, "V", 0.1},
+		{"Line voltage L2 (S/T)", 0x04BB, 1, false, false, "V", 0.1},
+		{"Line voltage L3 (T/R)", 0x04BC, 1, false, false, "V", 0.1},
+		{"Total load power", 0x04AF, 1, false, false, "kW", 0.01},
+		{"Power gen efficiency", 0x04BF, 1, false, false, "%", 0.01},
+
+		// === Grid-disconnected output (5.1.4) ===
+		{"Load active power", 0x0504, 1, false, true, "kW", 0.01},
+		{"Output voltage freq", 0x0507, 1, false, false, "Hz", 0.01},
+
+		// === PV Input (5.1.5) ===
+		{"PV1 Voltage", 0x0584, 1, false, false, "V", 0.1},
+		{"PV1 Current", 0x0585, 1, false, true, "A", 0.01},
+		{"PV1 Power", 0x0586, 1, false, false, "kW", 0.01},
+		{"PV2 Voltage", 0x0587, 1, false, false, "V", 0.1},
+		{"PV2 Current", 0x0588, 1, false, true, "A", 0.01},
+		{"PV2 Power", 0x0589, 1, false, false, "kW", 0.01},
+
+		// === PV Total (5.1.6) ===
+		{"Total PV power", 0x05C4, 1, false, false, "kW", 0.1},
+
+		// === Battery pack ch1 (5.1.7) ===
+		{"Bat voltage ch1", 0x0604, 1, false, false, "V", 0.1},
+		{"Bat current ch1", 0x0605, 1, false, true, "A", 0.01},
+		{"Bat power ch1", 0x0606, 1, false, true, "kW", 0.01},
+		{"Bat env temp ch1", 0x0607, 1, false, true, "°C", 1},
+		{"Bat SOC ch1", 0x0608, 1, false, false, "%", 1},
+		{"Bat SOH ch1", 0x0609, 1, false, false, "%", 1},
+		{"Bat cycles ch1", 0x060A, 1, false, false, "cycles", 1},
+
+		// === Battery state (5.1.8) ===
+		{"Bat charge limit ch1", 0x0644, 1, false, false, "A", 0.01},
+		{"Bat discharge limit ch1", 0x0645, 1, false, false, "A", 0.01},
+		{"Bat state ch1", 0x0646, 1, false, false, "", 0},
+		{"Bat ch/disch power", 0x0667, 1, false, true, "kW", 0.1},
+		{"Avg electricity level", 0x0668, 1, false, false, "%", 1},
+		{"Battery pack SOH", 0x0669, 1, false, false, "%", 1},
+		{"RT battery pack count", 0x066A, 1, false, false, "", 0},
+		{"Total battery capacity", 0x066B, 1, false, false, "Ah", 1},
+
+		// === BDU area (5.9) ===
+		{"BDU total online", 0x6084, 1, false, false, "", 0},
+		{"BDU Code", 0x6090, 1, false, false, "", 0},
+
+		// === BMS Info (5.10.1) ===
+		{"BMS CAN protocol ver", 0x9006, 1, false, false, "", 0},
+		{"BMS Manufacturer", 0x9007, 4, true, false, "", 0},
+		{"BMS Version number", 0x900B, 1, false, false, "", 0},
+		{"BMS Cell type", 0x900C, 1, false, false, "", 0},
+		{"BMS Remaining capacity", 0x900E, 1, false, false, "%", 1},
+		{"BMS Total voltage", 0x900F, 1, false, false, "V", 0.1},
+		{"BMS Total current", 0x9010, 1, false, true, "A", 0.1},
+		{"BMS Avg cell temp", 0x9011, 1, false, true, "°C", 0.1},
+		{"BMS SOC", 0x9012, 1, false, false, "%", 1},
+		{"BMS Health level", 0x9013, 1, false, false, "%", 1},
+		{"BMS Online bitmap", 0x9022, 1, false, false, "", 0},
+		{"BMS Battery pack params", 0x900D, 1, false, false, "", 0},
+	}
+
+	conn, err := connect(addr)
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+
+	fmt.Println("=== Sofar Inverter Modbus Reader ===")
+	fmt.Printf("=== %s slave=%d ===\n\n", addr, slaveID)
+
+	for _, p := range probes {
+		data, newConn, attempts, err := readWithRetry(conn, addr, slaveID, p.addr, p.count, useRTU)
+		conn = newConn
+		if err != nil {
+			fmt.Printf("  [FAIL] %-28s (0x%04X): %v (retried %d/%d)\n", p.name, p.addr, err, attempts, maxRetries)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		retryNote := ""
+		if attempts > 1 {
+			retryNote = fmt.Sprintf(" (retry %d/%d)", attempts, maxRetries)
+		}
+
+		// Special formatting for specific registers
+		if p.addr == 0x9022 && len(data) >= 2 {
+			bitmap := binary.BigEndian.Uint16(data[:2])
+			packs := []int{}
+			for i := range 16 {
+				if bitmap&(1<<uint(i)) != 0 {
+					packs = append(packs, i)
+				}
+			}
+			fmt.Printf("  [ OK ] %-28s (0x%04X): 0x%04X (online: %v)%s\n", p.name, p.addr, bitmap, packs, retryNote)
+		} else if p.addr == 0x900D && len(data) >= 2 {
+			val := binary.BigEndian.Uint16(data[:2])
+			numPacks := val & 0xFF
+			numParallel := val >> 8
+			fmt.Printf("  [ OK ] %-28s (0x%04X): %d packs, %d parallel%s\n", p.name, p.addr, numPacks, numParallel, retryNote)
+		} else {
+			formatResult(p, data, retryNote)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	fmt.Println("\nTip: use -pack <N> -group <G> to read a specific battery pack (e.g. -pack 0 -group 1)")
+
+	if conn != nil {
+		conn.Close()
+	}
+}
+
+func formatResult(p probe, data []byte, retryNote string) {
+	if p.isASCII {
+		s := strings.TrimRight(string(data), "\x00 ")
+		fmt.Printf("  [ OK ] %-28s (0x%04X): %q%s\n", p.name, p.addr, s, retryNote)
+		return
+	}
+
+	if len(data) < 2 {
+		fmt.Printf("  [ OK ] %-28s (0x%04X): <no data>%s\n", p.name, p.addr, retryNote)
+		return
+	}
+
+	if p.signed {
+		val := int16(binary.BigEndian.Uint16(data[:2]))
+		if p.scale > 0 && p.unit != "" {
+			fmt.Printf("  [ OK ] %-28s (0x%04X): %.2f %s%s\n", p.name, p.addr, float64(val)*p.scale, p.unit, retryNote)
+		} else {
+			fmt.Printf("  [ OK ] %-28s (0x%04X): %d%s\n", p.name, p.addr, val, retryNote)
+		}
+	} else {
+		val := binary.BigEndian.Uint16(data[:2])
+		if p.scale > 0 && p.unit != "" {
+			fmt.Printf("  [ OK ] %-28s (0x%04X): %.2f %s%s\n", p.name, p.addr, float64(val)*p.scale, p.unit, retryNote)
+		} else {
+			fmt.Printf("  [ OK ] %-28s (0x%04X): %d (0x%04X)%s\n", p.name, p.addr, val, val, retryNote)
+		}
+	}
+}
+
+// === Modbus Transport ===
+
+func readHoldingRegisters(conn net.Conn, slaveID byte, startAddr uint16, quantity uint16, useRTU bool) ([]byte, error) {
+	if useRTU {
+		return readHoldingRegistersRTU(conn, slaveID, startAddr, quantity)
+	}
+	return readHoldingRegistersTCP(conn, slaveID, startAddr, quantity)
+}
+
+func writeRegister(conn net.Conn, slaveID byte, regAddr uint16, value uint16, useRTU bool) error {
+	if useRTU {
+		return writeSingleRegisterRTU(conn, slaveID, regAddr, value)
+	}
+	return writeMultipleRegistersTCP(conn, slaveID, regAddr, value)
+}
+
+// writeMultipleRegistersTCP writes a single register using function 0x10 (Write Multiple Registers).
+// Function 0x06 (Write Single Register) does NOT work for 0x9020 on this inverter - times out.
+// Function 0x10 works and is confirmed tested.
+func writeMultipleRegistersTCP(conn net.Conn, slaveID byte, regAddr uint16, value uint16) error {
+	txID := uint16(transactionID.Add(1))
+
+	// MBAP header (7 bytes) + PDU: funcCode(1) + regAddr(2) + quantity(2) + byteCount(1) + data(2) = 8
+	req := make([]byte, 15)
+	binary.BigEndian.PutUint16(req[0:2], txID)   // transaction ID
+	binary.BigEndian.PutUint16(req[2:4], 0)       // protocol ID
+	binary.BigEndian.PutUint16(req[4:6], 9)       // length: unitID(1) + PDU(8)
+	req[6] = slaveID
+	req[7] = 0x10 // Write Multiple Registers
+	binary.BigEndian.PutUint16(req[8:10], regAddr)
+	binary.BigEndian.PutUint16(req[10:12], 1) // quantity = 1 register
+	req[12] = 2                                // byte count = 2
+	binary.BigEndian.PutUint16(req[13:15], value)
+
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write(req); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+
+	// Read response, matching transaction ID (skip stale responses)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn.SetReadDeadline(deadline)
+		mbap := make([]byte, 7)
+		if _, err := readFull(conn, mbap); err != nil {
+			return fmt.Errorf("read MBAP: %w", err)
+		}
+
+		respTxID := binary.BigEndian.Uint16(mbap[0:2])
+		respLen := int(binary.BigEndian.Uint16(mbap[4:6]))
+		if respLen < 1 || respLen > 260 {
+			return fmt.Errorf("invalid MBAP length: %d", respLen)
+		}
+
+		pdu := make([]byte, respLen-1)
+		if _, err := readFull(conn, pdu); err != nil {
+			return fmt.Errorf("read PDU: %w", err)
+		}
+
+		if respTxID != txID {
+			continue // skip stale response
+		}
+
+		if len(pdu) > 0 && pdu[0]&0x80 != 0 {
+			errCode := byte(0)
+			if len(pdu) > 1 {
+				errCode = pdu[1]
+			}
+			return fmt.Errorf("exception: func=0x%02X err=0x%02X", pdu[0], errCode)
+		}
+
+		return nil // success
+	}
+
+	return fmt.Errorf("timeout waiting for write response (txID=%d)", txID)
+}
+
+func writeSingleRegisterRTU(conn net.Conn, slaveID byte, regAddr uint16, value uint16) error {
+	req := make([]byte, 6)
+	req[0] = slaveID
+	req[1] = 0x06
+	binary.BigEndian.PutUint16(req[2:4], regAddr)
+	binary.BigEndian.PutUint16(req[4:6], value)
+
+	crc := crc16(req)
+	req = append(req, byte(crc&0xFF), byte(crc>>8))
+
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write(req); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	resp := make([]byte, 8)
+	if _, err := readFull(conn, resp); err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	if resp[1]&0x80 != 0 {
+		return fmt.Errorf("exception: func=0x%02X err=0x%02X", resp[1], resp[2])
+	}
+
+	return nil
+}
+
+func readHoldingRegistersTCP(conn net.Conn, slaveID byte, startAddr uint16, quantity uint16) ([]byte, error) {
+	txID := uint16(transactionID.Add(1))
+
+	req := make([]byte, 12)
+	binary.BigEndian.PutUint16(req[0:2], txID)
+	binary.BigEndian.PutUint16(req[2:4], 0)
+	binary.BigEndian.PutUint16(req[4:6], 6)
+	req[6] = slaveID
+	req[7] = 0x03
+	binary.BigEndian.PutUint16(req[8:10], startAddr)
+	binary.BigEndian.PutUint16(req[10:12], quantity)
+
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write(req); err != nil {
+		return nil, fmt.Errorf("write: %w", err)
+	}
+
+	// Read response, matching transaction ID to skip stale responses
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn.SetReadDeadline(deadline)
+		mbap := make([]byte, 7)
+		if _, err := readFull(conn, mbap); err != nil {
+			return nil, fmt.Errorf("timeout: %w", err)
+		}
+
+		respTxID := binary.BigEndian.Uint16(mbap[0:2])
+		respLen := int(binary.BigEndian.Uint16(mbap[4:6]))
+		if respLen < 2 || respLen > 260 {
+			return nil, fmt.Errorf("invalid MBAP length: %d", respLen)
+		}
+
+		pdu := make([]byte, respLen-1)
+		if _, err := readFull(conn, pdu); err != nil {
+			return nil, fmt.Errorf("read PDU: %w", err)
+		}
+
+		if respTxID != txID {
+			continue // skip stale response from previous request
+		}
+
+		if pdu[0]&0x80 != 0 {
+			errCode := byte(0)
+			if len(pdu) > 1 {
+				errCode = pdu[1]
+			}
+			return nil, fmt.Errorf("exception: func=0x%02X err=0x%02X", pdu[0], errCode)
+		}
+
+		if len(pdu) < 2 {
+			return nil, fmt.Errorf("PDU too short")
+		}
+
+		byteCount := int(pdu[1])
+		if len(pdu) < 2+byteCount {
+			return nil, fmt.Errorf("PDU data short")
+		}
+
+		return pdu[2 : 2+byteCount], nil
+	}
+
+	return nil, fmt.Errorf("timeout waiting for matching response (txID=%d)", txID)
+}
+
+func readHoldingRegistersRTU(conn net.Conn, slaveID byte, startAddr uint16, quantity uint16) ([]byte, error) {
+	req := make([]byte, 6)
+	req[0] = slaveID
+	req[1] = 0x03
+	binary.BigEndian.PutUint16(req[2:4], startAddr)
+	binary.BigEndian.PutUint16(req[4:6], quantity)
+
+	crc := crc16(req)
+	req = append(req, byte(crc&0xFF), byte(crc>>8))
+
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write(req); err != nil {
+		return nil, fmt.Errorf("write: %w", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	header := make([]byte, 3)
+	n, err := readFull(conn, header)
+	if err != nil {
+		return nil, fmt.Errorf("read header (got %d): %w", n, err)
+	}
+
+	if header[1]&0x80 != 0 {
+		errBuf := make([]byte, 3)
+		readFull(conn, errBuf)
+		return nil, fmt.Errorf("exception: func=0x%02X err=0x%02X", header[1], errBuf[0])
+	}
+
+	if header[0] != slaveID {
+		return nil, fmt.Errorf("wrong slave: got 0x%02X want 0x%02X", header[0], slaveID)
+	}
+
+	byteCount := int(header[2])
+	payload := make([]byte, byteCount+2)
+	n, err = readFull(conn, payload)
+	if err != nil {
+		return nil, fmt.Errorf("read payload (got %d/%d): %w", n, byteCount+2, err)
+	}
+
+	fullResp := append(header, payload...)
+	respData := fullResp[:len(fullResp)-2]
+	respCRC := uint16(fullResp[len(fullResp)-2]) | uint16(fullResp[len(fullResp)-1])<<8
+	calcCRC := crc16(respData)
+	if respCRC != calcCRC {
+		return nil, fmt.Errorf("CRC mismatch: got=0x%04X want=0x%04X", respCRC, calcCRC)
+	}
+
+	return payload[:byteCount], nil
+}
+
+func readFull(conn net.Conn, buf []byte) (int, error) {
+	total := 0
+	for total < len(buf) {
+		n, err := conn.Read(buf[total:])
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+func crc16(data []byte) uint16 {
+	crc := uint16(0xFFFF)
+	for _, b := range data {
+		crc ^= uint16(b)
+		for range 8 {
+			if crc&0x0001 != 0 {
+				crc = (crc >> 1) ^ 0xA001
+			} else {
+				crc >>= 1
+			}
+		}
+	}
+	return crc
+}
