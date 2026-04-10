@@ -883,3 +883,168 @@ func TestGenerateBatteryGroupsAddresses(t *testing.T) {
 		t.Errorf("Ch2 state = 0x%04X, want 0x064A", ch2.Probes[9].Addr)
 	}
 }
+
+// === Phase 04 Task 2 TDD tests: ProbeGroup Type, BMSInfoGroups, BMSProtectionProbes, StatisticsGroups, DecodeBMSClock, DecodeTopology ===
+
+func TestProbeGroupType(t *testing.T) {
+	pg := ProbeGroup{Name: "Protection", Type: "bitmap"}
+	if pg.Type != "bitmap" {
+		t.Errorf("ProbeGroup.Type = %q, want %q", pg.Type, "bitmap")
+	}
+}
+
+func TestBMSInfoGroups(t *testing.T) {
+	groups := BMSInfoGroups()
+	if len(groups) < 1 {
+		t.Fatal("BMSInfoGroups returned empty slice")
+	}
+	bmsInfo := groups[0]
+	if bmsInfo.Name != "BMS Info" {
+		t.Errorf("BMSInfoGroups[0].Name = %q, want %q", bmsInfo.Name, "BMS Info")
+	}
+
+	// Check for system clock hi at 0x9004
+	foundClockHi := false
+	foundSN := false
+	for _, p := range bmsInfo.Probes {
+		if p.Addr == 0x9004 {
+			foundClockHi = true
+		}
+		if p.Addr == 0x9024 && p.Count == 10 && p.IsASCII {
+			foundSN = true
+		}
+	}
+	if !foundClockHi {
+		t.Error("BMSInfoGroups missing probe at 0x9004 (clock hi)")
+	}
+	if !foundSN {
+		t.Error("BMSInfoGroups missing SN probe at 0x9024 (Count 10, IsASCII)")
+	}
+
+	// Check key probes exist
+	expectedAddrs := []uint16{0x9004, 0x9005, 0x9006, 0x9007, 0x900B, 0x900C, 0x900D, 0x900E, 0x900F, 0x9010, 0x9011, 0x9012, 0x9013, 0x9024, 0x9018, 0x9019, 0x901A, 0x901B}
+	addrSet := make(map[uint16]bool)
+	for _, p := range bmsInfo.Probes {
+		addrSet[p.Addr] = true
+	}
+	for _, addr := range expectedAddrs {
+		if !addrSet[addr] {
+			t.Errorf("BMSInfoGroups missing probe at 0x%04X", addr)
+		}
+	}
+}
+
+func TestBMSProtectionProbes(t *testing.T) {
+	probes := BMSProtectionProbes()
+	if len(probes) != 6 {
+		t.Fatalf("BMSProtectionProbes len = %d, want 6", len(probes))
+	}
+	expectedAddrs := []uint16{0x9014, 0x9015, 0x9016, 0x9017, 0x901C, 0x901D}
+	for i, addr := range expectedAddrs {
+		if probes[i].Addr != addr {
+			t.Errorf("BMSProtectionProbes[%d].Addr = 0x%04X, want 0x%04X", i, probes[i].Addr, addr)
+		}
+		if probes[i].Count != 1 {
+			t.Errorf("BMSProtectionProbes[%d].Count = %d, want 1", i, probes[i].Count)
+		}
+	}
+}
+
+func TestStatisticsGroups(t *testing.T) {
+	groups := StatisticsGroups()
+	if len(groups) != 4 {
+		t.Fatalf("StatisticsGroups len = %d, want 4", len(groups))
+	}
+
+	expectedNames := []string{"Today", "Total", "This Month", "This Year"}
+	for i, want := range expectedNames {
+		if groups[i].Name != want {
+			t.Errorf("StatisticsGroups[%d].Name = %q, want %q", i, groups[i].Name, want)
+		}
+	}
+
+	// Each group has 6 probes, all U32=true, Count=2
+	for i, g := range groups {
+		if len(g.Probes) != 6 {
+			t.Errorf("StatisticsGroups[%d] probes = %d, want 6", i, len(g.Probes))
+			continue
+		}
+		for j, p := range g.Probes {
+			if !p.U32 {
+				t.Errorf("StatisticsGroups[%d].Probes[%d].U32 = false, want true", i, j)
+			}
+			if p.Count != 2 {
+				t.Errorf("StatisticsGroups[%d].Probes[%d].Count = %d, want 2", i, j, p.Count)
+			}
+			if p.Unit != "kWh" {
+				t.Errorf("StatisticsGroups[%d].Probes[%d].Unit = %q, want %q", i, j, p.Unit, "kWh")
+			}
+		}
+	}
+
+	// Today scale = 0.01
+	for j, p := range groups[0].Probes {
+		if p.Scale != 0.01 {
+			t.Errorf("Today.Probes[%d].Scale = %f, want 0.01", j, p.Scale)
+		}
+	}
+
+	// Total, Month, Year scale = 0.1
+	for i := 1; i < 4; i++ {
+		for j, p := range groups[i].Probes {
+			if p.Scale != 0.1 {
+				t.Errorf("%s.Probes[%d].Scale = %f, want 0.1", groups[i].Name, j, p.Scale)
+			}
+		}
+	}
+}
+
+func TestStatisticsAddresses(t *testing.T) {
+	groups := StatisticsGroups()
+
+	// Today starts at 0x0684
+	if groups[0].Probes[0].Addr != 0x0684 {
+		t.Errorf("Today gen addr = 0x%04X, want 0x0684", groups[0].Probes[0].Addr)
+	}
+	// Total starts at 0x0686
+	if groups[1].Probes[0].Addr != 0x0686 {
+		t.Errorf("Total gen addr = 0x%04X, want 0x0686", groups[1].Probes[0].Addr)
+	}
+	// This Month starts at 0x069C
+	if groups[2].Probes[0].Addr != 0x069C {
+		t.Errorf("Month gen addr = 0x%04X, want 0x069C", groups[2].Probes[0].Addr)
+	}
+	// This Year starts at 0x069E
+	if groups[3].Probes[0].Addr != 0x069E {
+		t.Errorf("Year gen addr = 0x%04X, want 0x069E", groups[3].Probes[0].Addr)
+	}
+
+	// Stride 4 between metrics within each group
+	// Today: gen=0x0684, consumption=0x0688, bought=0x068C, sold=0x0690, bat_charge=0x0694, bat_discharge=0x0698
+	todayExpected := []uint16{0x0684, 0x0688, 0x068C, 0x0690, 0x0694, 0x0698}
+	for i, addr := range todayExpected {
+		if groups[0].Probes[i].Addr != addr {
+			t.Errorf("Today.Probes[%d].Addr = 0x%04X, want 0x%04X", i, groups[0].Probes[i].Addr, addr)
+		}
+	}
+}
+
+func TestDecodeBMSClock(t *testing.T) {
+	// Encode 2026-04-10 14:03:05
+	var val uint32 = 0x6914E0C5
+	got := DecodeBMSClock(val)
+	want := "2026-04-10 14:03:05"
+	if got != want {
+		t.Errorf("DecodeBMSClock(0x%08X) = %q, want %q", val, got, want)
+	}
+}
+
+func TestDecodeTopology(t *testing.T) {
+	parallelStrings, packsPerString := DecodeTopology(0x020A)
+	if parallelStrings != 2 {
+		t.Errorf("DecodeTopology parallelStrings = %d, want 2", parallelStrings)
+	}
+	if packsPerString != 10 {
+		t.Errorf("DecodeTopology packsPerString = %d, want 10", packsPerString)
+	}
+}
