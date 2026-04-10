@@ -12,10 +12,42 @@ const (
 	MsgTypeDisconnect  = "disconnect"
 	MsgTypeRefresh     = "refresh"
 	MsgTypeAutoRefresh = "auto_refresh"
+	MsgTypeConfigure   = "configure"
 	MsgTypeSectionData = "section_data"
 	MsgTypeSectionErr  = "section_error"
 	MsgTypeState       = "connection_state"
 )
+
+// GroupData represents a rendered probe group in the outbound message (D-02).
+type GroupData struct {
+	Name   string            `json:"name"`
+	Layout string            `json:"layout,omitempty"`
+	Type   string            `json:"type,omitempty"`   // "bitmap" or "protection" or "" for standard
+	Items  map[string]string `json:"items,omitempty"`  // omitempty: not present for bitmap groups
+	Bitmap *BitmapData       `json:"bitmap,omitempty"` // populated when Type="bitmap"
+}
+
+// BitmapData carries BMS online/offline bitmap state for the topology widget (D-08).
+type BitmapData struct {
+	Towers           int      `json:"towers"`
+	PacksPerTower    int      `json:"packs_per_tower"`
+	Online           []uint16 `json:"online"`
+	DetectedTopology string   `json:"detected_topology,omitempty"`
+	Mismatch         bool     `json:"mismatch"`
+}
+
+// FaultEntry represents a single active fault (D-11).
+type FaultEntry struct {
+	Name string `json:"name"`
+}
+
+// ConfigPayload carries section-specific configuration (D-15).
+type ConfigPayload struct {
+	Channels  int `json:"channels,omitempty"`
+	BatInputs int `json:"bat_inputs,omitempty"`
+	BatTowers int `json:"bat_towers,omitempty"`
+	BatPacks  int `json:"bat_packs,omitempty"`
+}
 
 // InboundMessage represents a message from client to server.
 // Sent via WebSocket as JSON. Type determines which fields are relevant.
@@ -28,6 +60,8 @@ type InboundMessage struct {
 	SlaveID int    `json:"slave_id,omitempty"`
 	// Auto-refresh toggle
 	Enabled *bool `json:"enabled,omitempty"`
+	// Configure payload (D-15)
+	Config *ConfigPayload `json:"config,omitempty"`
 }
 
 // OutboundMessage represents a message from server to client.
@@ -35,10 +69,23 @@ type InboundMessage struct {
 type OutboundMessage struct {
 	Type      string            `json:"type"`
 	Section   string            `json:"section,omitempty"`
-	Data      map[string]string `json:"data,omitempty"`
+	Data      map[string]string `json:"data,omitempty"`      // legacy flat sections
+	Groups    []GroupData       `json:"groups,omitempty"`     // grouped data (D-02)
+	Faults    []FaultEntry      `json:"faults"`               // fault list (D-11); never omit so frontend always renders fault card
 	State     string            `json:"state,omitempty"`
 	Error     string            `json:"error,omitempty"`
 	Timestamp string            `json:"timestamp,omitempty"`
+}
+
+// NewGroupedSectionData creates a section_data outbound message with grouped data and optional faults.
+func NewGroupedSectionData(section string, groups []GroupData, faults []FaultEntry) OutboundMessage {
+	return OutboundMessage{
+		Type:      MsgTypeSectionData,
+		Section:   section,
+		Groups:    groups,
+		Faults:    faults,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
 }
 
 // NewSectionData creates a section_data outbound message.

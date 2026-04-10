@@ -28,9 +28,13 @@ type StatusResponse struct {
 
 // DefaultsConfig holds CLI default values for the /api/defaults endpoint (D-14).
 type DefaultsConfig struct {
-	Host    string `json:"host"`
-	Port    int    `json:"port"`
-	SlaveID int    `json:"slave_id"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	SlaveID    int    `json:"slave_id"`
+	PVChannels int    `json:"pv_channels"`
+	BatInputs  int    `json:"bat_inputs"`
+	BatTowers  int    `json:"bat_towers"`
+	BatPacks   int    `json:"bat_packs"`
 }
 
 // upgrader configures WebSocket upgrade. CheckOrigin returns true because this is

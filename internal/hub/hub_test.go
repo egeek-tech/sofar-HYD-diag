@@ -2,6 +2,7 @@ package hub_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"sofar-hyd-diag/internal/broker"
 	"sofar-hyd-diag/internal/hub"
+	"sofar-hyd-diag/internal/register"
 )
 
 func TestBrokerSatisfiesInterface(t *testing.T) {
@@ -78,6 +80,10 @@ func (m *mockBroker) ReadBatch(ctx context.Context, reads []broker.ReadRequest) 
 		out[i] = broker.Result{Data: []byte{0x00, 0x01}, Err: nil}
 	}
 	return out
+}
+
+func (m *mockBroker) WriteRegister(ctx context.Context, addr uint16, value uint16) error {
+	return nil // no-op for tests
 }
 
 func (m *mockBroker) CurrentState() broker.State {
@@ -152,6 +158,35 @@ func drainClientMessages(send chan []byte, timeout time.Duration) []hub.Outbound
 			return msgs
 		}
 	}
+}
+
+// makeMockResultsForSection builds mock batch results for a given section.
+// Returns enough results for all probes in the groups plus fault registers if system.
+func makeMockResultsForSection(groups []register.ProbeGroup, isFault bool) []broker.Result {
+	total := 0
+	for _, g := range groups {
+		total += len(g.Probes)
+	}
+	if isFault {
+		total += len(register.FaultRegisters) // 2 fault batch reads
+	}
+	results := make([]broker.Result, total)
+	for i := range results {
+		results[i] = broker.Result{Data: []byte{0x00, 0x00}, Err: nil}
+	}
+	return results
+}
+
+// uint16Bytes returns a 2-byte big-endian encoding of a uint16 value.
+func uint16Bytes(v uint16) []byte {
+	b := make([]byte, 2)
+	binary.BigEndian.PutUint16(b, v)
+	return b
+}
+
+// makeFaultBatchData creates multi-register fault batch data (count*2 bytes, all zeros).
+func makeFaultBatchData(count uint16) []byte {
+	return make([]byte, int(count)*2)
 }
 
 func TestHubRegisterUnregister(t *testing.T) {
@@ -306,7 +341,7 @@ func TestClientWritePump(t *testing.T) {
 	drainClientMessages(send, 50*time.Millisecond)
 
 	// Send a section_data message to the client via hub broadcast
-	msg := hub.NewSectionData("status", map[string]string{"test": "value"})
+	msg := hub.NewSectionData("test", map[string]string{"test": "value"})
 	data, err := json.Marshal(msg)
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +361,7 @@ func TestClientWritePump(t *testing.T) {
 	}
 }
 
-// === Task 2: Section registry, timer management, demo "status" section ===
+// === Section registry, timer management ===
 
 // setupConnectedHub creates a hub with a connected broker, registers a client,
 // drains initial messages, and returns everything needed for section tests.
@@ -365,10 +400,10 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Subscribe to "status" section
+	// Subscribe to "grid" section (grouped section without faults - simpler)
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 
 	// Should receive section_data from immediate read (D-20)
@@ -376,8 +411,8 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 	if msgs[0].Type != hub.MsgTypeSectionData {
 		t.Errorf("expected type %q, got %q", hub.MsgTypeSectionData, msgs[0].Type)
 	}
-	if msgs[0].Section != "status" {
-		t.Errorf("expected section 'status', got %q", msgs[0].Section)
+	if msgs[0].Section != "grid" {
+		t.Errorf("expected section 'grid', got %q", msgs[0].Section)
 	}
 
 	// Verify ReadBatch was called
@@ -385,15 +420,9 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 		t.Errorf("expected at least 1 ReadBatch call, got %d", got)
 	}
 
-	// Verify data contains expected keys (from D-25 probes)
-	if _, ok := msgs[0].Data["inverter_sn"]; !ok {
-		t.Error("expected 'inverter_sn' key in section data")
-	}
-	if _, ok := msgs[0].Data["system_running_state"]; !ok {
-		t.Error("expected 'system_running_state' key in section data")
-	}
-	if _, ok := msgs[0].Data["ambient_temp_1"]; !ok {
-		t.Error("expected 'ambient_temp_1' key in section data")
+	// Verify groups are present (grouped section)
+	if len(msgs[0].Groups) == 0 {
+		t.Error("expected non-empty groups in section_data")
 	}
 }
 
@@ -402,16 +431,16 @@ func TestSingleSectionPerClient(t *testing.T) {
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Subscribe to "status"
+	// Subscribe to "grid"
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 	time.Sleep(100 * time.Millisecond)
 	drainClientMessages(send, 100*time.Millisecond)
 
-	// Subscribe to unknown section "system" -- should get error, but client should be
-	// unsubscribed from "status" first (D-18)
+	// Subscribe to unknown section -- should get error, but client should be
+	// unsubscribed from "grid" first (D-18)
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
 		Section: "nonexistent",
@@ -444,7 +473,7 @@ func TestAutoRefreshTimer(t *testing.T) {
 	// Subscribe to trigger immediate read + start timer
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 
 	// Wait for immediate read + at least 2 timer ticks
@@ -455,7 +484,7 @@ func TestAutoRefreshTimer(t *testing.T) {
 
 	dataCount := 0
 	for _, m := range msgs {
-		if m.Type == hub.MsgTypeSectionData && m.Section == "status" {
+		if m.Type == hub.MsgTypeSectionData && m.Section == "grid" {
 			dataCount++
 		}
 	}
@@ -486,7 +515,7 @@ func TestSkipOverlappingTick(t *testing.T) {
 	// Subscribe (triggers immediate read which will block for 200ms)
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 
 	// Wait enough for several timer ticks to fire while read is in progress
@@ -512,7 +541,7 @@ func TestTimerPausesOnDisconnect(t *testing.T) {
 	// Subscribe to start timer
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 	time.Sleep(80 * time.Millisecond)
 	drainClientMessages(send, 100*time.Millisecond)
@@ -551,7 +580,7 @@ func TestTimerResumesOnReconnect(t *testing.T) {
 	// Subscribe
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 	time.Sleep(80 * time.Millisecond)
 	drainClientMessages(send, 100*time.Millisecond)
@@ -583,13 +612,13 @@ func TestTimerResumesOnReconnect(t *testing.T) {
 
 func TestSectionErrorBroadcast(t *testing.T) {
 	mb := newMockBroker()
-	// Configure mock to return errors
+	// Configure mock to return errors for all reads (grid has 27 probes)
 	mb.mu.Lock()
-	mb.batchResults = []broker.Result{
-		{Data: nil, Err: fmt.Errorf("modbus timeout")},
-		{Data: nil, Err: fmt.Errorf("modbus timeout")},
-		{Data: nil, Err: fmt.Errorf("modbus timeout")},
+	errResults := make([]broker.Result, 27)
+	for i := range errResults {
+		errResults[i] = broker.Result{Data: nil, Err: fmt.Errorf("modbus timeout")}
 	}
+	mb.batchResults = errResults
 	mb.mu.Unlock()
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -598,19 +627,26 @@ func TestSectionErrorBroadcast(t *testing.T) {
 	// Subscribe -- immediate read should fail
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 
 	// Should receive section_error message (D-09, RT-04)
-	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
-	if msgs[0].Type != hub.MsgTypeSectionErr {
-		t.Errorf("expected type %q, got %q", hub.MsgTypeSectionErr, msgs[0].Type)
+	// May also get a section_data with empty groups, so collect up to 2
+	msgs := drainClientMessages(send, 500*time.Millisecond)
+	foundError := false
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeSectionErr {
+			foundError = true
+			if m.Section != "grid" {
+				t.Errorf("expected section 'grid', got %q", m.Section)
+			}
+			if m.Error == "" {
+				t.Error("expected non-empty error message")
+			}
+		}
 	}
-	if msgs[0].Section != "status" {
-		t.Errorf("expected section 'status', got %q", msgs[0].Section)
-	}
-	if msgs[0].Error == "" {
-		t.Error("expected non-empty error message")
+	if !foundError {
+		t.Error("expected at least one section_error message")
 	}
 }
 
@@ -622,7 +658,7 @@ func TestManualRefresh(t *testing.T) {
 	// Subscribe first
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
-		Section: "status",
+		Section: "grid",
 	})
 	time.Sleep(100 * time.Millisecond)
 	drainClientMessages(send, 100*time.Millisecond)
@@ -635,7 +671,7 @@ func TestManualRefresh(t *testing.T) {
 	// Send manual refresh command (D-23)
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeRefresh,
-		Section: "status",
+		Section: "grid",
 	})
 
 	// Should receive section_data from the manual refresh
@@ -649,9 +685,9 @@ func TestManualRefresh(t *testing.T) {
 	}
 }
 
-func TestDemoStatusProbes(t *testing.T) {
-	// Verify the "status" section has the correct D-25 probes.
-	// We create a hub without running it to inspect sections directly.
+// === Phase 03 Plan 02: Grouped section tests ===
+
+func TestGroupedSectionRegistered(t *testing.T) {
 	mb := newMockBroker()
 	h := hub.NewTestHub(mb)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -659,51 +695,477 @@ func TestDemoStatusProbes(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	defer cancel()
 
-	probes := h.GetSectionProbes("status")
-	if probes == nil {
-		t.Fatal("status section not found")
+	// Verify all 4 sections exist
+	for _, name := range []string{"system", "grid", "eps", "pv"} {
+		if !h.HasSection(name) {
+			t.Errorf("expected section %q to exist", name)
+		}
+		groups := h.GetSectionGroups(name)
+		if groups == nil {
+			t.Errorf("expected section %q to have groups", name)
+		}
+	}
+}
+
+func TestStatusSectionRemoved(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	go h.Run(ctx)
+	time.Sleep(30 * time.Millisecond)
+	defer cancel()
+
+	// Verify "status" section does NOT exist (D-24: demo retired)
+	if h.HasSection("status") {
+		t.Error("expected 'status' section to NOT exist (D-24: demo retired)")
+	}
+}
+
+func TestSystemSectionGroupedData(t *testing.T) {
+	mb := newMockBroker()
+	// Build mock results: 19 probe results + 2 fault batch results = 21
+	results := makeMockResultsForSection(register.SystemGroups, true)
+	mb.mu.Lock()
+	mb.batchResults = results
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "system",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypeSectionData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
+	}
+	if msg.Section != "system" {
+		t.Fatalf("expected section 'system', got %q", msg.Section)
 	}
 
-	if len(probes) != 3 {
-		t.Fatalf("expected 3 probes, got %d", len(probes))
+	// Verify groups array has 5 groups
+	if len(msg.Groups) != 5 {
+		t.Fatalf("expected 5 groups, got %d", len(msg.Groups))
 	}
 
-	// Probe 0: Inverter SN at 0x0445, count 10
-	if probes[0].Name != "Inverter SN" {
-		t.Errorf("probe[0] name = %q, want 'Inverter SN'", probes[0].Name)
+	// Verify group names
+	expectedNames := []string{"Identity", "Firmware", "Status", "Temperatures", "Protection"}
+	for i, name := range expectedNames {
+		if msg.Groups[i].Name != name {
+			t.Errorf("group[%d] name = %q, want %q", i, msg.Groups[i].Name, name)
+		}
 	}
-	if probes[0].Addr != 0x0445 {
-		t.Errorf("probe[0] addr = 0x%04X, want 0x0445", probes[0].Addr)
-	}
-	if probes[0].Count != 10 {
-		t.Errorf("probe[0] count = %d, want 10", probes[0].Count)
-	}
-	if !probes[0].IsASCII {
-		t.Error("probe[0] should be ASCII")
+}
+
+func TestSystemSectionFaults(t *testing.T) {
+	mb := newMockBroker()
+	// Build mock results with all-zero fault data -> empty faults array
+	results := makeMockResultsForSection(register.SystemGroups, true)
+	mb.mu.Lock()
+	mb.batchResults = results
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "system",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypeSectionData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
 	}
 
-	// Probe 1: System running state at 0x0404, count 1
-	if probes[1].Name != "System running state" {
-		t.Errorf("probe[1] name = %q, want 'System running state'", probes[1].Name)
-	}
-	if probes[1].Addr != 0x0404 {
-		t.Errorf("probe[1] addr = 0x%04X, want 0x0404", probes[1].Addr)
-	}
-	if probes[1].Count != 1 {
-		t.Errorf("probe[1] count = %d, want 1", probes[1].Count)
+	// When all fault registers are zero, there should be no active faults.
+	// The faults field may be nil (omitted by JSON omitempty) or an empty array --
+	// both are acceptable when there are zero active faults.
+	if len(msg.Faults) != 0 {
+		t.Errorf("expected 0 faults (all zeros), got %d", len(msg.Faults))
 	}
 
-	// Probe 2: Ambient temp 1 at 0x0418, count 1
-	if probes[2].Name != "Ambient temp 1" {
-		t.Errorf("probe[2] name = %q, want 'Ambient temp 1'", probes[2].Name)
+	// Verify that the system section CAN produce faults by checking with non-zero data.
+	// This is tested more thoroughly in TestSystemSectionFaultsActive below.
+}
+
+func TestSystemSectionFaultsActive(t *testing.T) {
+	mb := newMockBroker()
+	results := makeMockResultsForSection(register.SystemGroups, true)
+
+	// Set fault batch 1 result (index 19): first register 0x0405, bit 0 = "Grid over-voltage"
+	// Fault batch 1 reads 18 registers starting at 0x0405. We need 18*2=36 bytes.
+	batch1Data := make([]byte, 36)
+	// Set register 0x0405 (offset 0) bit 0
+	binary.BigEndian.PutUint16(batch1Data[0:2], 0x0001) // bit 0 set
+	results[19] = broker.Result{Data: batch1Data, Err: nil}
+
+	// Fault batch 2 (index 20): 12 registers, all zeros
+	batch2Data := make([]byte, 24)
+	results[20] = broker.Result{Data: batch2Data, Err: nil}
+
+	mb.mu.Lock()
+	mb.batchResults = results
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "system",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypeSectionData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
 	}
-	if probes[2].Addr != 0x0418 {
-		t.Errorf("probe[2] addr = 0x%04X, want 0x0418", probes[2].Addr)
+
+	// Should have exactly 1 active fault
+	if len(msg.Faults) != 1 {
+		t.Fatalf("expected 1 active fault, got %d", len(msg.Faults))
 	}
-	if probes[2].Count != 1 {
-		t.Errorf("probe[2] count = %d, want 1", probes[2].Count)
+	if msg.Faults[0].Name != "Grid over-voltage" {
+		t.Errorf("fault name = %q, want 'Grid over-voltage'", msg.Faults[0].Name)
 	}
-	if !probes[2].Signed {
-		t.Error("probe[2] should be signed")
+}
+
+func TestSystemSectionTimeComposition(t *testing.T) {
+	mb := newMockBroker()
+
+	// Build mock results for system section
+	// System probes in order (19 total):
+	// 0: Inverter SN (Identity)
+	// 1-5: Firmware (HW, Comm, Master, Slave, Safety)
+	// 6: Running state (Status)
+	// 7: Year, 8: Month, 9: Day, 10: Hour, 11: Min, 12: Sec (Status)
+	// 13-16: Temperatures
+	// 17-18: Protection
+	// 19-20: Fault batch reads (2)
+	results := makeMockResultsForSection(register.SystemGroups, true)
+
+	// Set time register values: 2026-03-16 14:30:45
+	results[7] = broker.Result{Data: uint16Bytes(26), Err: nil}  // Year (offset from 2000)
+	results[8] = broker.Result{Data: uint16Bytes(3), Err: nil}   // Month
+	results[9] = broker.Result{Data: uint16Bytes(16), Err: nil}  // Day
+	results[10] = broker.Result{Data: uint16Bytes(14), Err: nil} // Hour
+	results[11] = broker.Result{Data: uint16Bytes(30), Err: nil} // Min
+	results[12] = broker.Result{Data: uint16Bytes(45), Err: nil} // Sec
+
+	mb.mu.Lock()
+	mb.batchResults = results
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "system",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	// Find the "Status" group
+	var statusGroup *hub.GroupData
+	for i := range msg.Groups {
+		if msg.Groups[i].Name == "Status" {
+			statusGroup = &msg.Groups[i]
+			break
+		}
+	}
+	if statusGroup == nil {
+		t.Fatal("Status group not found in system section")
+	}
+
+	// Verify composed "System time" key
+	systemTime, ok := statusGroup.Items["System time"]
+	if !ok {
+		t.Fatal("expected 'System time' key in Status group items")
+	}
+	expected := "2026-03-16 14:30:45"
+	if systemTime != expected {
+		t.Errorf("System time = %q, want %q", systemTime, expected)
+	}
+
+	// Verify individual time registers are NOT present
+	for _, name := range []string{"System time (Year)", "System time (Month)", "System time (Day)", "System time (Hour)", "System time (Min)", "System time (Sec)"} {
+		if _, exists := statusGroup.Items[name]; exists {
+			t.Errorf("individual time register %q should NOT be in Status group items", name)
+		}
+	}
+}
+
+func TestSystemSectionEnumLabel(t *testing.T) {
+	mb := newMockBroker()
+	results := makeMockResultsForSection(register.SystemGroups, true)
+
+	// Set Running state register (index 6) to 0x0002 -> "Grid-connected"
+	results[6] = broker.Result{Data: uint16Bytes(2), Err: nil}
+
+	mb.mu.Lock()
+	mb.batchResults = results
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "system",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	// Find the "Status" group
+	var statusGroup *hub.GroupData
+	for i := range msg.Groups {
+		if msg.Groups[i].Name == "Status" {
+			statusGroup = &msg.Groups[i]
+			break
+		}
+	}
+	if statusGroup == nil {
+		t.Fatal("Status group not found in system section")
+	}
+
+	// Verify "Running state" shows enum label
+	runState, ok := statusGroup.Items["Running state"]
+	if !ok {
+		t.Fatal("expected 'Running state' key in Status group items")
+	}
+	if runState != "Grid-connected" {
+		t.Errorf("Running state = %q, want 'Grid-connected'", runState)
+	}
+}
+
+func TestGridSectionGroupedLayout(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "grid",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypeSectionData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
+	}
+
+	// Find "Phase R" group and check layout
+	var phaseR *hub.GroupData
+	for i := range msg.Groups {
+		if msg.Groups[i].Name == "Phase R" {
+			phaseR = &msg.Groups[i]
+			break
+		}
+	}
+	if phaseR == nil {
+		t.Fatal("Phase R group not found in grid section")
+	}
+	if phaseR.Layout != "column" {
+		t.Errorf("Phase R layout = %q, want 'column'", phaseR.Layout)
+	}
+}
+
+func TestNonSystemNoFaults(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe to "grid" (non-system section)
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "grid",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypeSectionData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
+	}
+
+	// Grid section should NOT have faults field
+	// JSON omitempty means nil slice -> no faults key, empty slice -> faults: []
+	// For non-system sections, faultEntries is never set, so it stays nil
+	if msg.Faults != nil {
+		t.Errorf("expected nil faults for grid section, got %d faults", len(msg.Faults))
+	}
+}
+
+// === Task 2: Configure message tests ===
+
+func TestConfigurePVChannels(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Send configure message to change PV channels to 4
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConfigure,
+		Section: "pv",
+		Config:  &hub.ConfigPayload{Channels: 4},
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to PV section
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "pv",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypeSectionData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
+	}
+
+	// Should have 5 groups: PV 1, PV 2, PV 3, PV 4, Total PV Power
+	if len(msg.Groups) != 5 {
+		t.Fatalf("expected 5 groups after configure(channels=4), got %d", len(msg.Groups))
+	}
+
+	expectedNames := []string{"PV 1", "PV 2", "PV 3", "PV 4", "Total PV Power"}
+	for i, name := range expectedNames {
+		if msg.Groups[i].Name != name {
+			t.Errorf("group[%d] name = %q, want %q", i, msg.Groups[i].Name, name)
+		}
+	}
+}
+
+func TestConfigureClampRange(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+	defer cancel()
+
+	// Connect broker
+	mb.mu.Lock()
+	mb.state = broker.StateConnected
+	mb.mu.Unlock()
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(30 * time.Millisecond)
+
+	send := make(chan []byte, 256)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+	drainClientMessages(send, 100*time.Millisecond)
+
+	// Configure with channels=0 (should clamp to 2)
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConfigure,
+		Section: "pv",
+		Config:  &hub.ConfigPayload{Channels: 0},
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	groups := h.GetSectionGroups("pv")
+	// Should have 3 groups: PV 1, PV 2, Total PV Power (clamped to 2 channels)
+	if len(groups) != 3 {
+		t.Errorf("expected 3 groups after clamp(0->2), got %d", len(groups))
+	}
+
+	// Configure with channels=20 (should clamp to 16)
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConfigure,
+		Section: "pv",
+		Config:  &hub.ConfigPayload{Channels: 20},
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	groups = h.GetSectionGroups("pv")
+	// Should have 17 groups: PV 1-16, Total PV Power (clamped to 16 channels)
+	if len(groups) != 17 {
+		t.Errorf("expected 17 groups after clamp(20->16), got %d", len(groups))
+	}
+}
+
+func TestConfigureNonPVIgnored(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+	defer cancel()
+
+	send := make(chan []byte, 256)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+	drainClientMessages(send, 100*time.Millisecond)
+
+	// Configure for "grid" section -- should be silently ignored
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConfigure,
+		Section: "grid",
+		Config:  &hub.ConfigPayload{Channels: 4},
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	// Grid groups should be unchanged (7 groups)
+	groups := h.GetSectionGroups("grid")
+	if len(groups) != 7 {
+		t.Errorf("expected 7 grid groups (unchanged), got %d", len(groups))
+	}
+}
+
+func TestConfigureTriggersReread(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe to PV first
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "pv",
+	})
+	time.Sleep(100 * time.Millisecond)
+	drainClientMessages(send, 200*time.Millisecond)
+
+	// Reset batch count
+	mb.mu.Lock()
+	mb.batchCallCount = 0
+	mb.mu.Unlock()
+
+	// Configure PV channels while subscribed -- should trigger re-read
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConfigure,
+		Section: "pv",
+		Config:  &hub.ConfigPayload{Channels: 4},
+	})
+
+	// Should receive new section_data from the triggered re-read
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	if msgs[0].Type != hub.MsgTypeSectionData {
+		t.Errorf("expected type %q, got %q", hub.MsgTypeSectionData, msgs[0].Type)
+	}
+
+	// Verify a new ReadBatch was triggered
+	if got := mb.getBatchCallCount(); got < 1 {
+		t.Errorf("expected at least 1 ReadBatch call from configure re-read, got %d", got)
+	}
+
+	// Verify the data has 5 groups (4 PV + Total)
+	if len(msgs[0].Groups) != 5 {
+		t.Errorf("expected 5 groups after reconfigure, got %d", len(msgs[0].Groups))
 	}
 }

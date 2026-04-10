@@ -2,12 +2,15 @@ package hub
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"sofar-hyd-diag/internal/broker"
+	"sofar-hyd-diag/internal/register"
 )
 
 // ClientCommand wraps an inbound message with the originating client.
@@ -37,23 +40,57 @@ type Hub struct {
 	timerCh    chan string
 	ctx        context.Context
 	cancel     context.CancelFunc
-	connected         bool          // tracks whether broker is connected for timer pause/resume (D-28)
-	refreshOverride   time.Duration // if non-zero, overrides defaultRefreshInterval for all sections (testing)
+	connected          bool          // tracks whether broker is connected for timer pause/resume (D-28)
+	refreshOverride    time.Duration // if non-zero, overrides defaultRefreshInterval for all sections (testing)
+	defaultPVChannels  int           // default PV channel count for PV section (D-16)
+	defaultBatInputs   int           // default battery inputs (1-2)
+	defaultBatTowers   int           // default towers per input (1-4)
+	defaultBatPacks    int           // default packs per tower (4-10)
 }
 
 // NewHub creates a new Hub. Call Run() in a goroutine to start processing.
-func NewHub(b BrokerInterface, logger *slog.Logger) *Hub {
+// pvChannels sets the default number of PV channels (clamped to 2-16).
+// batInputs/batTowers/batPacks set the default battery topology.
+func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int, batInputs, batTowers, batPacks int) *Hub {
+	if pvChannels < 2 {
+		pvChannels = 2
+	}
+	if pvChannels > 16 {
+		pvChannels = 16
+	}
+	if batInputs < 1 {
+		batInputs = 1
+	}
+	if batInputs > 2 {
+		batInputs = 2
+	}
+	if batTowers < 1 {
+		batTowers = 1
+	}
+	if batTowers > 4 {
+		batTowers = 4
+	}
+	if batPacks < 4 {
+		batPacks = 4
+	}
+	if batPacks > 10 {
+		batPacks = 10
+	}
 	return &Hub{
-		broker:     b,
-		logger:     logger.With("component", "hub"),
-		clients:    make(map[*Client]bool),
-		sections:   make(map[string]*Section),
-		register:   make(chan *Client, 16),
-		unregister: make(chan *Client, 16),
-		commands:   make(chan ClientCommand, 64),
-		funcs:      make(chan func(), 8),
-		results:    make(chan sectionResult, 32),
-		timerCh:    make(chan string, 16),
+		broker:            b,
+		logger:            logger.With("component", "hub"),
+		clients:           make(map[*Client]bool),
+		sections:          make(map[string]*Section),
+		register:          make(chan *Client, 16),
+		unregister:        make(chan *Client, 16),
+		commands:          make(chan ClientCommand, 64),
+		funcs:             make(chan func(), 8),
+		results:           make(chan sectionResult, 32),
+		timerCh:           make(chan string, 16),
+		defaultPVChannels: pvChannels,
+		defaultBatInputs:  batInputs,
+		defaultBatTowers:  batTowers,
+		defaultBatPacks:   batPacks,
 	}
 }
 
@@ -82,6 +119,16 @@ func (h *Hub) RegisterSection(name string, probes []Probe) {
 	h.sections[name] = sec
 }
 
+// RegisterGroupedSection creates a ProbeGroup-based Section and adds it to the hub.
+// Must be called before Run() or from within the Run goroutine.
+func (h *Hub) RegisterGroupedSection(name string, groups []register.ProbeGroup) {
+	sec := newGroupedSection(name, groups, h.timerCh, h.logger)
+	if h.refreshOverride > 0 {
+		sec.SetInterval(h.refreshOverride)
+	}
+	h.sections[name] = sec
+}
+
 // SetRefreshOverride sets a custom refresh interval applied to all sections.
 // Must be called before Run(). Used for testing with shorter intervals.
 func (h *Hub) SetRefreshOverride(d time.Duration) {
@@ -90,21 +137,40 @@ func (h *Hub) SetRefreshOverride(d time.Duration) {
 
 // ClientCount returns the number of registered clients.
 // Thread-safe: routes the query through the hub event loop.
+// Returns 0 if the hub has shut down.
 func (h *Hub) ClientCount() int {
 	reply := make(chan int, 1)
-	h.funcs <- func() { reply <- len(h.clients) }
-	return <-reply
+	select {
+	case h.funcs <- func() { reply <- len(h.clients) }:
+	case <-h.ctx.Done():
+		return 0
+	}
+	select {
+	case n := <-reply:
+		return n
+	case <-h.ctx.Done():
+		return 0
+	}
 }
 
 // RunFunc executes a function on the hub's event loop goroutine.
 // Blocks until the function completes. Thread-safe.
+// Returns without executing fn if the hub has shut down.
 func (h *Hub) RunFunc(fn func()) {
 	done := make(chan struct{})
-	h.funcs <- func() {
+	wrapper := func() {
 		fn()
 		close(done)
 	}
-	<-done
+	select {
+	case h.funcs <- wrapper:
+	case <-h.ctx.Done():
+		return // hub shut down; fn will not execute
+	}
+	select {
+	case <-done:
+	case <-h.ctx.Done():
+	}
 }
 
 // Run starts the hub event loop. Blocks until ctx is cancelled.
@@ -176,6 +242,8 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 		h.triggerSectionRead(msg.Section)
 	case MsgTypeAutoRefresh:
 		h.handleAutoRefreshToggle(cmd.Client, msg)
+	case MsgTypeConfigure:
+		h.handleConfigure(cmd)
 	default:
 		h.logger.Debug("unknown message type", "type", msg.Type)
 	}
@@ -298,15 +366,142 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
 	}
 
-	// Copy probes slice for safe goroutine access (probes are immutable after creation)
+	// For system section, append fault register read requests
+	var faultReads []broker.ReadRequest
+	if sec.faultSection {
+		for _, fp := range register.FaultRegisters {
+			faultReads = append(faultReads, broker.ReadRequest{Addr: fp.Addr, Count: fp.Count})
+		}
+		reads = append(reads, faultReads...)
+	}
+
+	// Copy groups and probes for safe goroutine access
+	groups := sec.Groups
 	probes := sec.Probes
+	isFault := sec.faultSection
 
 	go func() {
 		defer sec.reading.Store(false)
 
 		results := h.broker.ReadBatch(h.ctx, reads)
 
-		// Format results and check for errors
+		// Grouped section path
+		if groups != nil {
+			var hasError bool
+			var errMsg string
+
+			// Check for errors in probe results
+			probeResults := results[:len(probes)]
+			for _, r := range probeResults {
+				if r.Err != nil {
+					hasError = true
+					errMsg = r.Err.Error()
+				}
+			}
+
+			// Build GroupData by iterating groups and matching results by probe index
+			groupDataSlice := make([]GroupData, 0, len(groups))
+			probeIdx := 0
+			for _, g := range groups {
+				gd := GroupData{
+					Name:   g.Name,
+					Layout: g.Layout,
+					Items:  make(map[string]string),
+				}
+
+				// Collect system time register values for composition
+				var timeVals [6]uint16
+				timeCount := 0
+
+				for _, p := range g.Probes {
+					r := probeResults[probeIdx]
+					probeIdx++
+
+					if r.Err != nil {
+						continue
+					}
+
+					// Detect system time registers for composition
+					if strings.HasPrefix(p.Name, "System time (") && len(r.Data) >= 2 {
+						val := binary.BigEndian.Uint16(r.Data[:2])
+						switch p.Name {
+						case "System time (Year)":
+							timeVals[0] = val
+							timeCount++
+						case "System time (Month)":
+							timeVals[1] = val
+							timeCount++
+						case "System time (Day)":
+							timeVals[2] = val
+							timeCount++
+						case "System time (Hour)":
+							timeVals[3] = val
+							timeCount++
+						case "System time (Min)":
+							timeVals[4] = val
+							timeCount++
+						case "System time (Sec)":
+							timeVals[5] = val
+							timeCount++
+						}
+						continue // don't add individual time registers
+					}
+
+					gd.Items[p.Name] = FormatValue(p, r.Data)
+				}
+
+				// Compose system time if all 6 components found
+				if timeCount == 6 {
+					gd.Items["System time"] = register.ComposeSystemTime(
+						timeVals[0], timeVals[1], timeVals[2],
+						timeVals[3], timeVals[4], timeVals[5],
+					)
+				}
+
+				groupDataSlice = append(groupDataSlice, gd)
+			}
+
+			// Decode faults for system section
+			var faultEntries []FaultEntry
+			if isFault {
+				faultResults := results[len(probes):]
+				faultData := make(map[uint16]uint16)
+				faultIdx := 0
+				for _, fp := range register.FaultRegisters {
+					if faultIdx >= len(faultResults) {
+						break
+					}
+					r := faultResults[faultIdx]
+					faultIdx++
+					if r.Err != nil {
+						continue
+					}
+					// Each fault probe reads multiple contiguous registers
+					// Result data is count*2 bytes, parse each register
+					for reg := uint16(0); reg < fp.Count; reg++ {
+						offset := int(reg) * 2
+						if offset+2 <= len(r.Data) {
+							addr := fp.Addr + reg
+							faultData[addr] = binary.BigEndian.Uint16(r.Data[offset : offset+2])
+						}
+					}
+				}
+				activeFaults := register.DecodeFaults(faultData)
+				faultEntries = make([]FaultEntry, len(activeFaults))
+				for i, desc := range activeFaults {
+					faultEntries[i] = FaultEntry{Name: desc}
+				}
+			}
+
+			if hasError {
+				h.results <- sectionResult{section: sectionName, msg: NewSectionError(sectionName, errMsg)}
+				return
+			}
+			h.results <- sectionResult{section: sectionName, msg: NewGroupedSectionData(sectionName, groupDataSlice, faultEntries)}
+			return
+		}
+
+		// Legacy flat section path (fallback)
 		data := make(map[string]string)
 		var hasError bool
 		var errMsg string
@@ -321,7 +516,6 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 			data[key] = FormatValue(probes[i], r.Data)
 		}
 
-		// Route results back through hub event loop for thread-safe broadcast
 		if hasError {
 			h.results <- sectionResult{section: sectionName, msg: NewSectionError(sectionName, errMsg)}
 		}
@@ -410,13 +604,45 @@ func (h *Hub) shutdown() {
 	h.logger.Info("hub shut down")
 }
 
-// registerBuiltinSections registers the default sections.
+// registerBuiltinSections registers the 4 core monitoring sections (D-24: demo "status" retired).
 func (h *Hub) registerBuiltinSections() {
-	// Demo "status" section (D-25): SN + Running State + Internal Temp
-	statusProbes := []Probe{
-		{Name: "Inverter SN", Addr: 0x0445, Count: 10, IsASCII: true},
-		{Name: "System running state", Addr: 0x0404, Count: 1},
-		{Name: "Ambient temp 1", Addr: 0x0418, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
+	h.RegisterGroupedSection("system", register.SystemGroups)
+	h.RegisterGroupedSection("grid", register.GridGroups)
+	h.RegisterGroupedSection("eps", register.EPSGroups)
+	h.RegisterGroupedSection("pv", register.GeneratePVGroups(h.defaultPVChannels))
+}
+
+// handleConfigure handles configure messages (D-15).
+// Currently only "pv" section supports reconfiguration (channel count).
+func (h *Hub) handleConfigure(cmd ClientCommand) {
+	msg := cmd.Message
+	if msg.Section != "pv" || msg.Config == nil {
+		return // silently ignore non-pv configure or missing config
 	}
-	h.RegisterSection("status", statusProbes)
+
+	channels := msg.Config.Channels
+	// Clamp to valid range (T-03-03)
+	if channels < 2 {
+		channels = 2
+	}
+	if channels > 16 {
+		channels = 16
+	}
+
+	// Rebuild PV section with new channel count
+	newGroups := register.GeneratePVGroups(channels)
+	sec, ok := h.sections["pv"]
+	if !ok {
+		return
+	}
+
+	sec.Groups = newGroups
+	sec.Probes = flattenProbeGroups(newGroups)
+
+	h.logger.Info("pv section reconfigured", "channels", channels)
+
+	// Trigger immediate re-read if connected and section has subscribers
+	if h.connected && sec.SubscriberCount() > 0 {
+		h.triggerSectionRead("pv")
+	}
 }
