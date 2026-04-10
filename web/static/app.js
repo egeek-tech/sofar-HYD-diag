@@ -358,6 +358,11 @@ function handleConnectionState(msg) {
             btn.className = 'btn btn--connect';
             btn.disabled = false;
             setFormInputsDisabled(false);
+            // Show connection error if present (e.g. connection refused)
+            if (msg.error) {
+                showConnectionError(msg.error);
+                triggerFlash('error');
+            }
             break;
     }
 }
@@ -427,6 +432,22 @@ function handleSectionError(msg) {
 }
 
 // === UI Helpers ===
+
+function showConnectionError(errMsg) {
+    var body = $('#content-body');
+    body.textContent = '';
+    var errEl = document.createElement('p');
+    errEl.className = 'error-message';
+    // Show a user-friendly message with the technical detail
+    var friendly = 'Connection failed';
+    if (errMsg.indexOf('refused') !== -1) {
+        friendly = 'Connection refused — inverter not reachable on this port';
+    } else if (errMsg.indexOf('timeout') !== -1 || errMsg.indexOf('i/o timeout') !== -1) {
+        friendly = 'Connection timed out — check IP address';
+    }
+    errEl.textContent = friendly;
+    body.appendChild(errEl);
+}
 
 function showLoading() {
     var body = $('#content-body');

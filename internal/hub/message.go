@@ -62,9 +62,11 @@ func NewSectionError(section string, errMsg string) OutboundMessage {
 }
 
 // NewStateMessage creates a connection_state outbound message.
-func NewStateMessage(state string) OutboundMessage {
+// If errMsg is non-empty, it is included so the client can display the reason for disconnection.
+func NewStateMessage(state string, errMsg string) OutboundMessage {
 	return OutboundMessage{
 		Type:  MsgTypeState,
 		State: state,
+		Error: errMsg,
 	}
 }

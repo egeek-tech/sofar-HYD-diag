@@ -126,7 +126,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.clients[client] = true
 			// Send current connection state to new client (D-04)
 			state := h.broker.CurrentState()
-			h.sendToClient(client, NewStateMessage(state.String()))
+			h.sendToClient(client, NewStateMessage(state.String(), ""))
 			h.logger.Debug("client registered", "clients", len(h.clients))
 		case client := <-h.unregister:
 			h.removeClient(client)
@@ -183,7 +183,11 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 
 // handleStateEvent broadcasts state changes to all clients and manages timer pause/resume.
 func (h *Hub) handleStateEvent(evt broker.StateEvent) {
-	h.broadcastAll(NewStateMessage(evt.State.String()))
+	var errMsg string
+	if evt.Err != nil {
+		errMsg = evt.Err.Error()
+	}
+	h.broadcastAll(NewStateMessage(evt.State.String(), errMsg))
 
 	switch evt.State {
 	case broker.StateConnected:
