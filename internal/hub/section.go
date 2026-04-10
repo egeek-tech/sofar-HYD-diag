@@ -76,10 +76,14 @@ func (s *Section) startTimer() {
 		return // already running
 	}
 	s.ticker = time.NewTicker(s.interval)
+	// Capture ticker channel locally to avoid race with stopTimer setting s.ticker = nil
+	tickCh := s.ticker.C
+	name := s.Name
+	timerCh := s.timerCh
 	go func() {
-		for range s.ticker.C {
+		for range tickCh {
 			select {
-			case s.timerCh <- s.Name:
+			case timerCh <- name:
 			default:
 				// timer channel full, skip this tick
 			}

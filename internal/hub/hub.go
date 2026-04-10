@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"sofar-hyd-diag/internal/broker"
 )
@@ -13,6 +14,12 @@ import (
 type ClientCommand struct {
 	Client  *Client
 	Message InboundMessage
+}
+
+// sectionResult carries ReadBatch results back to the hub event loop for broadcasting.
+type sectionResult struct {
+	section string
+	msg     OutboundMessage
 }
 
 // Hub manages WebSocket clients, section subscriptions, and broker integration.
@@ -25,11 +32,13 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	commands   chan ClientCommand
-	queries    chan chan int // thread-safe client count queries
+	funcs      chan func()         // thread-safe arbitrary function execution on hub goroutine
+	results    chan sectionResult  // read results routed back to event loop
 	timerCh    chan string
 	ctx        context.Context
 	cancel     context.CancelFunc
-	connected  bool // tracks whether broker is connected for timer pause/resume (D-28)
+	connected         bool          // tracks whether broker is connected for timer pause/resume (D-28)
+	refreshOverride   time.Duration // if non-zero, overrides defaultRefreshInterval for all sections (testing)
 }
 
 // NewHub creates a new Hub. Call Run() in a goroutine to start processing.
@@ -42,7 +51,8 @@ func NewHub(b BrokerInterface, logger *slog.Logger) *Hub {
 		register:   make(chan *Client, 16),
 		unregister: make(chan *Client, 16),
 		commands:   make(chan ClientCommand, 64),
-		queries:    make(chan chan int, 8),
+		funcs:      make(chan func(), 8),
+		results:    make(chan sectionResult, 32),
 		timerCh:    make(chan string, 16),
 	}
 }
@@ -66,15 +76,35 @@ func (h *Hub) Command(c *Client, msg InboundMessage) {
 // Must be called before Run() or from within the Run goroutine.
 func (h *Hub) RegisterSection(name string, probes []Probe) {
 	sec := newSection(name, probes, h.timerCh, h.logger)
+	if h.refreshOverride > 0 {
+		sec.SetInterval(h.refreshOverride)
+	}
 	h.sections[name] = sec
+}
+
+// SetRefreshOverride sets a custom refresh interval applied to all sections.
+// Must be called before Run(). Used for testing with shorter intervals.
+func (h *Hub) SetRefreshOverride(d time.Duration) {
+	h.refreshOverride = d
 }
 
 // ClientCount returns the number of registered clients.
 // Thread-safe: routes the query through the hub event loop.
 func (h *Hub) ClientCount() int {
 	reply := make(chan int, 1)
-	h.queries <- reply
+	h.funcs <- func() { reply <- len(h.clients) }
 	return <-reply
+}
+
+// RunFunc executes a function on the hub's event loop goroutine.
+// Blocks until the function completes. Thread-safe.
+func (h *Hub) RunFunc(fn func()) {
+	done := make(chan struct{})
+	h.funcs <- func() {
+		fn()
+		close(done)
+	}
+	<-done
 }
 
 // Run starts the hub event loop. Blocks until ctx is cancelled.
@@ -111,8 +141,10 @@ func (h *Hub) Run(ctx context.Context) {
 			h.handleStateEvent(evt)
 		case sectionName := <-h.timerCh:
 			h.handleTimerTick(sectionName)
-		case reply := <-h.queries:
-			reply <- len(h.clients)
+		case res := <-h.results:
+			h.broadcastToSection(res.section, res.msg)
+		case fn := <-h.funcs:
+			fn()
 		}
 	}
 }
@@ -256,6 +288,9 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
 	}
 
+	// Copy probes slice for safe goroutine access (probes are immutable after creation)
+	probes := sec.Probes
+
 	go func() {
 		defer sec.reading.Store(false)
 
@@ -272,15 +307,16 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 				errMsg = r.Err.Error()
 				continue
 			}
-			key := toSnakeCase(sec.Probes[i].Name)
-			data[key] = FormatValue(sec.Probes[i], r.Data)
+			key := toSnakeCase(probes[i].Name)
+			data[key] = FormatValue(probes[i], r.Data)
 		}
 
+		// Route results back through hub event loop for thread-safe broadcast
 		if hasError {
-			h.broadcastToSection(sectionName, NewSectionError(sectionName, errMsg))
+			h.results <- sectionResult{section: sectionName, msg: NewSectionError(sectionName, errMsg)}
 		}
 		if len(data) > 0 {
-			h.broadcastToSection(sectionName, NewSectionData(sectionName, data))
+			h.results <- sectionResult{section: sectionName, msg: NewSectionData(sectionName, data)}
 		}
 	}()
 }
