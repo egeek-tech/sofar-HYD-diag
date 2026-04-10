@@ -109,6 +109,9 @@ func (b *Broker) SetBackoff(base, max time.Duration) {
 // Run starts the broker's command processing loop. It blocks until ctx is cancelled.
 // Call this in a goroutine.
 func (b *Broker) Run(ctx context.Context) {
+	// Attempt initial connection so status reflects connected state immediately
+	b.ensureConnected(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
