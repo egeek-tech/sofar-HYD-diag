@@ -12,7 +12,7 @@ Transform a proven CLI Modbus tool into a single-binary web application for real
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation and Modbus Service** - Extract proven Modbus code into concurrency-safe packages with project scaffold
+- [x] **Phase 1: Foundation and Modbus Service** - Extract proven Modbus code into concurrency-safe packages with project scaffold
 - [ ] **Phase 2: WebSocket Hub, API, and Connection UI** - Build real-time communication backbone with connection management frontend
 - [ ] **Phase 3: Core Monitoring Sections** - System Info, Grid, EPS, PV sections with tab navigation and desktop layout
 - [ ] **Phase 4: Battery Overview and Statistics** - Global battery info, topology config, electricity statistics, and fault display
@@ -47,8 +47,13 @@ Plans:
   3. WebSocket connection is established between browser and server, delivering section data as push messages (not polling)
   4. Navigating to a section triggers register reads only for that section (lazy loading); inactive sections do not generate Modbus traffic
   5. User can toggle auto-refresh on/off per section; successful refreshes flash green, failures flash red
-**Plans**: TBD
+**Plans:** 3 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 02-01-PLAN.md -- Broker dormant start, Reconfigure, Disconnect + hub message types and broker interface
+- [ ] 02-02-PLAN.md -- Hub event loop, client read/write pumps, section registry, timer management, demo section
+- [ ] 02-03-PLAN.md -- API endpoints, server wiring, and complete frontend rewrite with sidebar layout
 
 ### Phase 3: Core Monitoring Sections
 **Goal**: Users can monitor all non-battery inverter parameters -- system identity, grid status, EPS status, and PV production -- through a tabbed desktop interface
@@ -90,12 +95,12 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation and Modbus Service | 0/3 | Planned | - |
-| 2. WebSocket Hub, API, and Connection UI | 0/0 | Not started | - |
+| 1. Foundation and Modbus Service | 3/3 | Done | - |
+| 2. WebSocket Hub, API, and Connection UI | 0/3 | Planning complete | - |
 | 3. Core Monitoring Sections | 0/0 | Not started | - |
 | 4. Battery Overview and Statistics | 0/0 | Not started | - |
 | 5. Deep Battery Pack Diagnostics | 0/0 | Not started | - |
