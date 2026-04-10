@@ -36,7 +36,9 @@ func ReadHoldingRegistersRTU(conn net.Conn, logger *slog.Logger, slaveID byte, s
 
 	if header[1]&0x80 != 0 {
 		errBuf := make([]byte, 3)
-		ReadFull(conn, errBuf)
+		if _, readErr := ReadFull(conn, errBuf); readErr != nil {
+			return nil, fmt.Errorf("exception (could not read error code): func=0x%02X read_err=%w", header[1], readErr)
+		}
 		return nil, fmt.Errorf("exception: func=0x%02X err=0x%02X", header[1], errBuf[0])
 	}
 
