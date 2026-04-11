@@ -97,3 +97,19 @@ func DecodeTopology(val uint16) (parallelStrings int, packsPerString int) {
 	packsPerString = int(val & 0xFF)
 	return
 }
+
+// DecodeBalanceState interprets a 16-bit balance state register (0x9075).
+// Each bit corresponds to a cell (bit 0 = Cell 1, etc.). If zero, all cells
+// are balanced. Otherwise returns a comma-separated list of balancing cells.
+func DecodeBalanceState(val uint16) string {
+	if val == 0 {
+		return "Balanced"
+	}
+	var cells []string
+	for i := 0; i < 16; i++ {
+		if val&(1<<uint(i)) != 0 {
+			cells = append(cells, fmt.Sprintf("Cell %d", i+1))
+		}
+	}
+	return "Balancing: " + strings.Join(cells, ", ")
+}
