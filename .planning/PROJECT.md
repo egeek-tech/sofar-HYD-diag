@@ -22,12 +22,12 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - ✓ Battery Information section: global battery info per channel, BMS global info, configurable topology, online bitmap — Validated in Phase 4
 - ✓ Electricity Statistics section (daily/total/monthly/yearly: generation, consumption, bought, sold, battery charge/discharge) — Validated in Phase 4
 
-### Active (v1.1)
+### Validated (v1.1)
 
-- [ ] Configurable Modbus read delay via UI (default 500ms, separate pack settle time)
-- [ ] Streaming parameter display — show each value as it arrives, not batch
-- [ ] Battery pack access fix — investigate and fix why only 2 of 20 packs show as available (old CLI accesses all 20)
-- [ ] Hardcode actual topology: 16 cells/pack, 10 packs/tower, 2 towers
+- ✓ Configurable Modbus read delay via UI (50-5000ms, separate pack settle 500-10000ms) — v1.1
+- ✓ Streaming parameter display — each value appears as it is read with em-dash skeleton loading — v1.1
+- ✓ Battery pack access fix — all 20 packs accessible, 0x9022 is tower bitmap (not pack bitmap) — v1.1
+- ✓ Hardcoded actual topology: 16 cells/pack, 10 packs/tower, 2 towers — v1.1
 
 ### Validated (v1.0)
 
@@ -79,7 +79,10 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 | WebSocket for live updates | Real-time push, no polling overhead, instant feedback | — Pending |
 | Reuse existing main.go Modbus layer | Proven working code, verified against real hardware | — Pending |
 | Configurable PV channels (2-16) | Different HYD models have different PV input counts | — Pending |
-| Configurable battery topology | Different setups: 1-2 inputs, 1-4 towers, 4-10 packs | — Pending |
+| Configurable battery topology | Different setups: 1-2 inputs, 1-4 towers, 4-10 packs | ⚠️ Revisit — v1.1 hardcoded to 2/10/16, configurable removed |
+| Per-register streaming | Stream each value as read instead of batch-then-send | ✓ Good — v1.1 |
+| Hardcoded topology constants | User's actual setup: 2 towers, 10 packs, 16 cells | ✓ Good — v1.1, simpler than configurable |
+| 0x9022 is tower bitmap | "Battery" = tower in Sofar protocol, not individual pack | ✓ Good — v1.1, corrected from v1.0 misinterpretation |
 | Desktop-only layout | Diagnostic tool used at inverter location on laptop/desktop | — Pending |
 
 ## Evolution
@@ -99,15 +102,16 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v1.1 UX Polish & Battery Pack Fix
+## Current State
 
-**Goal:** Fix battery pack access (all 20 packs), stream parameters in real-time, and add configurable Modbus timing.
+Shipped v1.1 with 9,334 LOC Go + vanilla HTML/JS/CSS.
+All 20 battery packs accessible, per-register streaming display, configurable timing controls.
+Two milestones complete (v1.0 MVP + v1.1 UX Polish & Battery Pack Fix).
 
-**Target features:**
-- Configurable Modbus read delay (UI control, separate pack settle time)
-- Streaming parameter display (show each value as it arrives, not batch)
-- Battery pack access fix (investigate why only 2 of 20 packs show)
-- Hardcode actual topology: 16 cells/pack, 10 packs/tower, 2 towers
+**Known issues (from todos):**
+- PackInfoProbes (0x9104-0x9126) returns illegal address on this BMS hardware
+- Pack drill-down values appear as batch instead of streaming
+- Read delay shows burst on section switch due to enforceInterReadDelay timing
 
 ---
-*Last updated: 2026-04-11 after v1.0 milestone, starting v1.1*
+*Last updated: 2026-04-11 after v1.1 milestone*

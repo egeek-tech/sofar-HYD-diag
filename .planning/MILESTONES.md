@@ -1,5 +1,19 @@
 # Milestones
 
+## v1.1 UX Polish & Battery Pack Fix (Shipped: 2026-04-11)
+
+**Phases completed:** 2 phases, 6 plans, 11 tasks
+
+**Key accomplishments:**
+
+- Hardcoded battery topology constants (2 towers, 10 packs, 16 cells) replacing configurable UI, fixing BMS pack access to match proven CLI behavior
+- Corrected 0x9022 tower bitmap interpretation — single read shows all towers online status without cycling
+- Per-register streaming display — each parameter value appears in the UI the moment it is read, with em-dash skeleton loading
+- Configurable Modbus timing — Read Delay (50-5000ms) and Pack Settle (500-10000ms) controls in header bar with localStorage persistence
+- Updated 15 hub tests for streaming model, added Wave 0 test stubs for all phase requirements
+
+---
+
 ## v1.0 Sofar HYD Diagnostic Tool (Shipped: 2026-04-11)
 
 **Phases completed:** 5 phases, 16 plans, 33 tasks
