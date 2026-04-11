@@ -36,7 +36,12 @@
   2. Pack selection writes the correct tower/pack encoding to 0x9020, matching the proven CLI tool
   3. Topology is fixed at 16 cells/pack, 10 packs/tower, 2 towers -- no configuration dropdowns for these values
   4. Online bitmap correctly reflects all packs that the inverter reports as available
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Hardcode topology constants, simplify Hub/NewHub, reduce cell probes to 16
+- [ ] 06-02-PLAN.md — Implement per-tower bitmap cycling in triggerBMSRead
+- [ ] 06-03-PLAN.md — Remove frontend topology dropdowns, hardcode JS constants, simplify bitmap click
 
 ### Phase 7: Streaming Display and Configurable Timing
 **Goal**: Users see each parameter value appear immediately as it is read, and can tune Modbus timing to match their hardware
@@ -60,5 +65,5 @@
 | 3. Core Monitoring Sections | v1.0 | 3/3 | Done | 2026-04-10 |
 | 4. Battery Overview and Statistics | v1.0 | 4/4 | Done | 2026-04-11 |
 | 5. Deep Battery Pack Diagnostics | v1.0 | 3/3 | Done | 2026-04-11 |
-| 6. Battery Pack Access Fix | v1.1 | 0/? | Not started | - |
+| 6. Battery Pack Access Fix | v1.1 | 0/3 | Planning | - |
 | 7. Streaming Display and Configurable Timing | v1.1 | 0/? | Not started | - |
