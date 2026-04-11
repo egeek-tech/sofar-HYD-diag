@@ -33,18 +33,18 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TIMING-01 | TBD | Pending |
-| TIMING-02 | TBD | Pending |
-| STREAM-01 | TBD | Pending |
-| STREAM-02 | TBD | Pending |
-| PACK-01 | TBD | Pending |
-| PACK-02 | TBD | Pending |
-| PACK-03 | TBD | Pending |
+| TIMING-01 | Phase 7 | Pending |
+| TIMING-02 | Phase 7 | Pending |
+| STREAM-01 | Phase 7 | Pending |
+| STREAM-02 | Phase 7 | Pending |
+| PACK-01 | Phase 6 | Pending |
+| PACK-02 | Phase 6 | Pending |
+| PACK-03 | Phase 6 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 7 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 7
+- Mapped to phases: 7
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-11*

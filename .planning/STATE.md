@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: UX Polish & Battery Pack Fix
 status: planning
-stopped_at: Milestone v1.1 started
-last_updated: "2026-04-11T18:00:00.000Z"
-last_activity: 2026-04-11 -- Milestone v1.1 started
+stopped_at: Roadmap created for v1.1
+last_updated: "2026-04-11T18:30:00.000Z"
+last_activity: 2026-04-11 -- Roadmap created with 2 phases (6-7)
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-11)
 
 **Core value:** Clear, real-time visibility into all Sofar HYD inverter parameters -- especially battery pack diagnostics -- through a reliable web interface
-**Current focus:** Milestone v1.1 — UX Polish & Battery Pack Fix
+**Current focus:** Milestone v1.1 — Phase 6: Battery Pack Access Fix
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-11 -- Milestone v1.1 started
+Phase: 6 of 7 (Battery Pack Access Fix)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-04-11 — Roadmap created for v1.1 (Phases 6-7)
 
 Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 0 (v1.1)
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -52,11 +52,11 @@ None yet.
 
 ### Blockers/Concerns
 
-- Battery pack access: only 2 of 20 packs showing as available — needs investigation against old CLI tool behavior
+- Battery pack access: only 2 of 20 packs showing as available -- needs investigation against old CLI tool behavior
 - Pack settle time may need to be longer than 1s for reliable reads
 
 ## Session Continuity
 
-Last session: 2026-04-11T18:00:00.000Z
-Stopped at: Milestone v1.1 started
+Last session: 2026-04-11T18:30:00.000Z
+Stopped at: Roadmap created for v1.1
 Resume file: None
