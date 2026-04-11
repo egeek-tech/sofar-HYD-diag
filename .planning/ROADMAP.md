@@ -14,9 +14,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation and Modbus Service** - Extract proven Modbus code into concurrency-safe packages with project scaffold
 - [x] **Phase 2: WebSocket Hub, API, and Connection UI** - Build real-time communication backbone with connection management frontend
-- [ ] **Phase 3: Core Monitoring Sections** - System Info, Grid, EPS, PV sections with tab navigation and desktop layout
-- [ ] **Phase 4: Battery Overview and Statistics** - Global battery info, topology config, electricity statistics, and fault display
-- [ ] **Phase 5: Deep Battery Pack Diagnostics** - Hierarchical pack navigation with cell voltages, temperatures, and fault decoding
+- [x] **Phase 3: Core Monitoring Sections** - System Info, Grid, EPS, PV sections with tab navigation and desktop layout
+- [x] **Phase 4: Battery Overview and Statistics** - Global battery info, topology config, electricity statistics, and fault display
+- [x] **Phase 5: Deep Battery Pack Diagnostics** - Hierarchical pack navigation with cell voltages, temperatures, and fault decoding
 
 ## Phase Details
 
@@ -116,6 +116,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Foundation and Modbus Service | 3/3 | Done | - |
 | 2. WebSocket Hub, API, and Connection UI | 3/3 | Done | 2026-04-10 |
-| 3. Core Monitoring Sections | 0/3 | In progress | - |
-| 4. Battery Overview and Statistics | 0/3 | Planned | - |
-| 5. Deep Battery Pack Diagnostics | 0/3 | Planned | - |
+| 3. Core Monitoring Sections | 3/3 | Done | 2026-04-10 |
+| 4. Battery Overview and Statistics | 4/4 | Done | 2026-04-11 |
+| 5. Deep Battery Pack Diagnostics | 3/3 | Done | 2026-04-11 |
