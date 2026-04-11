@@ -1817,3 +1817,48 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x0000 (tower 2 offline)", bitmapGroup.Bitmap.Online[1])
 	}
 }
+
+// === Wave 0 Test Stubs (Phase 7) ===
+// These stubs define the behavioral expectations for each phase requirement.
+// They are intentionally t.Skip'd so they compile and appear in test output
+// but do not fail. Plan 02 will remove Skip and implement the test bodies.
+
+// TestStreamingRead verifies STREAM-01: subscribing to a section causes individual
+// register_value messages to be sent per register, followed by a section_complete message.
+func TestStreamingRead(t *testing.T) {
+	t.Skip("Wave 0 stub: will be implemented when streaming read methods exist (Plan 02)")
+	// Setup: connected hub, subscribe to "grid" section
+	// Expect: multiple register_value messages (one per probe in grid section)
+	// Expect: final section_complete message with timestamp
+	// Verify: mockBroker.ReadRegisters called once per probe (not ReadBatch)
+}
+
+// TestSectionSchema verifies STREAM-02: a section_schema message is sent to the client
+// on subscribe, before any register values.
+func TestSectionSchema(t *testing.T) {
+	t.Skip("Wave 0 stub: will be implemented when schema-on-subscribe exists (Plan 02)")
+	// Setup: connected hub, subscribe to "grid" section
+	// Expect: first message received is section_schema with groups matching grid section
+	// Expect: each group has name, layout, and register name list
+	// Verify: schema message arrives before any register_value messages
+}
+
+// TestTimingConfigure verifies TIMING-01: a configure message with timing section
+// updates the broker's inter-read delay.
+func TestTimingConfigure(t *testing.T) {
+	t.Skip("Wave 0 stub: will be implemented when timing configure handler exists (Plan 02)")
+	// Setup: connected hub
+	// Send: configure message with section="timing", timing_config={read_delay_ms: 200}
+	// Verify: mockBroker.lastDelay == 200ms (SetDelayRuntime was called)
+	// Verify: values outside [100, 5000] are clamped
+}
+
+// TestPackSettleConfigure verifies TIMING-02: a configure message with timing section
+// updates the hub's pack settle time.
+func TestPackSettleConfigure(t *testing.T) {
+	t.Skip("Wave 0 stub: will be implemented when timing configure handler exists (Plan 02)")
+	// Setup: connected hub
+	// Send: configure message with section="timing", timing_config={pack_settle_ms: 2000}
+	// Verify: hub.GetTimingConfig() returns packSettleMs == 2000
+	// Verify: values outside [500, 10000] are clamped
+}
