@@ -25,6 +25,14 @@ type sectionResult struct {
 	msg     OutboundMessage
 }
 
+// === Battery Topology Constants (Phase 06, D-02) ===
+// Hardcoded to match actual hardware: 2 towers, 10 packs/tower, 16 cells/pack.
+const (
+	TopoTowers        = 2  // 2 towers (groups/strings)
+	TopoPacksPerTower = 10 // 10 packs per tower
+	TopoCellsPerPack  = 16 // 16 cells per battery pack
+)
+
 // Hub manages WebSocket clients, section subscriptions, and broker integration.
 // All state mutations happen in the Run() goroutine (D-03 hub + per-client goroutine pattern).
 type Hub struct {
@@ -43,9 +51,6 @@ type Hub struct {
 	connected          bool          // tracks whether broker is connected for timer pause/resume (D-28)
 	refreshOverride    time.Duration // if non-zero, overrides defaultRefreshInterval for all sections (testing)
 	defaultPVChannels  int           // default PV channel count for PV section (D-16)
-	defaultBatInputs   int           // default battery inputs (1-2)
-	defaultBatTowers   int           // default towers per input (1-4)
-	defaultBatPacks    int           // default packs per tower (4-10)
 	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
 }
 
@@ -57,31 +62,12 @@ type packSelection struct {
 
 // NewHub creates a new Hub. Call Run() in a goroutine to start processing.
 // pvChannels sets the default number of PV channels (clamped to 2-16).
-// batInputs/batTowers/batPacks set the default battery topology.
-func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int, batInputs, batTowers, batPacks int) *Hub {
+func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 	if pvChannels < 2 {
 		pvChannels = 2
 	}
 	if pvChannels > 16 {
 		pvChannels = 16
-	}
-	if batInputs < 1 {
-		batInputs = 1
-	}
-	if batInputs > 2 {
-		batInputs = 2
-	}
-	if batTowers < 1 {
-		batTowers = 1
-	}
-	if batTowers > 4 {
-		batTowers = 4
-	}
-	if batPacks < 4 {
-		batPacks = 4
-	}
-	if batPacks > 10 {
-		batPacks = 10
 	}
 	return &Hub{
 		broker:            b,
@@ -95,9 +81,6 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int, batInputs, b
 		results:           make(chan sectionResult, 32),
 		timerCh:           make(chan string, 16),
 		defaultPVChannels: pvChannels,
-		defaultBatInputs:  batInputs,
-		defaultBatTowers:  batTowers,
-		defaultBatPacks:   batPacks,
 	}
 }
 
@@ -623,9 +606,8 @@ func (h *Hub) triggerBatteryRead(sec *Section) {
 func (h *Hub) triggerBMSRead(sec *Section) {
 	groups := sec.Groups
 	probes := sec.Probes
-	inputs := h.defaultBatInputs
-	towers := h.defaultBatTowers
-	packs := h.defaultBatPacks
+	towers := TopoTowers
+	packs := TopoPacksPerTower
 
 	// Build standard read requests for BMS info probes
 	reads := make([]broker.ReadRequest, len(probes))
@@ -653,8 +635,7 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 				val := binary.BigEndian.Uint16(results[i].Data[:2])
 				pStr, pPack := register.DecodeTopology(val)
 				detectedStr = fmt.Sprintf("%d strings x %d packs", pStr, pPack)
-				totalTowers := inputs * towers
-				if pStr != totalTowers || pPack != packs {
+				if pStr != TopoTowers || pPack != TopoPacksPerTower {
 					mismatch = true
 				}
 				break
@@ -662,14 +643,13 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 		}
 
 		// Step 3: Extract bitmap from 0x9022 standard read result (no write cycle needed)
-		totalTowers := inputs * towers
-		onlineBitmaps := make([]uint16, totalTowers)
+		onlineBitmaps := make([]uint16, towers)
 		for i, p := range probes {
 			if p.Addr == 0x9022 && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
 				bitmapVal := binary.BigEndian.Uint16(results[i].Data[:2])
 				// Apply same bitmap to all towers at overview level
 				// Phase 5 will implement per-tower cycling via 0x9020 writes
-				for t := 0; t < totalTowers; t++ {
+				for t := 0; t < towers; t++ {
 					onlineBitmaps[t] = bitmapVal
 				}
 				break
@@ -684,7 +664,7 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 			Name: "Battery Topology",
 			Type: "bitmap",
 			Bitmap: &BitmapData{
-				Towers:           totalTowers,
+				Towers:           towers,
 				PacksPerTower:    packs,
 				Online:           onlineBitmaps,
 				DetectedTopology: detectedStr,
@@ -968,7 +948,7 @@ func (h *Hub) registerBMSSection() {
 }
 
 // handleConfigure handles configure messages (D-15).
-// Supports "pv" (channel count) and "bms" (topology: inputs, towers, packs).
+// Supports "pv" (channel count). BMS topology is now hardcoded via constants (Phase 06).
 func (h *Hub) handleConfigure(cmd ClientCommand) {
 	msg := cmd.Message
 	if msg.Config == nil {
@@ -1002,41 +982,6 @@ func (h *Hub) handleConfigure(cmd ClientCommand) {
 		if h.connected && sec.SubscriberCount() > 0 {
 			h.triggerSectionRead("pv")
 		}
-
-	case "bms":
-		inputs := msg.Config.BatInputs
-		towers := msg.Config.BatTowers
-		packs := msg.Config.BatPacks
-		// Clamp to valid ranges (T-04-03)
-		if inputs < 1 {
-			inputs = 1
-		}
-		if inputs > 2 {
-			inputs = 2
-		}
-		if towers < 1 {
-			towers = 1
-		}
-		if towers > 4 {
-			towers = 4
-		}
-		if packs < 4 {
-			packs = 4
-		}
-		if packs > 10 {
-			packs = 10
-		}
-		h.defaultBatInputs = inputs
-		h.defaultBatTowers = towers
-		h.defaultBatPacks = packs
-		h.logger.Info("bms section reconfigured", "inputs", inputs, "towers", towers, "packs", packs)
-		sec, ok := h.sections["bms"]
-		if !ok {
-			return
-		}
-		if h.connected && sec.SubscriberCount() > 0 {
-			h.triggerSectionRead("bms")
-		}
 	}
 }
 
@@ -1049,24 +994,24 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 	tower := msg.Tower
 	pack := msg.Pack
 
-	// Validate and clamp to topology bounds (T-05-02)
+	// Validate and clamp to topology bounds (T-05-02, T-06-01)
 	if input < 1 {
 		input = 1
 	}
-	if input > h.defaultBatInputs {
-		input = h.defaultBatInputs
+	if input > 1 {
+		input = 1
 	}
 	if tower < 1 {
 		tower = 1
 	}
-	if tower > h.defaultBatTowers {
-		tower = h.defaultBatTowers
+	if tower > TopoTowers {
+		tower = TopoTowers
 	}
 	if pack < 1 {
 		pack = 1
 	}
-	if pack > h.defaultBatPacks {
-		pack = h.defaultBatPacks
+	if pack > TopoPacksPerTower {
+		pack = TopoPacksPerTower
 	}
 
 	// Store selection for auto-refresh
@@ -1078,7 +1023,7 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 // triggerPackRead performs the write-settle-read cycle for pack data retrieval.
 // Writes 0x9020 to select the pack, waits for settle, then reads 3 register blocks.
 func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
-	towersPerInput := h.defaultBatTowers
+	towersPerInput := TopoTowers
 	queryWord := register.EncodePackQuery(input, tower, pack, towersPerInput)
 
 	// Get probe definitions for building the response
@@ -1202,15 +1147,15 @@ func (h *Hub) buildPackDataMessage(
 		Type: "cell_grid",
 	}
 	if rtData != nil {
-		cells := make([]int, 24)
-		for i := 0; i < 24; i++ {
+		cells := make([]int, TopoCellsPerPack)
+		for i := 0; i < TopoCellsPerPack; i++ {
 			cells[i] = int(extractU16(rtData, 0x9044, uint16(0x9051+i)))
 		}
 		cellGroup.Cells = cells
 		cellGroup.MaxCell = int(extractU16(rtData, 0x9044, 0x9069))
 		cellGroup.MinCell = int(extractU16(rtData, 0x9044, 0x906A))
 
-		// Compute max/min cell index by scanning the 24 values
+		// Compute max/min cell index by scanning the cell values
 		maxIdx, minIdx := 1, 1
 		maxVal, minVal := cells[0], cells[0]
 		for i, v := range cells {

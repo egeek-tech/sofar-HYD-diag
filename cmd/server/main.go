@@ -26,9 +26,6 @@ var (
 	slaveID      = flag.Int("slave", 1, "Modbus slave ID (1-247)")
 	modbusMode   = flag.String("modbus-mode", "tcp", "Modbus protocol mode: tcp or rtu")
 	pvChannels   = flag.Int("pv-channels", 2, "Default number of PV channels (2-16, pre-populates browser dropdown)")
-	batInputs    = flag.Int("bat-inputs", 1, "Default battery inputs (1-2)")
-	batTowers    = flag.Int("bat-towers", 2, "Default towers per input (1-4)")
-	batPacks     = flag.Int("bat-packs", 10, "Default packs per tower (4-10)")
 	logLevel     = flag.String("log-level", "info", "Log level: debug, info, warn, error")
 )
 
@@ -66,18 +63,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: pv-channels must be 2-16, got %d\n", *pvChannels)
 		os.Exit(1)
 	}
-	if *batInputs < 1 || *batInputs > 2 {
-		fmt.Fprintf(os.Stderr, "error: bat-inputs must be 1-2, got %d\n", *batInputs)
-		os.Exit(1)
-	}
-	if *batTowers < 1 || *batTowers > 4 {
-		fmt.Fprintf(os.Stderr, "error: bat-towers must be 1-4, got %d\n", *batTowers)
-		os.Exit(1)
-	}
-	if *batPacks < 4 || *batPacks > 10 {
-		fmt.Fprintf(os.Stderr, "error: bat-packs must be 4-10, got %d\n", *batPacks)
-		os.Exit(1)
-	}
 
 	// Setup structured logger (INFRA-02)
 	logger := setupLogger(*logLevel)
@@ -93,7 +78,7 @@ func main() {
 	go b.Run(ctx)
 
 	// Create WebSocket hub (D-03, D-29)
-	wsHub := hub.NewHub(b, logger.With("component", "hub"), *pvChannels, *batInputs, *batTowers, *batPacks)
+	wsHub := hub.NewHub(b, logger.With("component", "hub"), *pvChannels)
 	go wsHub.Run(ctx)
 
 	// Create chi router with middleware
@@ -114,9 +99,6 @@ func main() {
 		Port:       *inverterPort,
 		SlaveID:    *slaveID,
 		PVChannels: *pvChannels,
-		BatInputs:  *batInputs,
-		BatTowers:  *batTowers,
-		BatPacks:   *batPacks,
 	}
 	web.SetupRoutes(r, b, wsHub, defaults, startTime, logger)
 

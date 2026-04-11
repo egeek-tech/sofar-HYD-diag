@@ -46,10 +46,7 @@ type FaultEntry struct {
 
 // ConfigPayload carries section-specific configuration (D-15).
 type ConfigPayload struct {
-	Channels  int `json:"channels,omitempty"`
-	BatInputs int `json:"bat_inputs,omitempty"`
-	BatTowers int `json:"bat_towers,omitempty"`
-	BatPacks  int `json:"bat_packs,omitempty"`
+	Channels int `json:"channels,omitempty"`
 }
 
 // InboundMessage represents a message from client to server.

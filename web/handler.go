@@ -32,9 +32,6 @@ type DefaultsConfig struct {
 	Port       int    `json:"port"`
 	SlaveID    int    `json:"slave_id"`
 	PVChannels int    `json:"pv_channels"`
-	BatInputs  int    `json:"bat_inputs"`
-	BatTowers  int    `json:"bat_towers"`
-	BatPacks   int    `json:"bat_packs"`
 }
 
 // upgrader configures WebSocket upgrade. CheckOrigin returns true because this is
