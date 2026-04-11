@@ -809,35 +809,12 @@ body {
     border: none;
 }
 
-/* === Phase 4: Topology Controls === */
+/* === Phase 6: Pack Selector Controls === */
 
-.topology-controls {
+.pack-selector-controls {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.topology-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-text);
-    margin-right: 4px;
-}
-
-.topology-select {
-    height: 32px;
-    font-size: 14px;
-    color: #333333;
-    background: #ffffff;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    padding: 0 8px;
-    cursor: pointer;
-}
-
-.topology-select:focus {
-    border-color: var(--color-accent);
-    outline: none;
 }
 
 /* === Phase 5: Bitmap Selected State (D-04) === */
@@ -936,7 +913,7 @@ body {
 
 .cell-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
 }
 
