@@ -2,6 +2,7 @@ package register
 
 import (
 	"encoding/binary"
+	"strings"
 	"testing"
 )
 
@@ -1064,5 +1065,433 @@ func TestDecodeTopology(t *testing.T) {
 	}
 	if packsPerString != 10 {
 		t.Errorf("DecodeTopology packsPerString = %d, want 10", packsPerString)
+	}
+}
+
+// === Phase 05 Plan 01: Pack probe definitions, bitmap tables, EncodePackQuery, DecodeBalanceState ===
+
+func TestEncodePackQuery(t *testing.T) {
+	tests := []struct {
+		name                              string
+		input, tower, pack, towersPerInput int
+		want                              uint16
+	}{
+		{"input1 tower2 pack5 tpi2", 1, 2, 5, 2, 0x0104},
+		{"input2 tower1 pack1 tpi2", 2, 1, 1, 2, 0x0200},
+		{"input1 tower1 pack1 tpi1", 1, 1, 1, 1, 0x0000},
+		{"input1 tower1 pack10 tpi2", 1, 1, 10, 2, 0x0009},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EncodePackQuery(tt.input, tt.tower, tt.pack, tt.towersPerInput)
+			if got != tt.want {
+				t.Errorf("EncodePackQuery(%d,%d,%d,%d) = 0x%04X, want 0x%04X",
+					tt.input, tt.tower, tt.pack, tt.towersPerInput, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPackRTProbes(t *testing.T) {
+	probes := PackRTProbes()
+	if len(probes) < 38 {
+		t.Errorf("PackRTProbes returned %d probes, want >= 38", len(probes))
+	}
+
+	// First probe should be Pack ID at 0x9044
+	if probes[0].Name != "Pack ID" || probes[0].Addr != 0x9044 {
+		t.Errorf("first probe = {%q, 0x%04X}, want {\"Pack ID\", 0x9044}", probes[0].Name, probes[0].Addr)
+	}
+
+	// Build lookup by name for specific checks
+	byName := make(map[string]Probe)
+	for _, p := range probes {
+		byName[p.Name] = p
+	}
+
+	// Serial Number: ASCII, 10 registers
+	if p, ok := byName["Serial Number"]; !ok {
+		t.Error("missing Serial Number probe")
+	} else {
+		if p.Addr != 0x9047 {
+			t.Errorf("Serial Number Addr = 0x%04X, want 0x9047", p.Addr)
+		}
+		if p.Count != 10 {
+			t.Errorf("Serial Number Count = %d, want 10", p.Count)
+		}
+		if !p.IsASCII {
+			t.Error("Serial Number should be ASCII")
+		}
+	}
+
+	// Total Voltage
+	if p, ok := byName["Total Voltage"]; !ok {
+		t.Error("missing Total Voltage probe")
+	} else {
+		if p.Addr != 0x9079 {
+			t.Errorf("Total Voltage Addr = 0x%04X, want 0x9079", p.Addr)
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("Total Voltage Scale = %f, want 0.1", p.Scale)
+		}
+		if p.Unit != "V" {
+			t.Errorf("Total Voltage Unit = %q, want \"V\"", p.Unit)
+		}
+	}
+
+	// Check Cell 1
+	if p, ok := byName["Cell 1"]; !ok {
+		t.Error("missing Cell 1 probe")
+	} else {
+		if p.Addr != 0x9051 {
+			t.Errorf("Cell 1 Addr = 0x%04X, want 0x9051", p.Addr)
+		}
+		if p.Scale != 0.001 {
+			t.Errorf("Cell 1 Scale = %f, want 0.001", p.Scale)
+		}
+		if p.Unit != "V" {
+			t.Errorf("Cell 1 Unit = %q, want \"V\"", p.Unit)
+		}
+	}
+	// Check Cell 24
+	if p, ok := byName["Cell 24"]; !ok {
+		t.Error("missing Cell 24 probe")
+	} else {
+		if p.Addr != 0x9068 {
+			t.Errorf("Cell 24 Addr = 0x%04X, want 0x9068", p.Addr)
+		}
+		if p.Scale != 0.001 {
+			t.Errorf("Cell 24 Scale = %f, want 0.001", p.Scale)
+		}
+	}
+
+	// Count all cell probes
+	cellCount := 0
+	for _, p := range probes {
+		if strings.HasPrefix(p.Name, "Cell ") && p.Scale == 0.001 && p.Unit == "V" {
+			cellCount++
+		}
+	}
+	if cellCount != 24 {
+		t.Errorf("found %d cell voltage probes, want 24", cellCount)
+	}
+
+	// Current: signed, scale 0.1, unit A
+	if p, ok := byName["Current"]; !ok {
+		t.Error("missing Current probe")
+	} else {
+		if p.Addr != 0x9071 {
+			t.Errorf("Current Addr = 0x%04X, want 0x9071", p.Addr)
+		}
+		if !p.Signed {
+			t.Error("Current should be Signed")
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("Current Scale = %f, want 0.1", p.Scale)
+		}
+		if p.Unit != "A" {
+			t.Errorf("Current Unit = %q, want \"A\"", p.Unit)
+		}
+	}
+
+	// Temp 1-4 at 0x906B-0x906E, Signed, Scale 0.1, Unit C
+	tempAddrs := map[string]uint16{"Temp 1": 0x906B, "Temp 2": 0x906C, "Temp 3": 0x906D, "Temp 4": 0x906E}
+	for name, wantAddr := range tempAddrs {
+		p, ok := byName[name]
+		if !ok {
+			t.Errorf("missing %s probe", name)
+			continue
+		}
+		if p.Addr != wantAddr {
+			t.Errorf("%s Addr = 0x%04X, want 0x%04X", name, p.Addr, wantAddr)
+		}
+		if !p.Signed {
+			t.Errorf("%s should be Signed", name)
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("%s Scale = %f, want 0.1", name, p.Scale)
+		}
+	}
+
+	// MOS Temp and Env Temp: signed, scale 0.1
+	if p, ok := byName["MOS Temp"]; !ok {
+		t.Error("missing MOS Temp probe")
+	} else {
+		if p.Addr != 0x906F {
+			t.Errorf("MOS Temp Addr = 0x%04X, want 0x906F", p.Addr)
+		}
+		if !p.Signed {
+			t.Error("MOS Temp should be Signed")
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("MOS Temp Scale = %f, want 0.1", p.Scale)
+		}
+	}
+	if p, ok := byName["Env Temp"]; !ok {
+		t.Error("missing Env Temp probe")
+	} else {
+		if p.Addr != 0x9070 {
+			t.Errorf("Env Temp Addr = 0x%04X, want 0x9070", p.Addr)
+		}
+		if !p.Signed {
+			t.Error("Env Temp should be Signed")
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("Env Temp Scale = %f, want 0.1", p.Scale)
+		}
+	}
+
+	// Balance State, Alarm Status, Protection Status, Fault Status
+	statusProbes := map[string]uint16{
+		"Balance State":     0x9075,
+		"Alarm Status":      0x9076,
+		"Protection Status": 0x9077,
+		"Fault Status":      0x9078,
+	}
+	for name, wantAddr := range statusProbes {
+		p, ok := byName[name]
+		if !ok {
+			t.Errorf("missing %s probe", name)
+			continue
+		}
+		if p.Addr != wantAddr {
+			t.Errorf("%s Addr = 0x%04X, want 0x%04X", name, p.Addr, wantAddr)
+		}
+	}
+
+	// Min/Max Cell Voltage
+	if p, ok := byName["Min Cell Voltage"]; !ok {
+		t.Error("missing Min Cell Voltage probe")
+	} else {
+		if p.Addr != 0x906A {
+			t.Errorf("Min Cell Voltage Addr = 0x%04X, want 0x906A", p.Addr)
+		}
+		if p.Scale != 0.001 {
+			t.Errorf("Min Cell Voltage Scale = %f, want 0.001", p.Scale)
+		}
+		if p.Unit != "V" {
+			t.Errorf("Min Cell Voltage Unit = %q, want \"V\"", p.Unit)
+		}
+	}
+	if p, ok := byName["Max Cell Voltage"]; !ok {
+		t.Error("missing Max Cell Voltage probe")
+	} else {
+		if p.Addr != 0x9069 {
+			t.Errorf("Max Cell Voltage Addr = 0x%04X, want 0x9069", p.Addr)
+		}
+		if p.Scale != 0.001 {
+			t.Errorf("Max Cell Voltage Scale = %f, want 0.001", p.Scale)
+		}
+	}
+}
+
+func TestPackInfoProbes(t *testing.T) {
+	probes := PackInfoProbes()
+	if len(probes) < 6 {
+		t.Errorf("PackInfoProbes returned %d probes, want >= 6", len(probes))
+	}
+
+	byName := make(map[string]Probe)
+	for _, p := range probes {
+		byName[p.Name] = p
+	}
+
+	// SOH
+	if p, ok := byName["SOH"]; !ok {
+		t.Error("missing SOH probe")
+	} else {
+		if p.Addr != 0x910A {
+			t.Errorf("SOH Addr = 0x%04X, want 0x910A", p.Addr)
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("SOH Scale = %f, want 0.1", p.Scale)
+		}
+		if p.Unit != "%" {
+			t.Errorf("SOH Unit = %q, want \"%%\"", p.Unit)
+		}
+	}
+
+	// Rated Capacity
+	if p, ok := byName["Rated Capacity"]; !ok {
+		t.Error("missing Rated Capacity probe")
+	} else {
+		if p.Addr != 0x910B {
+			t.Errorf("Rated Capacity Addr = 0x%04X, want 0x910B", p.Addr)
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("Rated Capacity Scale = %f, want 0.1", p.Scale)
+		}
+		if p.Unit != "Ah" {
+			t.Errorf("Rated Capacity Unit = %q, want \"Ah\"", p.Unit)
+		}
+	}
+
+	// Manufacturer
+	if p, ok := byName["Manufacturer"]; !ok {
+		t.Error("missing Manufacturer probe")
+	} else {
+		if p.Addr != 0x9106 {
+			t.Errorf("Manufacturer Addr = 0x%04X, want 0x9106", p.Addr)
+		}
+		if p.Count != 4 {
+			t.Errorf("Manufacturer Count = %d, want 4", p.Count)
+		}
+		if !p.IsASCII {
+			t.Error("Manufacturer should be ASCII")
+		}
+	}
+
+	// Alarm 2, Protection 2, Fault 2
+	extProbes := map[string]uint16{
+		"Alarm Status 2":      0x9124,
+		"Protection Status 2": 0x9125,
+		"Fault Status 2":      0x9126,
+	}
+	for name, wantAddr := range extProbes {
+		p, ok := byName[name]
+		if !ok {
+			t.Errorf("missing %s probe", name)
+			continue
+		}
+		if p.Addr != wantAddr {
+			t.Errorf("%s Addr = 0x%04X, want 0x%04X", name, p.Addr, wantAddr)
+		}
+	}
+}
+
+func TestPackTemps58Probes(t *testing.T) {
+	probes := PackTemps58Probes()
+	if len(probes) != 4 {
+		t.Fatalf("PackTemps58Probes returned %d probes, want 4", len(probes))
+	}
+
+	wantAddrs := []uint16{0x90BC, 0x90BD, 0x90BE, 0x90BF}
+	for i, p := range probes {
+		wantName := "Temp " + string(rune('5'+i))
+		if p.Addr != wantAddrs[i] {
+			t.Errorf("probe %d Addr = 0x%04X, want 0x%04X", i, p.Addr, wantAddrs[i])
+		}
+		if !p.Signed {
+			t.Errorf("%s should be Signed", wantName)
+		}
+		if p.Scale != 0.1 {
+			t.Errorf("%s Scale = %f, want 0.1", wantName, p.Scale)
+		}
+		if p.Unit != "\u00b0C" {
+			t.Errorf("%s Unit = %q, want \"°C\"", wantName, p.Unit)
+		}
+	}
+}
+
+func TestBMSAlarmTable(t *testing.T) {
+	if len(BMSAlarmBits) == 0 {
+		t.Fatal("BMSAlarmBits is empty")
+	}
+
+	// Check for cell OV alarm at bit 0
+	found := false
+	for _, fb := range BMSAlarmBits {
+		if fb.Addr == 0x9076 && fb.Bit == 0 {
+			if !strings.Contains(fb.Desc, "Cell") || !strings.Contains(fb.Desc, "OV") {
+				t.Errorf("bit 0 Desc = %q, want containing Cell and OV", fb.Desc)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("missing BMSAlarmBits entry at Addr=0x9076 Bit=0")
+	}
+
+	// Check for cell UV alarm at bit 1
+	found = false
+	for _, fb := range BMSAlarmBits {
+		if fb.Addr == 0x9076 && fb.Bit == 1 {
+			if !strings.Contains(fb.Desc, "Cell") || !strings.Contains(fb.Desc, "UV") {
+				t.Errorf("bit 1 Desc = %q, want containing Cell and UV", fb.Desc)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("missing BMSAlarmBits entry at Addr=0x9076 Bit=1")
+	}
+}
+
+func TestBMSProtectionTable(t *testing.T) {
+	if len(BMSProtectionBits) == 0 {
+		t.Fatal("BMSProtectionBits is empty")
+	}
+
+	// Check for cell OV protection at bit 0
+	found := false
+	for _, fb := range BMSProtectionBits {
+		if fb.Addr == 0x9077 && fb.Bit == 0 {
+			if !strings.Contains(fb.Desc, "Cell") || !strings.Contains(fb.Desc, "OV") {
+				t.Errorf("bit 0 Desc = %q, want containing Cell and OV", fb.Desc)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("missing BMSProtectionBits entry at Addr=0x9077 Bit=0")
+	}
+}
+
+func TestBMSFaultTable_Pack(t *testing.T) {
+	if len(BMSFaultBits) == 0 {
+		t.Fatal("BMSFaultBits is empty")
+	}
+
+	// Check entries exist for 0x9078
+	found := false
+	for _, fb := range BMSFaultBits {
+		if fb.Addr == 0x9078 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("missing BMSFaultBits entries for Addr=0x9078")
+	}
+}
+
+func TestDecodeBalanceState(t *testing.T) {
+	tests := []struct {
+		val      uint16
+		contains []string
+		exact    string
+	}{
+		{0x0000, nil, "Balanced"},
+		{0x0001, []string{"Cell 1"}, ""},
+		{0x0005, []string{"Cell 1", "Cell 3"}, ""},
+		{0xFFFF, []string{"Cell 1", "Cell 16"}, ""},
+	}
+	for _, tt := range tests {
+		got := DecodeBalanceState(tt.val)
+		if tt.exact != "" {
+			if got != tt.exact {
+				t.Errorf("DecodeBalanceState(0x%04X) = %q, want %q", tt.val, got, tt.exact)
+			}
+		}
+		for _, sub := range tt.contains {
+			if !strings.Contains(got, sub) {
+				t.Errorf("DecodeBalanceState(0x%04X) = %q, missing %q", tt.val, got, sub)
+			}
+		}
+	}
+}
+
+func TestDecodeBMSBitmap(t *testing.T) {
+	// Use BMSAlarmBits for testing bitmap decoding
+	// Bit 0 and bit 1 set at address 0x9076
+	result := DecodeBMSBitmap(0x0003, BMSAlarmBits, 0x9076)
+	if len(result) != 2 {
+		t.Errorf("DecodeBMSBitmap(0x0003) returned %d entries, want 2", len(result))
+	}
+
+	// No bits set
+	result = DecodeBMSBitmap(0x0000, BMSAlarmBits, 0x9076)
+	if len(result) != 0 {
+		t.Errorf("DecodeBMSBitmap(0x0000) returned %d entries, want 0", len(result))
 	}
 }
