@@ -961,7 +961,7 @@ function initTimingControls() {
     }
 
     function sendTimingConfig() {
-        var readDelay = clamp(readDelayInput.value, 100, 5000);
+        var readDelay = clamp(readDelayInput.value, 10, 5000);
         var packSettle = clamp(packSettleInput.value, 500, 10000);
 
         // Update inputs to clamped values
