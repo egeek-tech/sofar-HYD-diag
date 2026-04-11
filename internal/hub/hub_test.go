@@ -1657,7 +1657,8 @@ func TestTopologyConstants(t *testing.T) {
 // makeBMSInfoResults builds mock batch results for the initial BMS info + protection ReadBatch.
 // Returns 19 BMS info probe results + 6 protection probe results = 25 total.
 // Probe index 6 (0x900D Topology Params) returns 0x020A (2 strings x 10 packs).
-// Probe index 18 (0x9022 Online Bitmap) returns a stale value (ignored by bitmap cycling).
+// Probe index 6 (0x900D) returns 0x020A (2 strings x 10 packs).
+// Probe index 18 (0x9022) is the tower bitmap — bit N = tower N online.
 func makeBMSInfoResults() []broker.Result {
 	bmsInfoCount := 19 // BMSInfoGroups has 19 probes
 	protCount := 6     // BMSProtectionProbes has 6 probes
@@ -1671,40 +1672,36 @@ func makeBMSInfoResults() []broker.Result {
 	return results
 }
 
-func TestBMSBitmapCycling(t *testing.T) {
+// makeBMSInfoResultsWithBitmap builds mock results with a specific tower bitmap at 0x9022 (index 18).
+func makeBMSInfoResultsWithBitmap(towerBitmap uint16) []broker.Result {
+	results := makeBMSInfoResults()
+	results[18] = broker.Result{Data: uint16Bytes(towerBitmap), Err: nil}
+	return results
+}
+
+func TestBMSTowerBitmap(t *testing.T) {
 	mb := newMockBroker()
 
-	// Set up per-call batch results:
-	// Call 1: Initial BMS info + protection batch (25 results)
-	// Call 2: Tower 0 bitmap read (0x9022) -> 0x03FF (all 10 packs online)
-	// Call 3: Tower 1 bitmap read (0x9022) -> 0x001F (packs 1-5 online)
+	// 0x9022 tower bitmap: 0x0003 = bits 0 and 1 set = towers 1 and 2 online
 	mb.mu.Lock()
 	mb.batchResultQueue = [][]broker.Result{
-		makeBMSInfoResults(),                              // Initial info+protection batch
-		{{Data: uint16Bytes(0x03FF), Err: nil}},           // Tower 0 bitmap (0x9022)
-		{{Data: uint16Bytes(0x001F), Err: nil}},           // Tower 1 bitmap (0x9022)
+		makeBMSInfoResultsWithBitmap(0x0003), // Both towers online
 	}
 	mb.mu.Unlock()
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Subscribe to "bms" section to trigger triggerBMSRead
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
 		Section: "bms",
 	})
 
-	// Wait for async processing: initial batch + 2x (write + 500ms settle + read)
-	// Total ~2-3 seconds for bitmap cycling
 	msgs := collectClientMessages(t, send, 1, 5*time.Second)
 	msg := msgs[0]
 
 	if msg.Type != hub.MsgTypeSectionData {
 		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
-	}
-	if msg.Section != "bms" {
-		t.Errorf("expected section 'bms', got %q", msg.Section)
 	}
 
 	// Find the bitmap group
@@ -1730,70 +1727,49 @@ func TestBMSBitmapCycling(t *testing.T) {
 		t.Errorf("Bitmap.PacksPerTower = %d, want 10", bitmapGroup.Bitmap.PacksPerTower)
 	}
 
-	// Verify distinct per-tower bitmaps
+	// Both towers online: each should have all 10 packs marked available (0x03FF)
 	if len(bitmapGroup.Bitmap.Online) != 2 {
 		t.Fatalf("Bitmap.Online length = %d, want 2", len(bitmapGroup.Bitmap.Online))
 	}
 	if bitmapGroup.Bitmap.Online[0] != 0x03FF {
-		t.Errorf("Bitmap.Online[0] = 0x%04X, want 0x03FF", bitmapGroup.Bitmap.Online[0])
+		t.Errorf("Bitmap.Online[0] = 0x%04X, want 0x03FF (tower 1 online, all packs available)", bitmapGroup.Bitmap.Online[0])
 	}
-	if bitmapGroup.Bitmap.Online[1] != 0x001F {
-		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x001F", bitmapGroup.Bitmap.Online[1])
+	if bitmapGroup.Bitmap.Online[1] != 0x03FF {
+		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x03FF (tower 2 online, all packs available)", bitmapGroup.Bitmap.Online[1])
 	}
 
-	// Verify WriteRegister calls for bitmap cycling
+	// No WriteRegister calls to 0x9020 — bitmap is read from standard batch, no cycling
 	writes := mb.getWriteCalls()
-	var bitmapWrites []writeCall
 	for _, w := range writes {
 		if w.Addr == 0x9020 {
-			bitmapWrites = append(bitmapWrites, w)
+			t.Errorf("unexpected WriteRegister to 0x9020 (bitmap cycling removed): value=0x%04X", w.Value)
 		}
 	}
-	if len(bitmapWrites) != 2 {
-		t.Fatalf("expected 2 bitmap writes to 0x9020, got %d: %+v", len(bitmapWrites), bitmapWrites)
-	}
-	if bitmapWrites[0].Value != 0x0000 {
-		t.Errorf("first bitmap write value = 0x%04X, want 0x0000", bitmapWrites[0].Value)
-	}
-	if bitmapWrites[1].Value != 0x0100 {
-		t.Errorf("second bitmap write value = 0x%04X, want 0x0100", bitmapWrites[1].Value)
-	}
 
-	// Verify ReadBatch was called 3 times: 1 initial + 2 bitmap reads
-	if got := mb.getBatchCallCount(); got != 3 {
-		t.Errorf("expected 3 ReadBatch calls, got %d", got)
+	// Only 1 ReadBatch call (no separate bitmap reads)
+	if got := mb.getBatchCallCount(); got != 1 {
+		t.Errorf("expected 1 ReadBatch call, got %d", got)
 	}
 }
 
-func TestBMSBitmapCyclingWriteFailure(t *testing.T) {
+func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 	mb := newMockBroker()
 
-	// Configure mock to fail first WriteRegister call, succeed on second
+	// 0x9022 tower bitmap: 0x0001 = only bit 0 set = only tower 1 online
 	mb.mu.Lock()
-	mb.writeErrQueue = []error{
-		fmt.Errorf("modbus timeout"), // tower 0 write fails
-		nil,                          // tower 1 write succeeds
-	}
-
-	// Set up per-call batch results:
-	// Call 1: Initial BMS info + protection batch
-	// Call 2: Tower 1 bitmap read only (tower 0 write fails, so no bitmap read for tower 0)
 	mb.batchResultQueue = [][]broker.Result{
-		makeBMSInfoResults(),                              // Initial info+protection batch
-		{{Data: uint16Bytes(0x001F), Err: nil}},           // Tower 1 bitmap (0x9022) -- only read after successful write
+		makeBMSInfoResultsWithBitmap(0x0001), // Only tower 1 online
 	}
 	mb.mu.Unlock()
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Subscribe to "bms" section to trigger triggerBMSRead
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSubscribe,
 		Section: "bms",
 	})
 
-	// Wait for async processing
 	msgs := collectClientMessages(t, send, 1, 5*time.Second)
 	msg := msgs[0]
 
@@ -1801,7 +1777,6 @@ func TestBMSBitmapCyclingWriteFailure(t *testing.T) {
 		t.Fatalf("expected type %q, got %q", hub.MsgTypeSectionData, msg.Type)
 	}
 
-	// Find the bitmap group
 	var bitmapGroup *hub.GroupData
 	for i := range msg.Groups {
 		if msg.Groups[i].Type == "bitmap" {
@@ -1813,32 +1788,15 @@ func TestBMSBitmapCyclingWriteFailure(t *testing.T) {
 		t.Fatal("expected bitmap group in BMS section data, found none")
 	}
 
-	// Tower 0 should be 0 (write failed, bitmap left as default)
-	// Tower 1 should have correct bitmap
 	if len(bitmapGroup.Bitmap.Online) != 2 {
 		t.Fatalf("Bitmap.Online length = %d, want 2", len(bitmapGroup.Bitmap.Online))
 	}
-	if bitmapGroup.Bitmap.Online[0] != 0x0000 {
-		t.Errorf("Bitmap.Online[0] = 0x%04X, want 0x0000 (write failed, should be 0)", bitmapGroup.Bitmap.Online[0])
+	// Tower 1 online: all packs available
+	if bitmapGroup.Bitmap.Online[0] != 0x03FF {
+		t.Errorf("Bitmap.Online[0] = 0x%04X, want 0x03FF (tower 1 online)", bitmapGroup.Bitmap.Online[0])
 	}
-	if bitmapGroup.Bitmap.Online[1] != 0x001F {
-		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x001F", bitmapGroup.Bitmap.Online[1])
-	}
-
-	// Verify WriteRegister was called twice (both tower 0 and tower 1)
-	writes := mb.getWriteCalls()
-	var bitmapWrites []writeCall
-	for _, w := range writes {
-		if w.Addr == 0x9020 {
-			bitmapWrites = append(bitmapWrites, w)
-		}
-	}
-	if len(bitmapWrites) != 2 {
-		t.Fatalf("expected 2 bitmap writes to 0x9020, got %d", len(bitmapWrites))
-	}
-
-	// Verify ReadBatch was called only 2 times: 1 initial + 1 bitmap read (tower 0 skipped)
-	if got := mb.getBatchCallCount(); got != 2 {
-		t.Errorf("expected 2 ReadBatch calls (initial + tower 1 only), got %d", got)
+	// Tower 2 offline: no packs available
+	if bitmapGroup.Bitmap.Online[1] != 0x0000 {
+		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x0000 (tower 2 offline)", bitmapGroup.Bitmap.Online[1])
 	}
 }

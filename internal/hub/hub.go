@@ -601,8 +601,9 @@ func (h *Hub) triggerBatteryRead(sec *Section) {
 }
 
 // triggerBMSRead performs the BMS section's custom read cycle (D-09, D-14).
-// It reads BMS info registers (including 0x9022 bitmap), detects topology from 0x900D,
-// extracts bitmap from standard read results, and composes the BMS clock from 0x9004+0x9005.
+// It reads BMS info registers (including 0x9022 tower bitmap), detects topology from 0x900D,
+// extracts tower online bitmap from standard read results, and composes the BMS clock from 0x9004+0x9005.
+// 0x9022 is a tower bitmap (bit N = tower N online), not a per-pack bitmap.
 func (h *Hub) triggerBMSRead(sec *Section) {
 	groups := sec.Groups
 	probes := sec.Probes
@@ -640,26 +641,23 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 			}
 		}
 
-		// Step 3: Per-tower bitmap cycling (D-03, D-04)
-		// Write each group index to 0x9020, wait 500ms settle, then read 0x9022.
-		// This gives true per-tower online status. ~2-3s total for 2 towers.
+		// Step 3: Extract tower bitmap from 0x9022 (standard batch result).
+		// 0x9022 is a TOWER bitmap: bit N = 1 means tower/battery N is online.
+		// No cycling needed — the bitmap shows all towers in a single read.
+		var towerBitmap uint16
+		for i, p := range probes {
+			if p.Addr == 0x9022 && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
+				towerBitmap = binary.BigEndian.Uint16(results[i].Data[:2])
+				break
+			}
+		}
+
+		// Expand tower bitmap to per-tower pack availability.
+		// If a tower is online (bit set), all its packs are considered available.
 		onlineBitmaps := make([]uint16, TopoTowers)
 		for t := 0; t < TopoTowers; t++ {
-			// Write group index to 0x9020: pack=0 in bits 0-7, group=t in bits 8-11
-			queryWord := uint16(t) << 8
-			err := h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
-			if err != nil {
-				h.logger.Warn("bitmap cycling: write failed for tower", "tower", t+1, "error", err)
-				continue // leave bitmap as 0 (all packs offline) for this tower
-			}
-			time.Sleep(500 * time.Millisecond)
-
-			// Read 0x9022 for this tower's bitmap
-			bitmapResults := h.broker.ReadBatch(h.ctx, []broker.ReadRequest{{Addr: 0x9022, Count: 1}})
-			if len(bitmapResults) > 0 && bitmapResults[0].Err == nil && len(bitmapResults[0].Data) >= 2 {
-				onlineBitmaps[t] = binary.BigEndian.Uint16(bitmapResults[0].Data[:2])
-			} else {
-				h.logger.Warn("bitmap cycling: read failed for tower", "tower", t+1)
+			if (towerBitmap>>uint(t))&1 == 1 {
+				onlineBitmaps[t] = (1 << uint(TopoPacksPerTower)) - 1 // e.g. 0x03FF for 10 packs
 			}
 		}
 
