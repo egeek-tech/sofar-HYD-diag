@@ -112,8 +112,8 @@ func PackRTProbes() []Probe {
 		{Name: "Serial Number", Addr: 0x9047, Count: 10, IsASCII: true},
 	}
 
-	// 24 cell voltages: 0x9051-0x9068, millivolt resolution (scale 0.001)
-	for i := 0; i < 24; i++ {
+	// 16 cell voltages: 0x9051-0x9060, millivolt resolution (scale 0.001, per D-05)
+	for i := 0; i < 16; i++ {
 		probes = append(probes, Probe{
 			Name:  fmt.Sprintf("Cell %d", i+1),
 			Addr:  uint16(0x9051 + i),

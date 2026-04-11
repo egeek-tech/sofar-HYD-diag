@@ -1293,15 +1293,15 @@ func makePackRTData() []byte {
 	// 0x9045-0x9046 = Timestamp Hi/Lo (offsets 2-6)
 	// 0x9047-0x9050 = Serial Number (10 registers, offsets 6-26) - leave as zeros (ASCII)
 
-	// Cell voltages 0x9051-0x9068 (offsets 26-74): 24 cells at 3200+i mV
-	for i := 0; i < 24; i++ {
+	// Cell voltages 0x9051-0x9060 (offsets 26-58): 16 cells at 3200+i mV (D-05)
+	for i := 0; i < 16; i++ {
 		offset := (0x9051 - 0x9044 + uint16(i)) * 2
 		binary.BigEndian.PutUint16(data[offset:offset+2], uint16(3200+i))
 	}
 
-	// 0x9069 = Max Cell Voltage (offset 74) = 3223 mV (cell 24)
+	// 0x9069 = Max Cell Voltage (offset 74) = 3215 mV (cell 16)
 	maxOffset := (0x9069 - 0x9044) * 2
-	binary.BigEndian.PutUint16(data[maxOffset:maxOffset+2], 3223)
+	binary.BigEndian.PutUint16(data[maxOffset:maxOffset+2], 3215)
 
 	// 0x906A = Min Cell Voltage (offset 76) = 3200 mV (cell 1)
 	minOffset := (0x906A - 0x9044) * 2
@@ -1520,20 +1520,20 @@ func TestPackDataMessageShape(t *testing.T) {
 		}
 	}
 
-	// Verify cell grid has 24 cells with correct values
+	// Verify cell grid has 16 cells with correct values (D-05)
 	cellGroup := msg.Groups[1]
-	if len(cellGroup.Cells) != 24 {
-		t.Fatalf("expected 24 cells, got %d", len(cellGroup.Cells))
+	if len(cellGroup.Cells) != 16 {
+		t.Fatalf("expected 16 cells, got %d", len(cellGroup.Cells))
 	}
-	// Cell 1 should be 3200mV, Cell 24 should be 3223mV
+	// Cell 1 should be 3200mV, Cell 16 should be 3215mV
 	if cellGroup.Cells[0] != 3200 {
 		t.Errorf("cell[0] = %d, want 3200", cellGroup.Cells[0])
 	}
-	if cellGroup.Cells[23] != 3223 {
-		t.Errorf("cell[23] = %d, want 3223", cellGroup.Cells[23])
+	if cellGroup.Cells[15] != 3215 {
+		t.Errorf("cell[15] = %d, want 3215", cellGroup.Cells[15])
 	}
-	if cellGroup.MaxCell != 3223 {
-		t.Errorf("MaxCell = %d, want 3223", cellGroup.MaxCell)
+	if cellGroup.MaxCell != 3215 {
+		t.Errorf("MaxCell = %d, want 3215", cellGroup.MaxCell)
 	}
 	if cellGroup.MinCell != 3200 {
 		t.Errorf("MinCell = %d, want 3200", cellGroup.MinCell)
@@ -1632,5 +1632,17 @@ func TestEncodePackQueryInHandler(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected WriteRegister(0x9020, 0x%04X), got calls: %+v", expectedValue, writes)
+	}
+}
+
+func TestTopologyConstants(t *testing.T) {
+	if hub.TopoTowers != 2 {
+		t.Errorf("TopoTowers = %d, want 2", hub.TopoTowers)
+	}
+	if hub.TopoPacksPerTower != 10 {
+		t.Errorf("TopoPacksPerTower = %d, want 10", hub.TopoPacksPerTower)
+	}
+	if hub.TopoCellsPerPack != 16 {
+		t.Errorf("TopoCellsPerPack = %d, want 16", hub.TopoCellsPerPack)
 	}
 }

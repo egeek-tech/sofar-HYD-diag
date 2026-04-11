@@ -1094,8 +1094,8 @@ func TestEncodePackQuery(t *testing.T) {
 
 func TestPackRTProbes(t *testing.T) {
 	probes := PackRTProbes()
-	if len(probes) < 38 {
-		t.Errorf("PackRTProbes returned %d probes, want >= 38", len(probes))
+	if len(probes) < 30 {
+		t.Errorf("PackRTProbes returned %d probes, want >= 30", len(probes))
 	}
 
 	// First probe should be Pack ID at 0x9044
@@ -1153,27 +1153,32 @@ func TestPackRTProbes(t *testing.T) {
 			t.Errorf("Cell 1 Unit = %q, want \"V\"", p.Unit)
 		}
 	}
-	// Check Cell 24
-	if p, ok := byName["Cell 24"]; !ok {
-		t.Error("missing Cell 24 probe")
+	// Check Cell 16 (last cell per D-05)
+	if p, ok := byName["Cell 16"]; !ok {
+		t.Error("missing Cell 16 probe")
 	} else {
-		if p.Addr != 0x9068 {
-			t.Errorf("Cell 24 Addr = 0x%04X, want 0x9068", p.Addr)
+		if p.Addr != 0x9060 {
+			t.Errorf("Cell 16 Addr = 0x%04X, want 0x9060", p.Addr)
 		}
 		if p.Scale != 0.001 {
-			t.Errorf("Cell 24 Scale = %f, want 0.001", p.Scale)
+			t.Errorf("Cell 16 Scale = %f, want 0.001", p.Scale)
 		}
 	}
 
-	// Count all cell probes
+	// Cell 17 should NOT exist (only 16 cells per D-05)
+	if _, ok := byName["Cell 17"]; ok {
+		t.Error("Cell 17 should not exist (only 16 cells per D-05)")
+	}
+
+	// Verify exactly 16 cell voltage probes (D-05)
 	cellCount := 0
 	for _, p := range probes {
 		if strings.HasPrefix(p.Name, "Cell ") && p.Scale == 0.001 && p.Unit == "V" {
 			cellCount++
 		}
 	}
-	if cellCount != 24 {
-		t.Errorf("found %d cell voltage probes, want 24", cellCount)
+	if cellCount != 16 {
+		t.Errorf("found %d cell voltage probes, want 16", cellCount)
 	}
 
 	// Current: signed, scale 0.1, unit A

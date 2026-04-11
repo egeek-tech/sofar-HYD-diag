@@ -100,7 +100,7 @@ type PackGroup struct {
 	Type    string            `json:"type,omitempty"`
 	Items   map[string]string `json:"items,omitempty"`
 	// Cell grid specific (type="cell_grid")
-	Cells        []int `json:"cells,omitempty"`           // raw millivolt values for 24 cells
+	Cells        []int `json:"cells,omitempty"`           // raw millivolt values for 16 cells (D-05)
 	MaxCell      int   `json:"max_cell,omitempty"`        // register 0x9069 value in mV
 	MinCell      int   `json:"min_cell,omitempty"`        // register 0x906A value in mV
 	MaxCellIndex int   `json:"max_cell_index,omitempty"`  // 1-based index of max cell

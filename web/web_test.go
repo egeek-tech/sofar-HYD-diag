@@ -22,7 +22,7 @@ import (
 func newTestRouter() *chi.Mux {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
-	h := hub.NewHub(b, logger, 2, 1, 2, 10)
+	h := hub.NewHub(b, logger, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	go h.Run(ctx)
 	_ = cancel // cleanup happens when test ends (short-lived)
@@ -102,7 +102,7 @@ func TestDefaultsEndpoint(t *testing.T) {
 func TestWSUpgrade(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
-	h := hub.NewHub(b, logger, 2, 1, 2, 10)
+	h := hub.NewHub(b, logger, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go h.Run(ctx)

@@ -7,22 +7,22 @@ import (
 	"sofar-hyd-diag/internal/register"
 )
 
-// NewTestHub creates a Hub for testing with default 2 PV channels and default topology.
-// Uses a default logger.
+// NewTestHub creates a Hub for testing with default 2 PV channels.
+// Uses a default logger. Topology uses package-level constants.
 func NewTestHub(b BrokerInterface) *Hub {
-	return NewHub(b, slog.Default(), 2, 1, 2, 10)
+	return NewHub(b, slog.Default(), 2)
 }
 
 // NewTestHubWithInterval creates a Hub for testing with a custom refresh interval.
 func NewTestHubWithInterval(b BrokerInterface, interval time.Duration) *Hub {
-	h := NewHub(b, slog.Default(), 2, 1, 2, 10)
+	h := NewHub(b, slog.Default(), 2)
 	h.SetRefreshOverride(interval)
 	return h
 }
 
 // NewTestHubWithPVChannels creates a Hub for testing with a specified PV channel count.
 func NewTestHubWithPVChannels(b BrokerInterface, pvChannels int) *Hub {
-	return NewHub(b, slog.Default(), pvChannels, 1, 2, 10)
+	return NewHub(b, slog.Default(), pvChannels)
 }
 
 // NewTestClient creates a Client for testing with a provided send channel.
