@@ -685,6 +685,39 @@ func TestManualRefresh(t *testing.T) {
 	}
 }
 
+func TestAutoRefreshToggleStopsTimer(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 200*time.Millisecond)
+	defer cancel()
+
+	// Subscribe to grid
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "grid",
+	})
+	time.Sleep(50 * time.Millisecond)
+	drainClientMessages(send, 200*time.Millisecond)
+
+	// Toggle auto-refresh OFF
+	enabled := false
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeAutoRefresh,
+		Section: "grid",
+		Enabled: &enabled,
+	})
+	time.Sleep(50 * time.Millisecond)
+	drainClientMessages(send, 100*time.Millisecond)
+
+	// Wait for what would be 2 timer ticks (400ms)
+	time.Sleep(450 * time.Millisecond)
+
+	// Should NOT have received any auto-refresh data
+	msgs := drainClientMessages(send, 100*time.Millisecond)
+	if len(msgs) > 0 {
+		t.Errorf("expected no messages after disabling auto-refresh, got %d", len(msgs))
+	}
+}
+
 func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
 	mb := newMockBroker()
 	h := hub.NewTestHub(mb)

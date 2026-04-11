@@ -302,6 +302,13 @@ function navigateToSection(section) {
     // Send subscribe via WebSocket (D-17; auto-unsubscribes previous per D-18; triggers immediate read per D-20)
     App.ws.send({ type: 'subscribe', section: section });
 
+    // Sync auto-refresh toggle state with server (fixes global vs per-section mismatch)
+    App.ws.send({
+        type: 'auto_refresh',
+        section: section,
+        enabled: App.autoRefresh
+    });
+
     // Sync PV channel config with backend
     if (section === 'pv') {
         var pvChannels = loadPVChannels() || PV_DEFAULT_CHANNELS;
