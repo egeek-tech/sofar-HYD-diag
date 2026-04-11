@@ -42,6 +42,8 @@ type mockBroker struct {
 	writeErrQueue []error // per-call error queue: pops from front; if empty, falls back to writeErr
 	// Per-call batch results: if set, each ReadBatch call pops from this queue
 	batchResultQueue [][]broker.Result
+	// SetDelayRuntime tracking
+	lastDelay time.Duration
 }
 
 type reconfigureCall struct {
@@ -156,6 +158,21 @@ func (m *mockBroker) getDisconnectCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.disconnectCalls
+}
+
+func (m *mockBroker) ReadRegisters(ctx context.Context, addr uint16, count uint16) ([]byte, error) {
+	results := m.ReadBatch(ctx, []broker.ReadRequest{{Addr: addr, Count: count}})
+	if len(results) > 0 {
+		return results[0].Data, results[0].Err
+	}
+	return nil, fmt.Errorf("no mock result")
+}
+
+func (m *mockBroker) SetDelayRuntime(ctx context.Context, d time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastDelay = d
+	return nil
 }
 
 func (m *mockBroker) getWriteCalls() []writeCall {
