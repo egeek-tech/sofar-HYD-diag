@@ -10,6 +10,10 @@ var PV_DEFAULT_CHANNELS = 2;
 var TOPO_TOWERS = 2;
 var TOPO_PACKS = 10;
 
+// Timing configuration (Phase 07)
+var TIMING_STORAGE_KEY = 'sofar_timing';
+var TIMING_DEFAULTS = { readDelay: 500, packSettle: 1000 };
+
 // === Pack Detail View State (Phase 5) ===
 
 var packViewState = {
@@ -46,6 +50,19 @@ class WSClient {
         this.ws.onopen = () => {
             this.connected = true;
             this.reconnectDelay = 1000;
+            // Send stored timing config on connect so backend picks up saved values
+            var storedTiming = null;
+            try { storedTiming = JSON.parse(localStorage.getItem(TIMING_STORAGE_KEY)); } catch(e) {}
+            if (storedTiming) {
+                this.send({
+                    type: 'configure',
+                    section: 'timing',
+                    timing_config: {
+                        read_delay_ms: storedTiming.readDelay || 500,
+                        pack_settle_ms: storedTiming.packSettle || 1000
+                    }
+                });
+            }
             // Re-subscribe to active section via navigateToSection so PV config
             // and auto-refresh state are synced with the (possibly restarted) backend
             if (App.activeSection) {
@@ -113,6 +130,9 @@ document.addEventListener('DOMContentLoaded', function () {
     App.ws.on('section_error', handleSectionError);
     App.ws.on('pack_data', handlePackData);
     App.ws.on('pack_error', handlePackError);
+    App.ws.on('section_schema', handleSectionSchema);
+    App.ws.on('register_value', handleRegisterValue);
+    App.ws.on('section_complete', handleSectionComplete);
 
     // Connect WebSocket to server
     App.ws.connect();
@@ -127,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setupAutoRefreshToggle();
     initPVDropdown();
     initPackSelectors();
+    initTimingControls();
 });
 
 // === Connection Form (CONN-01, CONN-03) ===
@@ -405,6 +426,9 @@ function handleConnectionState(msg) {
             btn.className = 'btn btn--disconnect';
             btn.disabled = false;
             setFormInputsDisabled(true);
+            // Show timing controls when connected
+            var timingCtrlsConn = $('#timing-controls');
+            if (timingCtrlsConn) timingCtrlsConn.style.display = '';
             // D-23: Auto-navigate to System section on user-initiated connect
             if (App.userInitiatedConnect) {
                 App.userInitiatedConnect = false;
@@ -436,6 +460,9 @@ function handleConnectionState(msg) {
             btn.className = 'btn btn--connect';
             btn.disabled = false;
             setFormInputsDisabled(false);
+            // Hide timing controls when disconnected
+            var timingCtrlsDisc = $('#timing-controls');
+            if (timingCtrlsDisc) timingCtrlsDisc.style.display = 'none';
             // Show connection error if present (e.g. connection refused)
             if (msg.error) {
                 showConnectionError(msg.error);
@@ -447,27 +474,71 @@ function handleConnectionState(msg) {
 
 function handleSectionData(msg) {
     if (msg.section !== App.activeSection) return;
-
-    // If we are in pack_detail mode for BMS, do not overwrite with overview data
     if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
 
     var body = $('#content-body');
-    body.textContent = '';
 
-    // Render grouped data
+    // Check if streaming skeleton is rendered (has data-register elements)
+    var hasStreamingSkeleton = body.querySelector('[data-register]') !== null;
+
+    if (hasStreamingSkeleton) {
+        // Streaming mode: only render computed groups (bitmap, protection) and faults
+        // into their placeholder divs, without clearing the skeleton
+        var groups = msg.groups || [];
+        for (var i = 0; i < groups.length; i++) {
+            var group = groups[i];
+            if (group.type === 'bitmap') {
+                var bitmapPlaceholder = body.querySelector('[data-computed-group="Battery Topology"]');
+                if (bitmapPlaceholder) {
+                    var bitmapWidget = renderBitmapGroup(group);
+                    bitmapPlaceholder.parentNode.replaceChild(bitmapWidget, bitmapPlaceholder);
+                } else {
+                    body.appendChild(renderBitmapGroup(group));
+                }
+            } else if (group.type === 'protection') {
+                var protPlaceholder = body.querySelector('[data-computed-group="Protection & Alarms"]');
+                if (protPlaceholder) {
+                    var protWidget = renderProtectionGroup(group);
+                    protPlaceholder.parentNode.replaceChild(protWidget, protPlaceholder);
+                } else {
+                    body.appendChild(renderProtectionGroup(group));
+                }
+            }
+        }
+
+        // Render faults card if present
+        if (Array.isArray(msg.faults)) {
+            // Remove existing fault card if any
+            var existingFault = body.querySelector('.fault-card');
+            if (existingFault) existingFault.remove();
+            body.appendChild(renderFaultCard(msg.faults));
+        }
+
+        // Update timestamp if present
+        if (msg.timestamp) {
+            var ts = $('#content-timestamp');
+            var d = new Date(msg.timestamp);
+            ts.textContent = 'Last updated: ' + d.toLocaleTimeString();
+            ts.style.display = '';
+        }
+        return;
+    }
+
+    // Legacy batch mode: full re-render (fallback for pack_data or non-streaming paths)
+    body.textContent = '';
     if (msg.groups && msg.groups.length > 0) {
         var container = renderGroupedData(msg);
         body.appendChild(container);
     }
-
-    // Update timestamp
-    if (msg.timestamp) {
-        var ts = $('#content-timestamp');
-        var d = new Date(msg.timestamp);
-        ts.textContent = 'Last updated: ' + d.toLocaleTimeString();
-        ts.style.display = '';
+    if (Array.isArray(msg.faults)) {
+        body.appendChild(renderFaultCard(msg.faults));
     }
-
+    if (msg.timestamp) {
+        var ts2 = $('#content-timestamp');
+        var d2 = new Date(msg.timestamp);
+        ts2.textContent = 'Last updated: ' + d2.toLocaleTimeString();
+        ts2.style.display = '';
+    }
     triggerFlash('success');
 }
 
@@ -748,6 +819,182 @@ function savePVChannels(channels) {
     } catch(e) {}
 }
 
+
+// === Streaming Message Handlers (Phase 7) ===
+
+function handleSectionSchema(msg) {
+    if (msg.section !== App.activeSection) return;
+    // Don't replace pack_detail view with schema
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
+
+    var body = $('#content-body');
+    body.textContent = '';
+
+    var container = document.createElement('div');
+    var gridContainer = null;
+    var groups = msg.groups || [];
+
+    for (var i = 0; i < groups.length; i++) {
+        var group = groups[i];
+
+        // Bitmap and protection groups will be rendered by section_data handler
+        if (group.type === 'bitmap' || group.type === 'protection') {
+            gridContainer = null;
+            // Create a placeholder div for computed groups
+            var placeholder = document.createElement('div');
+            placeholder.setAttribute('data-computed-group', group.name);
+            container.appendChild(placeholder);
+            continue;
+        }
+
+        if (group.layout === 'column') {
+            if (!gridContainer) {
+                gridContainer = document.createElement('div');
+                gridContainer.className = 'group-grid';
+                container.appendChild(gridContainer);
+            }
+            gridContainer.appendChild(renderSkeletonCard(group));
+        } else {
+            gridContainer = null;
+            container.appendChild(renderSkeletonCard(group));
+        }
+    }
+
+    body.appendChild(container);
+}
+
+function renderSkeletonCard(group) {
+    var card = document.createElement('div');
+    card.className = 'group-card';
+
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    card.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    card.appendChild(sep);
+
+    var body = document.createElement('div');
+    body.className = 'group-card__body';
+
+    var registers = group.registers || [];
+    for (var i = 0; i < registers.length; i++) {
+        var row = document.createElement('div');
+        row.className = 'data-row-h';
+
+        var keyEl = document.createElement('span');
+        keyEl.className = 'data-row-h__key';
+        keyEl.textContent = registers[i].toUpperCase();
+
+        var valEl = document.createElement('span');
+        valEl.className = 'data-row-h__value data-row-h__value--pending';
+        valEl.textContent = '\u2014'; // em dash (D-02)
+        valEl.setAttribute('data-register', group.name + '::' + registers[i]);
+
+        row.appendChild(keyEl);
+        row.appendChild(valEl);
+        body.appendChild(row);
+    }
+
+    card.appendChild(body);
+    return card;
+}
+
+function handleRegisterValue(msg) {
+    if (msg.section !== App.activeSection) return;
+    // Don't update if in pack_detail mode for BMS
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
+
+    var key = msg.group + '::' + msg.name;
+    var el = document.querySelector('[data-register="' + key.replace(/"/g, '\\"') + '"]');
+    if (!el) return;
+
+    if (msg.error) {
+        // D-03: show last known value dimmed with error icon
+        // If element still has em-dash (no prior value), keep em-dash
+        el.classList.add('data-row-h__value--stale');
+        el.classList.remove('data-row-h__value--pending');
+    } else {
+        el.textContent = msg.value || '\u2014';
+        el.classList.remove('data-row-h__value--pending', 'data-row-h__value--stale');
+    }
+}
+
+function handleSectionComplete(msg) {
+    if (msg.section !== App.activeSection) return;
+
+    if (msg.timestamp) {
+        var ts = $('#content-timestamp');
+        var d = new Date(msg.timestamp);
+        ts.textContent = 'Last updated: ' + d.toLocaleTimeString();
+        ts.style.display = '';
+    }
+    triggerFlash('success');
+}
+
+// === Timing Controls (Phase 7, TIMING-01, TIMING-02) ===
+
+function initTimingControls() {
+    var readDelayInput = $('#timing-read-delay');
+    var packSettleInput = $('#timing-pack-settle');
+    if (!readDelayInput || !packSettleInput) return;
+
+    // Load from localStorage
+    var stored = null;
+    try {
+        stored = JSON.parse(localStorage.getItem(TIMING_STORAGE_KEY));
+    } catch (e) { /* ignore */ }
+
+    if (stored) {
+        if (stored.readDelay) readDelayInput.value = stored.readDelay;
+        if (stored.packSettle) packSettleInput.value = stored.packSettle;
+    }
+
+    function clamp(val, min, max) {
+        var n = parseInt(val, 10);
+        if (isNaN(n)) return min;
+        if (n < min) return min;
+        if (n > max) return max;
+        return n;
+    }
+
+    function sendTimingConfig() {
+        var readDelay = clamp(readDelayInput.value, 100, 5000);
+        var packSettle = clamp(packSettleInput.value, 500, 10000);
+
+        // Update inputs to clamped values
+        readDelayInput.value = readDelay;
+        packSettleInput.value = packSettle;
+
+        // Persist to localStorage
+        localStorage.setItem(TIMING_STORAGE_KEY, JSON.stringify({
+            readDelay: readDelay,
+            packSettle: packSettle
+        }));
+
+        // Send to backend
+        App.ws.send({
+            type: 'configure',
+            section: 'timing',
+            timing_config: {
+                read_delay_ms: readDelay,
+                pack_settle_ms: packSettle
+            }
+        });
+    }
+
+    // Send on blur or Enter key
+    readDelayInput.addEventListener('change', sendTimingConfig);
+    packSettleInput.addEventListener('change', sendTimingConfig);
+    readDelayInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { readDelayInput.blur(); }
+    });
+    packSettleInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { packSettleInput.blur(); }
+    });
+}
 
 // === Bitmap Grid Renderer (BAT-05, D-06, D-07, D-08) ===
 
