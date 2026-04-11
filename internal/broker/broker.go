@@ -24,6 +24,7 @@ const (
 	CmdReadBatch
 	CmdReconfigure
 	CmdDisconnect
+	CmdSetDelay
 )
 
 // ReconfigureRequest carries the new address and slave ID for runtime reconfiguration.
@@ -47,6 +48,11 @@ type WriteRequest struct {
 // BatchReadRequest describes multiple register read operations.
 type BatchReadRequest struct {
 	Reads []ReadRequest
+}
+
+// SetDelayRequest carries the new inter-read delay for runtime update.
+type SetDelayRequest struct {
+	InterReadDelay time.Duration
 }
 
 // Result contains the outcome of a single register operation.
@@ -288,6 +294,30 @@ func (b *Broker) Disconnect(ctx context.Context) error {
 	}
 }
 
+// SetDelayRuntime updates the inter-read delay at runtime via the command channel.
+// Safe for concurrent callers -- the update is serialized through the Run() goroutine
+// to avoid data races on the interReadDelay field.
+func (b *Broker) SetDelayRuntime(ctx context.Context, d time.Duration) error {
+	respCh := make(chan interface{}, 1)
+	select {
+	case b.commands <- command{
+		cmdType:  CmdSetDelay,
+		request:  SetDelayRequest{InterReadDelay: d},
+		response: respCh,
+	}:
+	case <-b.done:
+		return ErrBrokerClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-respCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // setState updates the broker's connection state and emits a state event.
 func (b *Broker) setState(s State, err error) {
 	b.state.Store(int32(s))
@@ -324,6 +354,11 @@ func (b *Broker) execute(ctx context.Context, cmd command) {
 		cmd.response <- Result{}
 	case CmdDisconnect:
 		b.executeDisconnect()
+		cmd.response <- Result{}
+	case CmdSetDelay:
+		req := cmd.request.(SetDelayRequest)
+		b.interReadDelay = req.InterReadDelay
+		b.logger.Info("inter-read delay updated", "delay", req.InterReadDelay)
 		cmd.response <- Result{}
 	}
 }
