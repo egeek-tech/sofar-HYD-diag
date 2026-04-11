@@ -1626,8 +1626,8 @@ func TestEncodePackQueryInHandler(t *testing.T) {
 	drainClientMessages(send, 500*time.Millisecond)
 
 	// Verify WriteRegister was called with the correctly encoded value
-	// EncodePackQuery(1, 2, 5, 2): group = (1-1)*2 + 2 = 2, pack = 5
-	// value = 5 | (2 << 8) = 0x0205
+	// EncodePackQuery(1, 2, 5, 2): group = (1-1)*2 + (2-1) = 1, packIdx = 5-1 = 4
+	// value = 4 | (1 << 8) = 0x0104
 	expectedValue := register.EncodePackQuery(1, 2, 5, 2)
 	writes := mb.getWriteCalls()
 	found := false
