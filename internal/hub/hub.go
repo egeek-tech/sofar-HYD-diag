@@ -46,6 +46,13 @@ type Hub struct {
 	defaultBatInputs   int           // default battery inputs (1-2)
 	defaultBatTowers   int           // default towers per input (1-4)
 	defaultBatPacks    int           // default packs per tower (4-10)
+	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
+}
+
+// packSelection tracks the currently selected pack for auto-refresh re-triggering.
+type packSelection struct {
+	input, tower, pack int
+	client             *Client
 }
 
 // NewHub creates a new Hub. Call Run() in a goroutine to start processing.
@@ -244,6 +251,8 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 		h.handleAutoRefreshToggle(cmd.Client, msg)
 	case MsgTypeConfigure:
 		h.handleConfigure(cmd)
+	case MsgTypeSelectPack:
+		h.handleSelectPack(cmd)
 	default:
 		h.logger.Debug("unknown message type", "type", msg.Type)
 	}
@@ -307,6 +316,10 @@ func (h *Hub) subscribeClient(c *Client, sectionName string) {
 
 	sec.addSubscriber(c)
 	c.section = sectionName
+	// Clear pack selection when (re-)subscribing to BMS overview
+	if sectionName == "bms" {
+		h.selectedPack = nil
+	}
 	h.logger.Debug("client subscribed", "section", sectionName, "subscribers", sec.SubscriberCount())
 
 	// Trigger immediate read (D-20) or send error if disconnected
@@ -326,6 +339,10 @@ func (h *Hub) unsubscribeClient(c *Client, sectionName string) {
 	sec.removeSubscriber(c)
 	if c.section == sectionName {
 		c.section = ""
+	}
+	// Clear pack selection when leaving BMS
+	if sectionName == "bms" {
+		h.selectedPack = nil
 	}
 	h.logger.Debug("client unsubscribed", "section", sectionName, "subscribers", sec.SubscriberCount())
 }
@@ -347,6 +364,11 @@ func (h *Hub) handleTimerTick(sectionName string) {
 	}
 	// Skip if not connected (D-28)
 	if !h.connected {
+		return
+	}
+	// If BMS section has a selected pack, re-trigger pack read instead of BMS overview
+	if sectionName == "bms" && h.selectedPack != nil {
+		h.triggerPackRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client)
 		return
 	}
 	h.triggerSectionRead(sectionName)
@@ -1015,5 +1037,313 @@ func (h *Hub) handleConfigure(cmd ClientCommand) {
 		if h.connected && sec.SubscriberCount() > 0 {
 			h.triggerSectionRead("bms")
 		}
+	}
+}
+
+// === Phase 05 Plan 02: Pack selection and data retrieval ===
+
+// handleSelectPack validates pack coordinates and triggers the write-settle-read cycle.
+func (h *Hub) handleSelectPack(cmd ClientCommand) {
+	msg := cmd.Message
+	input := msg.Input
+	tower := msg.Tower
+	pack := msg.Pack
+
+	// Validate and clamp to topology bounds (T-05-02)
+	if input < 1 {
+		input = 1
+	}
+	if input > h.defaultBatInputs {
+		input = h.defaultBatInputs
+	}
+	if tower < 1 {
+		tower = 1
+	}
+	if tower > h.defaultBatTowers {
+		tower = h.defaultBatTowers
+	}
+	if pack < 1 {
+		pack = 1
+	}
+	if pack > h.defaultBatPacks {
+		pack = h.defaultBatPacks
+	}
+
+	// Store selection for auto-refresh
+	h.selectedPack = &packSelection{input: input, tower: tower, pack: pack, client: cmd.Client}
+
+	h.triggerPackRead(input, tower, pack, cmd.Client)
+}
+
+// triggerPackRead performs the write-settle-read cycle for pack data retrieval.
+// Writes 0x9020 to select the pack, waits for settle, then reads 3 register blocks.
+func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
+	towersPerInput := h.defaultBatTowers
+	queryWord := register.EncodePackQuery(input, tower, pack, towersPerInput)
+
+	// Get probe definitions for building the response
+	rtProbes := register.PackRTProbes()
+	infoProbes := register.PackInfoProbes()
+	temps58Probes := register.PackTemps58Probes()
+
+	go func() {
+		// Step 1: Write 0x9020 to select pack (function 0x10 via WriteRegister)
+		err := h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
+		if err != nil {
+			h.logger.Warn("pack select write failed, retrying with 2s settle", "error", err)
+			// Retry once with 2s settle
+			time.Sleep(2 * time.Second)
+			err = h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
+			if err != nil {
+				h.logger.Error("pack select write failed after retry", "error", err)
+				h.sendPackError(client, input, tower, pack, "timeout writing pack selection after retry")
+				return
+			}
+		}
+
+		// Step 2: Wait 1s settle time
+		time.Sleep(1 * time.Second)
+
+		// Step 3: Read Pack RT data (0x9044-0x907F = 60 registers)
+		rtReads := []broker.ReadRequest{{Addr: 0x9044, Count: 60}}
+		rtResults := h.broker.ReadBatch(h.ctx, rtReads)
+		if len(rtResults) == 0 || rtResults[0].Err != nil {
+			errMsg := "timeout reading pack RT data"
+			if len(rtResults) > 0 && rtResults[0].Err != nil {
+				errMsg = rtResults[0].Err.Error()
+			}
+			h.sendPackError(client, input, tower, pack, errMsg)
+			return
+		}
+
+		// Step 4: Read Pack Info (0x9104-0x9126 = 35 registers)
+		infoReads := []broker.ReadRequest{{Addr: 0x9104, Count: 35}}
+		infoResults := h.broker.ReadBatch(h.ctx, infoReads)
+
+		// Step 5: Read Temps 5-8 (0x90BC-0x90BF = 4 registers)
+		temps58Reads := []broker.ReadRequest{{Addr: 0x90BC, Count: 4}}
+		temps58Results := h.broker.ReadBatch(h.ctx, temps58Reads)
+
+		// Step 6: Build and send pack data message
+		msg := h.buildPackDataMessage(input, tower, pack, rtProbes, infoProbes, temps58Probes, rtResults, infoResults, temps58Results)
+		h.sendPackDataToClient(client, msg)
+	}()
+}
+
+// buildPackDataMessage assembles a PackDataMessage from the 3 register read results.
+func (h *Hub) buildPackDataMessage(
+	input, tower, pack int,
+	rtProbes, infoProbes, temps58Probes []register.Probe,
+	rtResults, infoResults, temps58Results []broker.Result,
+) PackDataMessage {
+	msg := PackDataMessage{
+		Type:      MsgTypePackData,
+		Section:   "bms",
+		Input:     input,
+		Tower:     tower,
+		Pack:      pack,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	var rtData []byte
+	if len(rtResults) > 0 && rtResults[0].Err == nil {
+		rtData = rtResults[0].Data
+	}
+
+	var infoData []byte
+	if len(infoResults) > 0 && infoResults[0].Err == nil {
+		infoData = infoResults[0].Data
+	}
+
+	var temps58Data []byte
+	if len(temps58Results) > 0 && temps58Results[0].Err == nil {
+		temps58Data = temps58Results[0].Data
+	}
+
+	// Group 1: Pack Info (from info block)
+	packInfoGroup := PackGroup{
+		Name:  "Pack Info",
+		Items: make(map[string]string),
+	}
+	if infoData != nil {
+		for _, p := range infoProbes {
+			// Skip alarm/protection/fault registers (handled in Pack Status group)
+			if p.Addr >= 0x9124 && p.Addr <= 0x9126 {
+				continue
+			}
+			offset := int(p.Addr-0x9104) * 2
+			end := offset + int(p.Count)*2
+			if offset >= 0 && end <= len(infoData) {
+				packInfoGroup.Items[p.Name] = FormatValue(p, infoData[offset:end])
+			}
+		}
+	}
+	// Also add some RT info items
+	if rtData != nil {
+		// Pack ID, Serial Number from RT block
+		for _, p := range rtProbes {
+			if p.Name == "Pack ID" || p.Name == "Serial Number" ||
+				p.Name == "Remaining Capacity" || p.Name == "Full Charge Capacity" ||
+				p.Name == "Cycle Count" || p.Name == "Total Voltage" || p.Name == "SOC" ||
+				p.Name == "Total Packs" || p.Name == "Cell Count" || p.Name == "Current" {
+				offset := int(p.Addr-0x9044) * 2
+				end := offset + int(p.Count)*2
+				if offset >= 0 && end <= len(rtData) {
+					packInfoGroup.Items[p.Name] = FormatValue(p, rtData[offset:end])
+				}
+			}
+		}
+	}
+	msg.Groups = append(msg.Groups, packInfoGroup)
+
+	// Group 2: Cell Voltages (type="cell_grid")
+	cellGroup := PackGroup{
+		Name: "Cell Voltages",
+		Type: "cell_grid",
+	}
+	if rtData != nil {
+		cells := make([]int, 24)
+		for i := 0; i < 24; i++ {
+			cells[i] = int(extractU16(rtData, 0x9044, uint16(0x9051+i)))
+		}
+		cellGroup.Cells = cells
+		cellGroup.MaxCell = int(extractU16(rtData, 0x9044, 0x9069))
+		cellGroup.MinCell = int(extractU16(rtData, 0x9044, 0x906A))
+
+		// Compute max/min cell index by scanning the 24 values
+		maxIdx, minIdx := 1, 1
+		maxVal, minVal := cells[0], cells[0]
+		for i, v := range cells {
+			if v > maxVal {
+				maxVal = v
+				maxIdx = i + 1
+			}
+			if v < minVal || (minVal == 0 && v > 0) {
+				minVal = v
+				minIdx = i + 1
+			}
+		}
+		cellGroup.MaxCellIndex = maxIdx
+		cellGroup.MinCellIndex = minIdx
+	}
+	msg.Groups = append(msg.Groups, cellGroup)
+
+	// Group 3: Temperatures
+	tempGroup := PackGroup{
+		Name:  "Temperatures",
+		Items: make(map[string]string),
+	}
+	tempRaw := make([]int, 0)
+	if rtData != nil {
+		// Temps 1-4 from RT block
+		for _, p := range rtProbes {
+			if strings.HasPrefix(p.Name, "Temp ") || p.Name == "MOS Temp" || p.Name == "Env Temp" {
+				offset := int(p.Addr-0x9044) * 2
+				end := offset + int(p.Count)*2
+				if offset >= 0 && end <= len(rtData) {
+					tempGroup.Items[p.Name] = FormatValue(p, rtData[offset:end])
+					tempRaw = append(tempRaw, int(extractS16(rtData, 0x9044, p.Addr)))
+				}
+			}
+		}
+	}
+	if temps58Data != nil {
+		// Temps 5-8 from temps58 block
+		for _, p := range temps58Probes {
+			offset := int(p.Addr-0x90BC) * 2
+			end := offset + int(p.Count)*2
+			if offset >= 0 && end <= len(temps58Data) {
+				tempGroup.Items[p.Name] = FormatValue(p, temps58Data[offset:end])
+				tempRaw = append(tempRaw, int(extractS16(temps58Data, 0x90BC, p.Addr)))
+			}
+		}
+	}
+	tempGroup.TempRaw = tempRaw
+	msg.Groups = append(msg.Groups, tempGroup)
+
+	// Group 4: Pack Status (type="pack_status")
+	statusGroup := PackGroup{
+		Name: "Pack Status",
+		Type: "pack_status",
+	}
+	if rtData != nil {
+		statusGroup.Alarm = int(extractU16(rtData, 0x9044, 0x9076))
+		statusGroup.Protection = int(extractU16(rtData, 0x9044, 0x9077))
+		statusGroup.Fault = int(extractU16(rtData, 0x9044, 0x9078))
+	}
+	if infoData != nil {
+		statusGroup.Alarm2 = int(extractU16(infoData, 0x9104, 0x9124))
+		statusGroup.Protection2 = int(extractU16(infoData, 0x9104, 0x9125))
+		statusGroup.Fault2 = int(extractU16(infoData, 0x9104, 0x9126))
+	}
+	// Decode all bitmaps
+	var decoded []string
+	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Alarm), register.BMSAlarmBits, 0x9076)...)
+	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Protection), register.BMSProtectionBits, 0x9077)...)
+	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Fault), register.BMSFaultBits, 0x9078)...)
+	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Alarm2), register.BMSAlarm2Bits, 0x9124)...)
+	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Protection2), register.BMSProtection2Bits, 0x9125)...)
+	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Fault2), register.BMSFault2Bits, 0x9126)...)
+	statusGroup.Decoded = decoded
+	msg.Groups = append(msg.Groups, statusGroup)
+
+	// Group 5: Balance State (type="balance")
+	balanceGroup := PackGroup{
+		Name: "Balance State",
+		Type: "balance",
+	}
+	if rtData != nil {
+		balanceGroup.BalanceBitmap = int(extractU16(rtData, 0x9044, 0x9075))
+	}
+	msg.Groups = append(msg.Groups, balanceGroup)
+
+	return msg
+}
+
+// extractU16 extracts a uint16 at targetAddr from a data block starting at baseAddr.
+func extractU16(data []byte, baseAddr, targetAddr uint16) uint16 {
+	offset := int(targetAddr-baseAddr) * 2
+	if offset < 0 || offset+2 > len(data) {
+		return 0
+	}
+	return binary.BigEndian.Uint16(data[offset : offset+2])
+}
+
+// extractS16 extracts an int16 at targetAddr from a data block starting at baseAddr.
+func extractS16(data []byte, baseAddr, targetAddr uint16) int16 {
+	return int16(extractU16(data, baseAddr, targetAddr))
+}
+
+// sendPackError sends a pack_error message to a specific client.
+func (h *Hub) sendPackError(client *Client, input, tower, pack int, errMsg string) {
+	msg := PackErrorMessage{
+		Type:    MsgTypePackError,
+		Section: "bms",
+		Input:   input,
+		Tower:   tower,
+		Pack:    pack,
+		Error:   errMsg,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		h.logger.Error("marshal pack error message", "error", err)
+		return
+	}
+	select {
+	case client.send <- data:
+	default:
+	}
+}
+
+// sendPackDataToClient sends a PackDataMessage to a specific client.
+func (h *Hub) sendPackDataToClient(client *Client, msg PackDataMessage) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		h.logger.Error("marshal pack data message", "error", err)
+		return
+	}
+	select {
+	case client.send <- data:
+	default:
 	}
 }
