@@ -1,50 +1,70 @@
-# Requirements: Sofar HYD Diagnostic Tool — v1.1
+# Requirements: Sofar HYD Diagnostic Tool — v1.2
 
-**Defined:** 2026-04-11
-**Core Value:** Clear, real-time visibility into all Sofar HYD inverter parameters -- especially battery pack diagnostics -- through a reliable web interface
+**Defined:** 2026-04-12
+**Core Value:** Clear, real-time visibility into all Sofar HYD inverter parameters — especially battery pack diagnostics — through a reliable web interface
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-### Modbus Timing
+### Reliability
 
-- [ ] **TIMING-01**: User can adjust the default Modbus read delay via UI slider/input (default 500ms)
-- [ ] **TIMING-02**: Battery pack reads use a separate, longer settle time after 0x9020 write (configurable, default 1-2s)
+- [ ] **REL-01**: User can disconnect and the connection closes immediately, aborting any in-progress Modbus reads within 1 second
+- [ ] **REL-02**: Register reads that return errors are automatically retried (up to 3 total attempts) before showing an error
+- [ ] **REL-03**: Inter-read delay is consistently enforced between all Modbus reads, with no burst of rapid reads on section switch
 
-### Streaming Display
+### Auto-Refresh
 
-- [ ] **STREAM-01**: Each parameter appears in the UI immediately as it is read, not after the entire batch completes
-- [ ] **STREAM-02**: Loading state shows partial data with remaining parameters still loading
+- [ ] **REFR-01**: Auto-refresh is triggered only by the browser — backend performs no autonomous refresh cycles
+- [ ] **REFR-02**: Auto-refresh timer restarts after each read cycle completes (not on a fixed interval)
 
-### Battery Pack Access
+### Data Display
 
-- [ ] **PACK-01**: All 20 battery packs (2 towers x 10 packs) are accessible for drill-down, matching old CLI tool behavior
-- [ ] **PACK-02**: Pack selection correctly encodes tower/pack index in 0x9020 write matching proven CLI encoding
-- [ ] **PACK-03**: Topology hardcoded to actual setup: 16 cells/pack, 10 packs/tower, 2 towers
+- [ ] **DISP-01**: Previously read parameter values persist on screen (dimmed) when a new refresh cycle begins, until replaced by fresh values
+- [ ] **DISP-02**: Browser caches values per section and page — navigating back to a previously viewed section shows cached values dimmed until refreshed
+- [ ] **DISP-03**: User can hover over any parameter value to see a tooltip showing the register address and raw value
+
+### Battery Pack
+
+- [ ] **BATT-01**: Balance state section appears before temperature section in pack drill-down view
+- [ ] **BATT-02**: Pack drill-down values stream per-register as they are read, consistent with other sections
+
+## Future Requirements
+
+### Deferred from v1.2
+
+- **DISP-04**: Per-register retry configuration UI
+- **DISP-05**: Register value history in tooltips
+- **REFR-03**: Auto-refresh interval configuration slider
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Charts / trend graphs | v2 feature — v1.1 focuses on correctness and UX |
+| Charts / trend graphs | v2+ feature — v1.2 focuses on reliability |
 | Data export (CSV/JSON) | Not needed for diagnostic use |
 | Mobile layout | Desktop diagnostic tool |
+| SSE migration | WebSocket working well, no need to change transport |
+| Multi-client timer coordination | 1-2 tabs typical for diagnostic tool |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TIMING-01 | Phase 7 | Pending |
-| TIMING-02 | Phase 7 | Pending |
-| STREAM-01 | Phase 7 | Pending |
-| STREAM-02 | Phase 7 | Pending |
-| PACK-01 | Phase 6 | Pending |
-| PACK-02 | Phase 6 | Pending |
-| PACK-03 | Phase 6 | Pending |
+| REL-01 | — | Pending |
+| REL-02 | — | Pending |
+| REL-03 | — | Pending |
+| REFR-01 | — | Pending |
+| REFR-02 | — | Pending |
+| DISP-01 | — | Pending |
+| DISP-02 | — | Pending |
+| DISP-03 | — | Pending |
+| BATT-01 | — | Pending |
+| BATT-02 | — | Pending |
 
 **Coverage:**
-- v1.1 requirements: 7 total
-- Mapped to phases: 7
-- Unmapped: 0
+- v1.2 requirements: 10 total
+- Mapped to phases: 0
+- Unmapped: 10 ⚠️
 
 ---
-*Requirements defined: 2026-04-11*
+*Requirements defined: 2026-04-12*
+*Last updated: 2026-04-12 after initial definition*
