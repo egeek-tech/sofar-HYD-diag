@@ -732,8 +732,8 @@ func (h *Hub) handleConfigure(cmd ClientCommand) {
 		// Update read delay with server-side clamping (T-07-01, T-07-02)
 		if tc.ReadDelayMs > 0 {
 			delay := tc.ReadDelayMs
-			if delay < 100 {
-				delay = 100
+			if delay < 10 {
+				delay = 10
 			}
 			if delay > 5000 {
 				delay = 5000
