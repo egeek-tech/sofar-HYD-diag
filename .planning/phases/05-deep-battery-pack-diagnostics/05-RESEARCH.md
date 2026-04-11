@@ -475,22 +475,19 @@ function renderCellGrid(cells, minV, maxV) {
 | A3 | LiFePO4 safe temperature thresholds: 15-45C normal, 45-55C elevated, >55C/<0C critical | Temperature Color Coding | Low -- thresholds are configurable CSS classes, easily adjusted |
 | A4 | 0x9104-0x9126 Pack Info block is populated after 0x9020 write (same as RT block) | Register Read Strategy | Medium -- if Pack Info requires a different query, reads may return stale/zero data. Verify on first integration test |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Pack Info block availability**
+1. **Pack Info block availability** [RESOLVED: read after RT block, hide if empty]
    - What we know: The protocol spec lists 0x9104-0x9126 as "BMS Pack Info" with design capacity, SOH, cell temps 1-16, lifetime stats
-   - What's unclear: Whether this block is populated by the same 0x9020 write that populates the RT block (0x9044-0x907F)
-   - Recommendation: Read it after the RT block in the same cycle. If data returns zero for all registers, it may need a separate query or may not be supported by the BMS firmware. Handle gracefully by hiding empty groups.
+   - Resolution: Read 0x9104-0x9126 after the same 0x9020 write that populates the RT block. If all registers return zero, the BMS firmware does not support this block — hide the Pack Info group gracefully. Plan 02 buildPackDataMessage implements this check.
 
-2. **Exact protection/alarm bit definitions**
+2. **Exact protection/alarm bit definitions** [RESOLVED: assumed standard, hex fallback]
    - What we know: Standard Sofar BMS uses typical protection bitmaps (OV, UV, OT, UT, OC, SC)
-   - What's unclear: Exact bit-to-description mapping for 0x9014-0x9017 and 0x9124-0x9126 without reading the PDF section 5.10.1 directly
-   - Recommendation: Implement with assumed standard mappings, display hex value alongside decoded text so users can cross-reference with protocol documentation. The tables are trivially updatable.
+   - Resolution: Implement with assumed standard Sofar BMS mappings (tables marked [ASSUMED] in Plan 01). Display hex register value alongside decoded text so users can cross-reference. Tables are data-driven and trivially updatable if mappings are wrong.
 
-3. **Cell count variability**
+3. **Cell count variability** [RESOLVED: use 0x907C, skip trailing zeros]
    - What we know: Protocol supports up to 24 cells per pack (registers 0x9051-0x9068). Register 0x907C reports actual cell string count.
-   - What's unclear: Whether packs with fewer than 24 cells return zero for unused cell registers or return different data
-   - Recommendation: Check 0x907C first. Only display cells up to the reported count. Skip zero-value cells at the end of the 24-register block.
+   - Resolution: Read 0x907C to determine actual cell count. Display only cells up to the reported count. For packs returning 0 for 0x907C, fall back to detecting the last non-zero cell voltage in the 24-register block. Plan 03 Task 1 Step 8 implements `cells.length === 0` check.
 
 ## Validation Architecture
 
