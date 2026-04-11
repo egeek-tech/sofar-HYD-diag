@@ -53,8 +53,12 @@ Plans:
   3. User can adjust the default Modbus inter-read delay via a UI control (default 500ms)
   4. Battery pack reads use a separate, longer settle delay after the 0x9020 write (configurable, default 1-2s)
   5. Changed timing settings take effect on the next read cycle without requiring reconnection
-**Plans**: TBD
-**UI hint**: yes
+**Plans:** 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Add streaming message types, broker CmdSetDelay, extend BrokerInterface
+- [ ] 07-02-PLAN.md — Replace batch reads with per-register streaming, add timing config handler
+- [ ] 07-03-PLAN.md — Frontend skeleton rendering, streaming handlers, timing controls UI
 
 ## Progress
 
@@ -66,4 +70,4 @@ Plans:
 | 4. Battery Overview and Statistics | v1.0 | 4/4 | Done | 2026-04-11 |
 | 5. Deep Battery Pack Diagnostics | v1.0 | 3/3 | Done | 2026-04-11 |
 | 6. Battery Pack Access Fix | v1.1 | 0/3 | Planning | - |
-| 7. Streaming Display and Configurable Timing | v1.1 | 0/? | Not started | - |
+| 7. Streaming Display and Configurable Timing | v1.1 | 0/3 | Planning | - |
