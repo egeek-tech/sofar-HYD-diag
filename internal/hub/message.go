@@ -16,6 +16,9 @@ const (
 	MsgTypeSectionData = "section_data"
 	MsgTypeSectionErr  = "section_error"
 	MsgTypeState       = "connection_state"
+	MsgTypeSelectPack  = "select_pack"
+	MsgTypePackData    = "pack_data"
+	MsgTypePackError   = "pack_error"
 )
 
 // GroupData represents a rendered probe group in the outbound message (D-02).
@@ -62,6 +65,10 @@ type InboundMessage struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// Configure payload (D-15)
 	Config *ConfigPayload `json:"config,omitempty"`
+	// Pack selection fields (select_pack)
+	Input int `json:"input,omitempty"`
+	Tower int `json:"tower,omitempty"`
+	Pack  int `json:"pack,omitempty"`
 }
 
 // OutboundMessage represents a message from server to client.
@@ -75,6 +82,54 @@ type OutboundMessage struct {
 	State     string            `json:"state,omitempty"`
 	Error     string            `json:"error,omitempty"`
 	Timestamp string            `json:"timestamp,omitempty"`
+}
+
+// PackDataMessage is the outbound message for pack-level data (select_pack response).
+// Separate from OutboundMessage to carry the richer pack payload per the UI-SPEC contract.
+type PackDataMessage struct {
+	Type      string      `json:"type"`
+	Section   string      `json:"section"`
+	Input     int         `json:"input"`
+	Tower     int         `json:"tower"`
+	Pack      int         `json:"pack"`
+	Groups    []PackGroup `json:"groups"`
+	Timestamp string      `json:"timestamp"`
+}
+
+// PackGroup represents a group within a pack data response.
+type PackGroup struct {
+	Name    string            `json:"name"`
+	Layout  string            `json:"layout,omitempty"`
+	Type    string            `json:"type,omitempty"`
+	Items   map[string]string `json:"items,omitempty"`
+	// Cell grid specific (type="cell_grid")
+	Cells        []int `json:"cells,omitempty"`           // raw millivolt values for 24 cells
+	MaxCell      int   `json:"max_cell,omitempty"`        // register 0x9069 value in mV
+	MinCell      int   `json:"min_cell,omitempty"`        // register 0x906A value in mV
+	MaxCellIndex int   `json:"max_cell_index,omitempty"`  // 1-based index of max cell
+	MinCellIndex int   `json:"min_cell_index,omitempty"`  // 1-based index of min cell
+	// Temperature specific
+	TempRaw []int `json:"temp_raw,omitempty"` // raw temp values (x10) for color coding
+	// Pack status specific (type="pack_status")
+	Alarm       int      `json:"alarm,omitempty"`
+	Protection  int      `json:"protection,omitempty"`
+	Fault       int      `json:"fault,omitempty"`
+	Alarm2      int      `json:"alarm2,omitempty"`
+	Protection2 int      `json:"protection2,omitempty"`
+	Fault2      int      `json:"fault2,omitempty"`
+	Decoded     []string `json:"decoded,omitempty"`
+	// Balance specific (type="balance")
+	BalanceBitmap int `json:"balance_bitmap,omitempty"`
+}
+
+// PackErrorMessage is the outbound message for pack read errors.
+type PackErrorMessage struct {
+	Type    string `json:"type"`
+	Section string `json:"section"`
+	Input   int    `json:"input"`
+	Tower   int    `json:"tower"`
+	Pack    int    `json:"pack"`
+	Error   string `json:"error"`
 }
 
 // NewGroupedSectionData creates a section_data outbound message with grouped data and optional faults.

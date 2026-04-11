@@ -19,6 +19,12 @@ func TestBrokerSatisfiesInterface(t *testing.T) {
 	var _ hub.BrokerInterface = (*broker.Broker)(nil)
 }
 
+// writeCall records a WriteRegister invocation for test assertions.
+type writeCall struct {
+	Addr  uint16
+	Value uint16
+}
+
 // mockBroker implements hub.BrokerInterface for testing.
 type mockBroker struct {
 	mu               sync.Mutex
@@ -29,6 +35,12 @@ type mockBroker struct {
 	batchResults     []broker.Result
 	batchCallCount   int
 	batchDelay       time.Duration // artificial delay for overlapping tests
+	// WriteRegister tracking
+	writeCalls    []writeCall
+	writeErr      error // if set, WriteRegister returns this error
+	writeErrCount int   // number of times to return writeErr (0=forever)
+	// Per-call batch results: if set, each ReadBatch call pops from this queue
+	batchResultQueue [][]broker.Result
 }
 
 type reconfigureCall struct {
@@ -65,6 +77,18 @@ func (m *mockBroker) ReadBatch(ctx context.Context, reads []broker.ReadRequest) 
 	m.mu.Lock()
 	m.batchCallCount++
 	delay := m.batchDelay
+
+	// If per-call queue is set, pop the first entry
+	if len(m.batchResultQueue) > 0 {
+		results := m.batchResultQueue[0]
+		m.batchResultQueue = m.batchResultQueue[1:]
+		m.mu.Unlock()
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		return results
+	}
+
 	results := m.batchResults
 	m.mu.Unlock()
 
@@ -83,7 +107,18 @@ func (m *mockBroker) ReadBatch(ctx context.Context, reads []broker.ReadRequest) 
 }
 
 func (m *mockBroker) WriteRegister(ctx context.Context, addr uint16, value uint16) error {
-	return nil // no-op for tests
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.writeCalls = append(m.writeCalls, writeCall{Addr: addr, Value: value})
+	if m.writeErr != nil {
+		if m.writeErrCount <= 0 {
+			// Return error forever
+			return m.writeErr
+		}
+		m.writeErrCount--
+		return m.writeErr
+	}
+	return nil
 }
 
 func (m *mockBroker) CurrentState() broker.State {
@@ -114,6 +149,14 @@ func (m *mockBroker) getDisconnectCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.disconnectCalls
+}
+
+func (m *mockBroker) getWriteCalls() []writeCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make([]writeCall, len(m.writeCalls))
+	copy(cp, m.writeCalls)
+	return cp
 }
 
 // collectClientMessages reads from a client's send channel with timeout.
@@ -1234,5 +1277,360 @@ func TestConfigureTriggersReread(t *testing.T) {
 	// Verify the data has 5 groups (4 PV + Total)
 	if len(msgs[0].Groups) != 5 {
 		t.Errorf("expected 5 groups after reconfigure, got %d", len(msgs[0].Groups))
+	}
+}
+
+// === Phase 05 Plan 02: Pack selection and data retrieval tests ===
+
+// makePackRTData builds a 120-byte (60 register) block of mock pack RT data.
+// Sets cell voltages 1-24 to incrementing millivolt values starting at 3200mV,
+// max cell at 0x9069 = 3223mV, min cell at 0x906A = 3200mV,
+// temps at 285 (28.5C), alarm/protection/fault to zero, balance to 0.
+func makePackRTData() []byte {
+	data := make([]byte, 120) // 60 registers * 2 bytes
+	// 0x9044 = Pack ID (offset 0) = 1
+	binary.BigEndian.PutUint16(data[0:2], 1)
+	// 0x9045-0x9046 = Timestamp Hi/Lo (offsets 2-6)
+	// 0x9047-0x9050 = Serial Number (10 registers, offsets 6-26) - leave as zeros (ASCII)
+
+	// Cell voltages 0x9051-0x9068 (offsets 26-74): 24 cells at 3200+i mV
+	for i := 0; i < 24; i++ {
+		offset := (0x9051 - 0x9044 + uint16(i)) * 2
+		binary.BigEndian.PutUint16(data[offset:offset+2], uint16(3200+i))
+	}
+
+	// 0x9069 = Max Cell Voltage (offset 74) = 3223 mV (cell 24)
+	maxOffset := (0x9069 - 0x9044) * 2
+	binary.BigEndian.PutUint16(data[maxOffset:maxOffset+2], 3223)
+
+	// 0x906A = Min Cell Voltage (offset 76) = 3200 mV (cell 1)
+	minOffset := (0x906A - 0x9044) * 2
+	binary.BigEndian.PutUint16(data[minOffset:minOffset+2], 3200)
+
+	// Temps 1-4: 0x906B-0x906E = 285 (28.5C as S16 * 0.1)
+	for i := uint16(0); i < 4; i++ {
+		tOffset := (0x906B - 0x9044 + i) * 2
+		binary.BigEndian.PutUint16(data[tOffset:tOffset+2], 285)
+	}
+
+	// 0x906F = MOS Temp = 310 (31.0C)
+	mosOffset := (0x906F - 0x9044) * 2
+	binary.BigEndian.PutUint16(data[mosOffset:mosOffset+2], 310)
+
+	// 0x9070 = Env Temp = 250 (25.0C)
+	envOffset := (0x9070 - 0x9044) * 2
+	binary.BigEndian.PutUint16(data[envOffset:envOffset+2], 250)
+
+	// 0x9075 = Balance State = 0 (balanced)
+	balOffset := (0x9075 - 0x9044) * 2
+	binary.BigEndian.PutUint16(data[balOffset:balOffset+2], 0)
+
+	// 0x9076 = Alarm Status = 0
+	// 0x9077 = Protection Status = 0
+	// 0x9078 = Fault Status = 0
+	// Leave as zeros
+
+	return data
+}
+
+// makePackInfoData builds a 70-byte (35 register) block of mock pack info data.
+func makePackInfoData() []byte {
+	data := make([]byte, 70) // 35 registers * 2 bytes
+	// 0x9104 = Balanced Bus Voltage = 520 (52.0V)
+	binary.BigEndian.PutUint16(data[0:2], 520)
+	// 0x9124 = Alarm Status 2 (offset (0x9124-0x9104)*2 = 64)
+	binary.BigEndian.PutUint16(data[64:66], 0)
+	// 0x9125 = Protection Status 2 (offset 66)
+	binary.BigEndian.PutUint16(data[66:68], 0)
+	// 0x9126 = Fault Status 2 (offset 68)
+	binary.BigEndian.PutUint16(data[68:70], 0)
+	return data
+}
+
+// makePackTemps58Data builds an 8-byte (4 register) block of mock temps 5-8 data.
+func makePackTemps58Data() []byte {
+	data := make([]byte, 8) // 4 registers * 2 bytes
+	for i := 0; i < 4; i++ {
+		binary.BigEndian.PutUint16(data[i*2:(i+1)*2], 275) // 27.5C
+	}
+	return data
+}
+
+// collectPackDataMessages reads raw JSON from the send channel and attempts to unmarshal
+// as PackDataMessage. Returns all successfully parsed pack_data messages.
+func collectPackDataMessages(t *testing.T, send chan []byte, count int, timeout time.Duration) []hub.PackDataMessage {
+	t.Helper()
+	var msgs []hub.PackDataMessage
+	deadline := time.After(timeout)
+	for len(msgs) < count {
+		select {
+		case raw, ok := <-send:
+			if !ok {
+				t.Fatalf("send channel closed after %d pack messages, wanted %d", len(msgs), count)
+			}
+			var msg hub.PackDataMessage
+			if err := json.Unmarshal(raw, &msg); err == nil && msg.Type == hub.MsgTypePackData {
+				msgs = append(msgs, msg)
+			}
+		case <-deadline:
+			t.Fatalf("timeout after %v: got %d pack_data messages, wanted %d", timeout, len(msgs), count)
+		}
+	}
+	return msgs
+}
+
+// collectPackErrorMessages reads raw JSON from the send channel and attempts to unmarshal
+// as PackErrorMessage. Returns all successfully parsed pack_error messages.
+func collectPackErrorMessages(t *testing.T, send chan []byte, count int, timeout time.Duration) []hub.PackErrorMessage {
+	t.Helper()
+	var msgs []hub.PackErrorMessage
+	deadline := time.After(timeout)
+	for len(msgs) < count {
+		select {
+		case raw, ok := <-send:
+			if !ok {
+				t.Fatalf("send channel closed after %d pack error messages, wanted %d", len(msgs), count)
+			}
+			var msg hub.PackErrorMessage
+			if err := json.Unmarshal(raw, &msg); err == nil && msg.Type == hub.MsgTypePackError {
+				msgs = append(msgs, msg)
+			}
+		case <-deadline:
+			t.Fatalf("timeout after %v: got %d pack_error messages, wanted %d", timeout, len(msgs), count)
+		}
+	}
+	return msgs
+}
+
+func TestHandleSelectPack(t *testing.T) {
+	mb := newMockBroker()
+
+	// Set up per-call batch results: 3 ReadBatch calls (RT, Info, Temps58)
+	mb.mu.Lock()
+	mb.batchResultQueue = [][]broker.Result{
+		{{Data: makePackRTData(), Err: nil}},     // RT block: 1 read request
+		{{Data: makePackInfoData(), Err: nil}},    // Info block: 1 read request
+		{{Data: makePackTemps58Data(), Err: nil}},  // Temps58 block: 1 read request
+	}
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Send select_pack message
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSelectPack,
+		Section: "bms",
+		Input:   1,
+		Tower:   1,
+		Pack:    1,
+	})
+
+	// Wait for async processing (write + 1s settle + 3 reads)
+	time.Sleep(2 * time.Second)
+	// Drain any messages from send channel
+	drainClientMessages(send, 200*time.Millisecond)
+
+	// Verify WriteRegister was called with addr 0x9020
+	writes := mb.getWriteCalls()
+	if len(writes) == 0 {
+		t.Fatal("expected WriteRegister to be called, got 0 calls")
+	}
+	foundWrite := false
+	for _, w := range writes {
+		if w.Addr == 0x9020 {
+			foundWrite = true
+			break
+		}
+	}
+	if !foundWrite {
+		t.Errorf("expected WriteRegister call with addr=0x9020, got calls: %+v", writes)
+	}
+
+	// Verify ReadBatch was called 3 times (RT, Info, Temps58)
+	if got := mb.getBatchCallCount(); got < 3 {
+		t.Errorf("expected at least 3 ReadBatch calls, got %d", got)
+	}
+}
+
+func TestPackDataMessageShape(t *testing.T) {
+	mb := newMockBroker()
+
+	// Set up per-call batch results
+	mb.mu.Lock()
+	mb.batchResultQueue = [][]broker.Result{
+		{{Data: makePackRTData(), Err: nil}},
+		{{Data: makePackInfoData(), Err: nil}},
+		{{Data: makePackTemps58Data(), Err: nil}},
+	}
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSelectPack,
+		Section: "bms",
+		Input:   1,
+		Tower:   1,
+		Pack:    1,
+	})
+
+	msgs := collectPackDataMessages(t, send, 1, 3*time.Second)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypePackData {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypePackData, msg.Type)
+	}
+	if msg.Section != "bms" {
+		t.Errorf("expected section 'bms', got %q", msg.Section)
+	}
+	if msg.Input != 1 {
+		t.Errorf("expected input=1, got %d", msg.Input)
+	}
+	if msg.Tower != 1 {
+		t.Errorf("expected tower=1, got %d", msg.Tower)
+	}
+	if msg.Pack != 1 {
+		t.Errorf("expected pack=1, got %d", msg.Pack)
+	}
+
+	// Should have 5 groups
+	if len(msg.Groups) != 5 {
+		t.Fatalf("expected 5 groups, got %d: %+v", len(msg.Groups), msg.Groups)
+	}
+
+	// Verify group names and types
+	expectedGroups := []struct {
+		name  string
+		gtype string
+	}{
+		{"Pack Info", ""},
+		{"Cell Voltages", "cell_grid"},
+		{"Temperatures", ""},
+		{"Pack Status", "pack_status"},
+		{"Balance State", "balance"},
+	}
+	for i, eg := range expectedGroups {
+		if msg.Groups[i].Name != eg.name {
+			t.Errorf("group[%d] name = %q, want %q", i, msg.Groups[i].Name, eg.name)
+		}
+		if msg.Groups[i].Type != eg.gtype {
+			t.Errorf("group[%d] type = %q, want %q", i, msg.Groups[i].Type, eg.gtype)
+		}
+	}
+
+	// Verify cell grid has 24 cells with correct values
+	cellGroup := msg.Groups[1]
+	if len(cellGroup.Cells) != 24 {
+		t.Fatalf("expected 24 cells, got %d", len(cellGroup.Cells))
+	}
+	// Cell 1 should be 3200mV, Cell 24 should be 3223mV
+	if cellGroup.Cells[0] != 3200 {
+		t.Errorf("cell[0] = %d, want 3200", cellGroup.Cells[0])
+	}
+	if cellGroup.Cells[23] != 3223 {
+		t.Errorf("cell[23] = %d, want 3223", cellGroup.Cells[23])
+	}
+	if cellGroup.MaxCell != 3223 {
+		t.Errorf("MaxCell = %d, want 3223", cellGroup.MaxCell)
+	}
+	if cellGroup.MinCell != 3200 {
+		t.Errorf("MinCell = %d, want 3200", cellGroup.MinCell)
+	}
+
+	// Verify temperatures group has TempRaw
+	tempGroup := msg.Groups[2]
+	if len(tempGroup.TempRaw) == 0 {
+		t.Error("expected non-empty TempRaw in Temperatures group")
+	}
+
+	// Verify timestamp is set
+	if msg.Timestamp == "" {
+		t.Error("expected non-empty timestamp")
+	}
+}
+
+func TestPackErrorOnWriteTimeout(t *testing.T) {
+	mb := newMockBroker()
+
+	// Configure WriteRegister to fail on all calls
+	mb.mu.Lock()
+	mb.writeErr = fmt.Errorf("modbus timeout")
+	mb.writeErrCount = 0 // fail forever
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSelectPack,
+		Section: "bms",
+		Input:   1,
+		Tower:   1,
+		Pack:    1,
+	})
+
+	// Wait for write + retry + settle times
+	msgs := collectPackErrorMessages(t, send, 1, 5*time.Second)
+	msg := msgs[0]
+
+	if msg.Type != hub.MsgTypePackError {
+		t.Fatalf("expected type %q, got %q", hub.MsgTypePackError, msg.Type)
+	}
+	if msg.Section != "bms" {
+		t.Errorf("expected section 'bms', got %q", msg.Section)
+	}
+	if msg.Input != 1 || msg.Tower != 1 || msg.Pack != 1 {
+		t.Errorf("expected input=1,tower=1,pack=1, got %d,%d,%d", msg.Input, msg.Tower, msg.Pack)
+	}
+	if msg.Error == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+func TestEncodePackQueryInHandler(t *testing.T) {
+	mb := newMockBroker()
+
+	// Set up per-call batch results
+	mb.mu.Lock()
+	mb.batchResultQueue = [][]broker.Result{
+		{{Data: makePackRTData(), Err: nil}},
+		{{Data: makePackInfoData(), Err: nil}},
+		{{Data: makePackTemps58Data(), Err: nil}},
+	}
+	mb.mu.Unlock()
+
+	// Create hub with 2 towers per input (default)
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// select_pack with input=1, tower=2, pack=5
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSelectPack,
+		Section: "bms",
+		Input:   1,
+		Tower:   2,
+		Pack:    5,
+	})
+
+	// Wait for async processing
+	time.Sleep(2 * time.Second)
+	drainClientMessages(send, 500*time.Millisecond)
+
+	// Verify WriteRegister was called with the correctly encoded value
+	// EncodePackQuery(1, 2, 5, 2): group = (1-1)*2 + (2-1) = 1, packIdx = 5-1 = 4
+	// value = 4 | (1 << 8) = 0x0104
+	expectedValue := register.EncodePackQuery(1, 2, 5, 2)
+	writes := mb.getWriteCalls()
+	found := false
+	for _, w := range writes {
+		if w.Addr == 0x9020 && w.Value == expectedValue {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected WriteRegister(0x9020, 0x%04X), got calls: %+v", expectedValue, writes)
 	}
 }
