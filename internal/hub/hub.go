@@ -20,9 +20,11 @@ type ClientCommand struct {
 }
 
 // sectionResult carries ReadBatch results back to the hub event loop for broadcasting.
+// msg is interface{} to support OutboundMessage, RegisterValueMessage, SectionCompleteMessage,
+// and SectionSchemaMessage polymorphically during streaming reads.
 type sectionResult struct {
 	section string
-	msg     OutboundMessage
+	msg     interface{}
 }
 
 // === Battery Topology Constants (Phase 06, D-02) ===
@@ -52,6 +54,8 @@ type Hub struct {
 	refreshOverride    time.Duration // if non-zero, overrides defaultRefreshInterval for all sections (testing)
 	defaultPVChannels  int           // default PV channel count for PV section (D-16)
 	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
+	readDelayMs        int           // configurable inter-read delay in milliseconds (D-04, default 500)
+	packSettleMs       int           // configurable pack settle time in milliseconds (D-04, default 1000)
 }
 
 // packSelection tracks the currently selected pack for auto-refresh re-triggering.
@@ -69,7 +73,7 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 	if pvChannels > 16 {
 		pvChannels = 16
 	}
-	return &Hub{
+	h := &Hub{
 		broker:            b,
 		logger:            logger.With("component", "hub"),
 		clients:           make(map[*Client]bool),
@@ -82,6 +86,9 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 		timerCh:           make(chan string, 16),
 		defaultPVChannels: pvChannels,
 	}
+	h.readDelayMs = 500
+	h.packSettleMs = 1000
+	return h
 }
 
 // Register queues a client for registration with the hub.
@@ -198,7 +205,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case sectionName := <-h.timerCh:
 			h.handleTimerTick(sectionName)
 		case res := <-h.results:
-			h.broadcastToSection(res.section, res.msg)
+			h.broadcastResultToSection(res.section, res.msg)
 		case fn := <-h.funcs:
 			fn()
 		}
@@ -303,6 +310,21 @@ func (h *Hub) subscribeClient(c *Client, sectionName string) {
 	if sectionName == "bms" {
 		h.selectedPack = nil
 	}
+
+	// Send section schema for skeleton pre-rendering (STREAM-02, D-02)
+	if sec.Groups != nil {
+		schema := h.buildSectionSchema(sectionName, sec)
+		schemaData, err := json.Marshal(schema)
+		if err == nil {
+			select {
+			case c.send <- schemaData:
+			default:
+				h.removeClient(c)
+				return
+			}
+		}
+	}
+
 	h.logger.Debug("client subscribed", "section", sectionName, "subscribers", sec.SubscriberCount())
 
 	// Trigger immediate read (D-20) or send error if disconnected
@@ -368,326 +390,18 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 
 	sec.reading.Store(true)
 
-	// Dispatch to custom read handlers for special sections
+	// Dispatch to streaming read handlers (Phase 07: per-register streaming)
 	switch sectionName {
 	case "bms":
-		h.triggerBMSRead(sec)
+		h.streamBMSRead(sec)
 		return
 	case "battery":
-		h.triggerBatteryRead(sec)
+		h.streamBatteryRead(sec)
 		return
 	}
 
-	// Standard read path for system, grid, eps, pv, stats
-	h.triggerStandardRead(sectionName, sec)
-}
-
-// triggerStandardRead performs a standard grouped read for a section.
-// Handles system time composition and fault decoding for the system section.
-func (h *Hub) triggerStandardRead(sectionName string, sec *Section) {
-	// Build read requests from probes
-	reads := make([]broker.ReadRequest, len(sec.Probes))
-	for i, p := range sec.Probes {
-		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
-	}
-
-	// For system section, append fault register read requests
-	var faultReads []broker.ReadRequest
-	if sec.faultSection {
-		for _, fp := range register.FaultRegisters {
-			faultReads = append(faultReads, broker.ReadRequest{Addr: fp.Addr, Count: fp.Count})
-		}
-		reads = append(reads, faultReads...)
-	}
-
-	// Copy groups and probes for safe goroutine access
-	groups := sec.Groups
-	probes := sec.Probes
-	isFault := sec.faultSection
-
-	go func() {
-		defer sec.reading.Store(false)
-
-		results := h.broker.ReadBatch(h.ctx, reads)
-
-		// Grouped section path
-		if groups != nil {
-			var hasError bool
-			var errMsg string
-
-			// Check for errors in probe results
-			probeResults := results[:len(probes)]
-			for _, r := range probeResults {
-				if r.Err != nil {
-					hasError = true
-					errMsg = r.Err.Error()
-				}
-			}
-
-			// Build GroupData by iterating groups and matching results by probe index
-			groupDataSlice := make([]GroupData, 0, len(groups))
-			probeIdx := 0
-			for _, g := range groups {
-				gd := GroupData{
-					Name:   g.Name,
-					Layout: g.Layout,
-					Items:  make(map[string]string),
-				}
-
-				// Collect system time register values for composition
-				var timeVals [6]uint16
-				timeCount := 0
-
-				for _, p := range g.Probes {
-					r := probeResults[probeIdx]
-					probeIdx++
-
-					if r.Err != nil {
-						continue
-					}
-
-					// Detect system time registers for composition
-					if strings.HasPrefix(p.Name, "System time (") && len(r.Data) >= 2 {
-						val := binary.BigEndian.Uint16(r.Data[:2])
-						switch p.Name {
-						case "System time (Year)":
-							timeVals[0] = val
-							timeCount++
-						case "System time (Month)":
-							timeVals[1] = val
-							timeCount++
-						case "System time (Day)":
-							timeVals[2] = val
-							timeCount++
-						case "System time (Hour)":
-							timeVals[3] = val
-							timeCount++
-						case "System time (Min)":
-							timeVals[4] = val
-							timeCount++
-						case "System time (Sec)":
-							timeVals[5] = val
-							timeCount++
-						}
-						continue // don't add individual time registers
-					}
-
-					gd.Items[p.Name] = FormatValue(p, r.Data)
-				}
-
-				// Compose system time if all 6 components found
-				if timeCount == 6 {
-					gd.Items["System time"] = register.ComposeSystemTime(
-						timeVals[0], timeVals[1], timeVals[2],
-						timeVals[3], timeVals[4], timeVals[5],
-					)
-				}
-
-				groupDataSlice = append(groupDataSlice, gd)
-			}
-
-			// Decode faults for system section
-			var faultEntries []FaultEntry
-			if isFault {
-				faultResults := results[len(probes):]
-				faultData := make(map[uint16]uint16)
-				faultIdx := 0
-				for _, fp := range register.FaultRegisters {
-					if faultIdx >= len(faultResults) {
-						break
-					}
-					r := faultResults[faultIdx]
-					faultIdx++
-					if r.Err != nil {
-						continue
-					}
-					// Each fault probe reads multiple contiguous registers
-					// Result data is count*2 bytes, parse each register
-					for reg := uint16(0); reg < fp.Count; reg++ {
-						offset := int(reg) * 2
-						if offset+2 <= len(r.Data) {
-							addr := fp.Addr + reg
-							faultData[addr] = binary.BigEndian.Uint16(r.Data[offset : offset+2])
-						}
-					}
-				}
-				activeFaults := register.DecodeFaults(faultData)
-				faultEntries = make([]FaultEntry, len(activeFaults))
-				for i, desc := range activeFaults {
-					faultEntries[i] = FaultEntry{Name: desc}
-				}
-			}
-
-			if hasError {
-				h.results <- sectionResult{section: sectionName, msg: NewSectionError(sectionName, errMsg)}
-				return
-			}
-			h.results <- sectionResult{section: sectionName, msg: NewGroupedSectionData(sectionName, groupDataSlice, faultEntries)}
-			return
-		}
-
-		// Legacy flat section path (fallback)
-		data := make(map[string]string)
-		var hasError bool
-		var errMsg string
-
-		for i, r := range results {
-			if r.Err != nil {
-				hasError = true
-				errMsg = r.Err.Error()
-				continue
-			}
-			key := toSnakeCase(probes[i].Name)
-			data[key] = FormatValue(probes[i], r.Data)
-		}
-
-		if hasError {
-			h.results <- sectionResult{section: sectionName, msg: NewSectionError(sectionName, errMsg)}
-		}
-		if len(data) > 0 {
-			h.results <- sectionResult{section: sectionName, msg: NewSectionData(sectionName, data)}
-		}
-	}()
-}
-
-// triggerBatteryRead performs a battery section read with auto-detection of channel count.
-// If the pack count register (0x066A) indicates a different channel count than currently
-// configured, the section is rebuilt and re-read with the correct number of channels.
-func (h *Hub) triggerBatteryRead(sec *Section) {
-	groups := sec.Groups
-	probes := sec.Probes
-
-	reads := make([]broker.ReadRequest, len(probes))
-	for i, p := range probes {
-		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
-	}
-
-	go func() {
-		defer sec.reading.Store(false)
-		results := h.broker.ReadBatch(h.ctx, reads)
-
-		// Find pack count value from 0x066A result to auto-detect channel count
-		packCountIdx := -1
-		for i, p := range probes {
-			if p.Addr == 0x066A {
-				packCountIdx = i
-				break
-			}
-		}
-		if packCountIdx >= 0 && results[packCountIdx].Err == nil && len(results[packCountIdx].Data) >= 2 {
-			detected := int(binary.BigEndian.Uint16(results[packCountIdx].Data[:2]))
-			if detected > 0 && detected <= 8 {
-				// Subtract Global Stats group to get current channel count
-				currentChannels := len(groups) - 1
-				if detected != currentChannels {
-					// Rebuild battery section with detected channel count
-					newGroups := register.GenerateBatteryGroups(detected)
-					h.funcs <- func() {
-						sec.Groups = newGroups
-						sec.Probes = flattenProbeGroups(newGroups)
-						h.logger.Info("battery section auto-detected channels", "channels", detected)
-						// Re-trigger read with new probes
-						h.triggerSectionRead("battery")
-					}
-					return
-				}
-			}
-		}
-
-		// Build grouped data using standard group building logic
-		msg := h.buildGroupedResult("battery", groups, probes, results)
-		h.results <- sectionResult{section: "battery", msg: msg}
-	}()
-}
-
-// triggerBMSRead performs the BMS section's custom read cycle (D-09, D-14).
-// It reads BMS info registers (including 0x9022 tower bitmap), detects topology from 0x900D,
-// extracts tower online bitmap from standard read results, and composes the BMS clock from 0x9004+0x9005.
-// 0x9022 is a tower bitmap (bit N = tower N online), not a per-pack bitmap.
-func (h *Hub) triggerBMSRead(sec *Section) {
-	groups := sec.Groups
-	probes := sec.Probes
-
-	// Build standard read requests for BMS info probes
-	reads := make([]broker.ReadRequest, len(probes))
-	for i, p := range probes {
-		reads[i] = broker.ReadRequest{Addr: p.Addr, Count: p.Count}
-	}
-
-	// Also read protection registers
-	protectionProbes := register.BMSProtectionProbes()
-	for _, p := range protectionProbes {
-		reads = append(reads, broker.ReadRequest{Addr: p.Addr, Count: p.Count})
-	}
-
-	go func() {
-		defer sec.reading.Store(false)
-
-		// Step 1: Read BMS info + protection registers
-		results := h.broker.ReadBatch(h.ctx, reads)
-
-		// Step 2: Detect topology from 0x900D
-		var detectedStr string
-		var mismatch bool
-		for i, p := range probes {
-			if p.Addr == 0x900D && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
-				val := binary.BigEndian.Uint16(results[i].Data[:2])
-				pStr, pPack := register.DecodeTopology(val)
-				detectedStr = fmt.Sprintf("%d strings x %d packs", pStr, pPack)
-				if pStr != TopoTowers || pPack != TopoPacksPerTower {
-					mismatch = true
-				}
-				break
-			}
-		}
-
-		// Step 3: Extract tower bitmap from 0x9022 (standard batch result).
-		// 0x9022 is a TOWER bitmap: bit N = 1 means tower/battery N is online.
-		// No cycling needed — the bitmap shows all towers in a single read.
-		var towerBitmap uint16
-		for i, p := range probes {
-			if p.Addr == 0x9022 && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
-				towerBitmap = binary.BigEndian.Uint16(results[i].Data[:2])
-				break
-			}
-		}
-
-		// Expand tower bitmap to per-tower pack availability.
-		// If a tower is online (bit set), all its packs are considered available.
-		onlineBitmaps := make([]uint16, TopoTowers)
-		for t := 0; t < TopoTowers; t++ {
-			if (towerBitmap>>uint(t))&1 == 1 {
-				onlineBitmaps[t] = (1 << uint(TopoPacksPerTower)) - 1 // e.g. 0x03FF for 10 packs
-			}
-		}
-
-		// Step 4: Build BMS info GroupData
-		groupDataSlice := h.buildBMSGroupData(groups, probes, results[:len(probes)])
-
-		// Step 5: Add bitmap group (Type="bitmap")
-		bitmapGroup := GroupData{
-			Name: "Battery Topology",
-			Type: "bitmap",
-			Bitmap: &BitmapData{
-				Towers:           TopoTowers,
-				PacksPerTower:    TopoPacksPerTower,
-				Online:           onlineBitmaps,
-				DetectedTopology: detectedStr,
-				Mismatch:         mismatch,
-			},
-		}
-		groupDataSlice = append(groupDataSlice, bitmapGroup)
-
-		// Step 6: Add protection group (Type="protection")
-		protResults := results[len(probes):]
-		protGroup := h.buildProtectionGroup(protectionProbes, protResults)
-		groupDataSlice = append(groupDataSlice, protGroup)
-
-		h.results <- sectionResult{
-			section: "bms",
-			msg:     NewGroupedSectionData("bms", groupDataSlice, nil),
-		}
-	}()
+	// Standard streaming read path for system, grid, eps, pv, stats
+	h.streamStandardRead(sectionName, sec)
 }
 
 // buildGroupedResult builds a standard grouped OutboundMessage from probe groups and results.
@@ -905,6 +619,28 @@ func (h *Hub) broadcastToSection(sectionName string, msg OutboundMessage) {
 	}
 }
 
+// broadcastResultToSection marshals any message type (OutboundMessage, RegisterValueMessage,
+// SectionCompleteMessage, SectionSchemaMessage) and sends to all section subscribers.
+// Used by the streaming results channel which carries interface{} messages.
+func (h *Hub) broadcastResultToSection(sectionName string, msg interface{}) {
+	sec, ok := h.sections[sectionName]
+	if !ok {
+		return
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		h.logger.Error("marshal section broadcast", "error", err)
+		return
+	}
+	for client := range sec.subscribers {
+		select {
+		case client.send <- data:
+		default:
+			h.removeClient(client)
+		}
+	}
+}
+
 // removeClient unsubscribes a client from its section, removes from clients map, and closes send channel.
 func (h *Hub) removeClient(c *Client) {
 	if _, ok := h.clients[c]; !ok {
@@ -987,6 +723,43 @@ func (h *Hub) handleConfigure(cmd ClientCommand) {
 		if h.connected && sec.SubscriberCount() > 0 {
 			h.triggerSectionRead("pv")
 		}
+	case "timing":
+		if msg.TimingConfig == nil {
+			return
+		}
+		tc := msg.TimingConfig
+
+		// Update read delay with server-side clamping (T-07-01, T-07-02)
+		if tc.ReadDelayMs > 0 {
+			delay := tc.ReadDelayMs
+			if delay < 100 {
+				delay = 100
+			}
+			if delay > 5000 {
+				delay = 5000
+			}
+			h.readDelayMs = delay
+			// Update broker runtime delay via command channel (thread-safe per Pitfall 3)
+			go func() {
+				if err := h.broker.SetDelayRuntime(h.ctx, time.Duration(delay)*time.Millisecond); err != nil {
+					h.logger.Error("failed to update broker delay", "error", err)
+				}
+			}()
+			h.logger.Info("read delay updated", "ms", delay)
+		}
+
+		// Update pack settle time with server-side clamping
+		if tc.PackSettleMs > 0 {
+			settle := tc.PackSettleMs
+			if settle < 500 {
+				settle = 500
+			}
+			if settle > 10000 {
+				settle = 10000
+			}
+			h.packSettleMs = settle
+			h.logger.Info("pack settle time updated", "ms", settle)
+		}
 	}
 }
 
@@ -1040,9 +813,9 @@ func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
 		// Step 1: Write 0x9020 to select pack (function 0x10 via WriteRegister)
 		err := h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
 		if err != nil {
-			h.logger.Warn("pack select write failed, retrying with 2s settle", "error", err)
-			// Retry once with 2s settle
-			time.Sleep(2 * time.Second)
+			h.logger.Warn("pack select write failed, retrying with double settle", "error", err)
+			// Retry once with double settle time
+			time.Sleep(time.Duration(h.packSettleMs*2) * time.Millisecond)
 			err = h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
 			if err != nil {
 				h.logger.Error("pack select write failed after retry", "error", err)
@@ -1051,8 +824,8 @@ func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
 			}
 		}
 
-		// Step 2: Wait 1s settle time
-		time.Sleep(1 * time.Second)
+		// Step 2: Wait for configurable settle time
+		time.Sleep(time.Duration(h.packSettleMs) * time.Millisecond)
 
 		// Step 3: Read Pack RT data (0x9044-0x907F = 60 registers)
 		rtReads := []broker.ReadRequest{{Addr: 0x9044, Count: 60}}

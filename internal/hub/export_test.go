@@ -70,3 +70,13 @@ func (h *Hub) HasSection(name string) bool {
 	})
 	return exists
 }
+
+// GetTimingConfig returns the hub's current timing configuration values.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetTimingConfig() (readDelayMs, packSettleMs int) {
+	h.RunFunc(func() {
+		readDelayMs = h.readDelayMs
+		packSettleMs = h.packSettleMs
+	})
+	return
+}
