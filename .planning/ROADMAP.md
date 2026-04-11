@@ -2,13 +2,14 @@
 
 ## Milestones
 
-- ✅ **v1.0** — Phases 1-5 (shipped 2026-04-11) — [Archive](milestones/v1.0-ROADMAP.md)
-- 🚧 **v1.1 UX Polish & Battery Pack Fix** — Phases 6-7 (in progress)
+- ✅ **v1.0** -- Phases 1-5 (shipped 2026-04-11) -- [Archive](milestones/v1.0-ROADMAP.md)
+- ✅ **v1.1 UX Polish & Battery Pack Fix** -- Phases 6-7 (shipped 2026-04-11) -- [Archive](milestones/v1.1-ROADMAP.md)
+- 🚧 **v1.2 Reliability & UX Refinements** -- Phases 8-11 (in progress)
 
 ## Phases
 
 <details>
-<summary>✅ v1.0 (Phases 1-5) — SHIPPED 2026-04-11</summary>
+<summary>✅ v1.0 (Phases 1-5) -- SHIPPED 2026-04-11</summary>
 
 - [x] Phase 1: Foundation and Modbus Service (3/3 plans)
 - [x] Phase 2: WebSocket Hub, API, and Connection UI (3/3 plans)
@@ -18,49 +19,72 @@
 
 </details>
 
-### 🚧 v1.1 UX Polish & Battery Pack Fix (In Progress)
+<details>
+<summary>✅ v1.1 UX Polish & Battery Pack Fix (Phases 6-7) -- SHIPPED 2026-04-11</summary>
 
-**Milestone Goal:** Fix battery pack access so all 20 packs are reachable (matching proven CLI tool), stream parameters in real-time as they arrive, and give the user control over Modbus timing.
+- [x] Phase 6: Battery Pack Access Fix (3/3 plans)
+- [x] Phase 7: Streaming Display and Configurable Timing (3/3 plans)
 
-- [ ] **Phase 6: Battery Pack Access Fix** - Fix pack encoding and topology so all 20 packs are accessible
-- [ ] **Phase 7: Streaming Display and Configurable Timing** - Stream each parameter as it arrives and let user control Modbus read delays
+</details>
+
+### 🚧 v1.2 Reliability & UX Refinements (In Progress)
+
+**Milestone Goal:** Fix auto-refresh architecture, improve read reliability, and polish the diagnostic UI with better feedback and control.
+
+- [ ] **Phase 8: Refresh Architecture** - Move auto-refresh to browser-only trigger with consistent timing enforcement
+- [ ] **Phase 9: Connection & Read Resilience** - Immediate disconnect and automatic register read retry
+- [ ] **Phase 10: Data Persistence & Tooltips** - Stale value display, section caching, and parameter tooltips
+- [ ] **Phase 11: Battery Pack Polish** - Pack drill-down streaming and section reorder
 
 ## Phase Details
 
-### Phase 6: Battery Pack Access Fix
-**Goal**: All 20 battery packs are accessible for drill-down, matching the proven CLI tool behavior
-**Depends on**: Phase 5
-**Requirements**: PACK-01, PACK-02, PACK-03
+### Phase 8: Refresh Architecture
+**Goal**: Auto-refresh is driven entirely by the browser with consistent, predictable Modbus timing
+**Depends on**: Phase 7
+**Requirements**: REL-03, REFR-01, REFR-02
 **Success Criteria** (what must be TRUE):
-  1. User can navigate to any of the 20 battery packs (2 towers x 10 packs) and see cell-level data
-  2. Pack selection writes the correct tower/pack encoding to 0x9020, matching the proven CLI tool
-  3. Topology is fixed at 16 cells/pack, 10 packs/tower, 2 towers -- no configuration dropdowns for these values
-  4. Online bitmap correctly reflects all packs that the inverter reports as available
-**Plans:** 3 plans
+  1. Switching between sections does not cause a burst of rapid Modbus reads -- the inter-read delay is consistent regardless of navigation
+  2. The backend performs no autonomous refresh cycles -- all reads are initiated by the browser
+  3. After a read cycle completes, the browser waits for the configured delay before starting the next cycle (no fixed-interval timer)
+  4. Stopping auto-refresh in the browser immediately stops all Modbus reads (no orphaned backend timer continues reading)
+**Plans**: TBD
 
-Plans:
-- [x] 06-01-PLAN.md — Hardcode topology constants, simplify Hub/NewHub, reduce cell probes to 16
-- [x] 06-02-PLAN.md — Implement per-tower bitmap cycling in triggerBMSRead
-- [x] 06-03-PLAN.md — Remove frontend topology dropdowns, hardcode JS constants, simplify bitmap click
-
-### Phase 7: Streaming Display and Configurable Timing
-**Goal**: Users see each parameter value appear immediately as it is read, and can tune Modbus timing to match their hardware
-**Depends on**: Phase 6
-**Requirements**: STREAM-01, STREAM-02, TIMING-01, TIMING-02
+### Phase 9: Connection & Read Resilience
+**Goal**: Users experience immediate disconnect response and transparent error recovery during reads
+**Depends on**: Phase 8
+**Requirements**: REL-01, REL-02
 **Success Criteria** (what must be TRUE):
-  1. Each parameter value appears in the UI as soon as it is read from the inverter, not after the entire section batch completes
-  2. While a section is loading, already-read parameters show their values and remaining parameters show a loading indicator
-  3. User can adjust the default Modbus inter-read delay via a UI control (default 500ms)
-  4. Battery pack reads use a separate, longer settle delay after the 0x9020 write (configurable, default 1-2s)
-  5. Changed timing settings take effect on the next read cycle without requiring reconnection
-**Plans:** 3 plans
+  1. Clicking disconnect while a read cycle is in progress aborts the current Modbus read and closes the connection within 1 second
+  2. The UI transitions to disconnected state immediately after clicking disconnect, even if reads were in progress
+  3. A single register that returns an error is automatically retried up to 3 times before the error is shown to the user
+  4. Registers that succeed on retry display their value normally -- the user never sees the transient error
+**Plans**: TBD
 
-Plans:
-- [x] 07-01-PLAN.md — Add streaming message types, broker CmdSetDelay, extend BrokerInterface
-- [x] 07-02-PLAN.md — Replace batch reads with per-register streaming, add timing config handler
-- [x] 07-03-PLAN.md — Frontend skeleton rendering, streaming handlers, timing controls UI
+### Phase 10: Data Persistence & Tooltips
+**Goal**: Users always see the most recent known values and can inspect register-level details on demand
+**Depends on**: Phase 9
+**Requirements**: DISP-01, DISP-02, DISP-03
+**Success Criteria** (what must be TRUE):
+  1. When a new refresh cycle begins, previously read values remain visible (dimmed/faded) until replaced by fresh values
+  2. Navigating away from a section and back shows the last-read values (dimmed) immediately, without waiting for a new read cycle
+  3. Hovering over any parameter value shows a tooltip displaying the Modbus register address (hex) and the raw register value
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 11: Battery Pack Polish
+**Goal**: Pack drill-down displays data consistently with other sections and presents information in logical order
+**Depends on**: Phase 8
+**Requirements**: BATT-01, BATT-02
+**Success Criteria** (what must be TRUE):
+  1. In the pack drill-down view, the balance state section appears before the temperature section
+  2. Pack drill-down values stream per-register as they are read, with each value appearing in the UI as soon as it arrives (consistent with System, Grid, and other sections)
+**Plans**: TBD
+**UI hint**: yes
 
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 8 -> 9 -> 10 -> 11
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -69,5 +93,9 @@ Plans:
 | 3. Core Monitoring Sections | v1.0 | 3/3 | Done | 2026-04-10 |
 | 4. Battery Overview and Statistics | v1.0 | 4/4 | Done | 2026-04-11 |
 | 5. Deep Battery Pack Diagnostics | v1.0 | 3/3 | Done | 2026-04-11 |
-| 6. Battery Pack Access Fix | v1.1 | 0/3 | Planning | - |
-| 7. Streaming Display and Configurable Timing | v1.1 | 0/3 | Planning | - |
+| 6. Battery Pack Access Fix | v1.1 | 3/3 | Done | 2026-04-11 |
+| 7. Streaming Display and Configurable Timing | v1.1 | 3/3 | Done | 2026-04-11 |
+| 8. Refresh Architecture | v1.2 | 0/0 | Not started | - |
+| 9. Connection & Read Resilience | v1.2 | 0/0 | Not started | - |
+| 10. Data Persistence & Tooltips | v1.2 | 0/0 | Not started | - |
+| 11. Battery Pack Polish | v1.2 | 0/0 | Not started | - |

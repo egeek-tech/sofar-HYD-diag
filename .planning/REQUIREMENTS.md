@@ -49,22 +49,22 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REL-01 | — | Pending |
-| REL-02 | — | Pending |
-| REL-03 | — | Pending |
-| REFR-01 | — | Pending |
-| REFR-02 | — | Pending |
-| DISP-01 | — | Pending |
-| DISP-02 | — | Pending |
-| DISP-03 | — | Pending |
-| BATT-01 | — | Pending |
-| BATT-02 | — | Pending |
+| REL-01 | Phase 9 | Pending |
+| REL-02 | Phase 9 | Pending |
+| REL-03 | Phase 8 | Pending |
+| REFR-01 | Phase 8 | Pending |
+| REFR-02 | Phase 8 | Pending |
+| DISP-01 | Phase 10 | Pending |
+| DISP-02 | Phase 10 | Pending |
+| DISP-03 | Phase 10 | Pending |
+| BATT-01 | Phase 11 | Pending |
+| BATT-02 | Phase 11 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 10 total
-- Mapped to phases: 0
-- Unmapped: 10 ⚠️
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-12 after initial definition*
+*Last updated: 2026-04-12 after roadmap creation*
