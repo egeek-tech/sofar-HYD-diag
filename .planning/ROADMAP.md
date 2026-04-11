@@ -39,9 +39,9 @@
 **Plans:** 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Hardcode topology constants, simplify Hub/NewHub, reduce cell probes to 16
-- [ ] 06-02-PLAN.md — Implement per-tower bitmap cycling in triggerBMSRead
-- [ ] 06-03-PLAN.md — Remove frontend topology dropdowns, hardcode JS constants, simplify bitmap click
+- [x] 06-01-PLAN.md — Hardcode topology constants, simplify Hub/NewHub, reduce cell probes to 16
+- [x] 06-02-PLAN.md — Implement per-tower bitmap cycling in triggerBMSRead
+- [x] 06-03-PLAN.md — Remove frontend topology dropdowns, hardcode JS constants, simplify bitmap click
 
 ### Phase 7: Streaming Display and Configurable Timing
 **Goal**: Users see each parameter value appear immediately as it is read, and can tune Modbus timing to match their hardware
