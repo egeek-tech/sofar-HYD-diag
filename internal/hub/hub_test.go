@@ -685,6 +685,40 @@ func TestManualRefresh(t *testing.T) {
 	}
 }
 
+func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	// Do NOT connect the broker -- leave disconnected
+
+	send := make(chan []byte, 256)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+	drainClientMessages(send, 100*time.Millisecond)
+
+	// Subscribe while disconnected
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "battery",
+	})
+
+	msgs := collectClientMessages(t, send, 1, 500*time.Millisecond)
+	if len(msgs) == 0 {
+		t.Fatal("expected a message after subscribing while disconnected")
+	}
+	if msgs[0].Type != hub.MsgTypeSectionErr {
+		t.Errorf("expected section_error, got %q", msgs[0].Type)
+	}
+	if msgs[0].Section != "battery" {
+		t.Errorf("expected section 'battery', got %q", msgs[0].Section)
+	}
+}
+
 // === Phase 03 Plan 02: Grouped section tests ===
 
 func TestGroupedSectionRegistered(t *testing.T) {

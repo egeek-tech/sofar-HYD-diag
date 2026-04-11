@@ -309,9 +309,11 @@ func (h *Hub) subscribeClient(c *Client, sectionName string) {
 	c.section = sectionName
 	h.logger.Debug("client subscribed", "section", sectionName, "subscribers", sec.SubscriberCount())
 
-	// Trigger immediate read (D-20)
+	// Trigger immediate read (D-20) or send error if disconnected
 	if h.connected {
 		h.triggerSectionRead(sectionName)
+	} else {
+		h.sendToClient(c, NewSectionError(sectionName, "not connected to inverter"))
 	}
 }
 
@@ -593,9 +595,9 @@ func (h *Hub) triggerBatteryRead(sec *Section) {
 	}()
 }
 
-// triggerBMSRead performs the BMS section's custom write-read cycle (D-09, D-14).
-// It reads BMS info registers, detects topology from 0x900D, performs write-0x9020/read-0x9022
-// per tower for bitmap, and composes the BMS clock from 0x9004+0x9005.
+// triggerBMSRead performs the BMS section's custom read cycle (D-09, D-14).
+// It reads BMS info registers (including 0x9022 bitmap), detects topology from 0x900D,
+// extracts bitmap from standard read results, and composes the BMS clock from 0x9004+0x9005.
 func (h *Hub) triggerBMSRead(sec *Section) {
 	groups := sec.Groups
 	probes := sec.Probes
@@ -637,21 +639,18 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 			}
 		}
 
-		// Step 3: Write-read cycle for bitmap per tower (D-09, T-04-04)
+		// Step 3: Extract bitmap from 0x9022 standard read result (no write cycle needed)
 		totalTowers := inputs * towers
 		onlineBitmaps := make([]uint16, totalTowers)
-		for t := 0; t < totalTowers; t++ {
-			// Encode group number in bits 8-11 (T-04-04: constrained to 0-15)
-			queryVal := uint16(t&0x0F) << 8
-			if err := h.broker.WriteRegister(h.ctx, 0x9020, queryVal); err != nil {
-				h.logger.Error("BMS bitmap write failed", "tower", t, "error", err)
-				continue
-			}
-			time.Sleep(1 * time.Second) // BMS pack-switch delay per D-09
-			bitmapReads := []broker.ReadRequest{{Addr: 0x9022, Count: 1}}
-			bitmapResults := h.broker.ReadBatch(h.ctx, bitmapReads)
-			if len(bitmapResults) > 0 && bitmapResults[0].Err == nil && len(bitmapResults[0].Data) >= 2 {
-				onlineBitmaps[t] = binary.BigEndian.Uint16(bitmapResults[0].Data[:2])
+		for i, p := range probes {
+			if p.Addr == 0x9022 && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
+				bitmapVal := binary.BigEndian.Uint16(results[i].Data[:2])
+				// Apply same bitmap to all towers at overview level
+				// Phase 5 will implement per-tower cycling via 0x9020 writes
+				for t := 0; t < totalTowers; t++ {
+					onlineBitmaps[t] = bitmapVal
+				}
+				break
 			}
 		}
 

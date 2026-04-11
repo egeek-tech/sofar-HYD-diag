@@ -1,58 +1,109 @@
 package register
 
-// SystemProbes contains system info register definitions (section 5.1.1).
-// Extracted from main.go.bak scanRegisters() lines 298-309.
-var SystemProbes = []Probe{
-	{"Inverter SN", 0x0445, 10, true, false, "", 0},
-	{"System running state", 0x0404, 1, false, false, "", 0},
-	{"System time (Year+2000)", 0x042C, 1, false, false, "", 0},
-	{"System time (Month)", 0x042D, 1, false, false, "", 0},
-	{"System time (Day)", 0x042E, 1, false, false, "", 0},
-	{"System time (Hour)", 0x042F, 1, false, false, "", 0},
-	{"System time (Min)", 0x0430, 1, false, false, "", 0},
-	{"System time (Sec)", 0x0431, 1, false, false, "", 0},
-	{"Ambient temp 1", 0x0418, 1, false, true, "\u00b0C", 1},
-	{"Ambient temp 2", 0x0419, 1, false, true, "\u00b0C", 1},
-	{"Insulation impedance", 0x042B, 1, false, false, "k\u03a9", 1},
+// SystemGroups contains system information register definitions organized into ProbeGroups.
+// Covers sections 5.1.1 and 5.1.2 of the Sofar Modbus-G3 V1.38 protocol.
+var SystemGroups = []ProbeGroup{
+	{Name: "Identity", Probes: []Probe{
+		{Name: "Inverter SN", Addr: 0x0445, Count: 10, IsASCII: true},
+	}},
+	{Name: "Firmware", Probes: []Probe{
+		{Name: "HW version", Addr: 0x044D, Count: 2, IsASCII: true},
+		{Name: "Comm SW version", Addr: 0x044F, Count: 4, IsASCII: true},
+		{Name: "Master DSP version", Addr: 0x0453, Count: 4, IsASCII: true},
+		{Name: "Slave DSP version", Addr: 0x0457, Count: 4, IsASCII: true},
+		{Name: "Safety cert version", Addr: 0x045B, Count: 2, IsASCII: true},
+	}},
+	{Name: "Status", Probes: []Probe{
+		{Name: "Running state", Addr: 0x0404, Count: 1, Enum: RunningStateEnum},
+		{Name: "System time (Year)", Addr: 0x042C, Count: 1},
+		{Name: "System time (Month)", Addr: 0x042D, Count: 1},
+		{Name: "System time (Day)", Addr: 0x042E, Count: 1},
+		{Name: "System time (Hour)", Addr: 0x042F, Count: 1},
+		{Name: "System time (Min)", Addr: 0x0430, Count: 1},
+		{Name: "System time (Sec)", Addr: 0x0431, Count: 1},
+	}},
+	{Name: "Temperatures", Probes: []Probe{
+		{Name: "Ambient temp 1", Addr: 0x0418, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
+		{Name: "Ambient temp 2", Addr: 0x0419, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
+		{Name: "Radiator temp", Addr: 0x041A, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
+		{Name: "Module temp", Addr: 0x0420, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
+	}},
+	{Name: "Protection", Probes: []Probe{
+		{Name: "Insulation impedance", Addr: 0x042B, Count: 1, Unit: "k\u03a9", Scale: 1},
+		{Name: "Fan speed", Addr: 0x043E, Count: 1, Unit: "r/min", Scale: 1},
+	}},
 }
 
-// GridProbes contains grid-connected output register definitions (section 5.1.3).
-// Extracted from main.go.bak scanRegisters() lines 312-328.
-var GridProbes = []Probe{
-	{"Grid frequency", 0x0484, 1, false, false, "Hz", 0.01},
-	{"Total active power", 0x0485, 1, false, true, "kW", 0.01},
-	{"Total reactive power", 0x0486, 1, false, true, "kVar", 0.01},
-	{"Total apparent power", 0x0487, 1, false, true, "kVA", 0.01},
-	{"Total PCC active power", 0x0488, 1, false, true, "kW", 0.01},
-	{"Grid voltage R", 0x048D, 1, false, false, "V", 0.1},
-	{"Output current R", 0x048E, 1, false, false, "A", 0.01},
-	{"Output active power R", 0x048F, 1, false, true, "kW", 0.01},
-	{"Grid voltage S", 0x0498, 1, false, false, "V", 0.1},
-	{"Output current S", 0x0499, 1, false, false, "A", 0.01},
-	{"Grid voltage T", 0x04A3, 1, false, false, "V", 0.1},
-	{"Output current T", 0x04A4, 1, false, false, "A", 0.01},
-	{"Line voltage L1 (R/S)", 0x04BA, 1, false, false, "V", 0.1},
-	{"Line voltage L2 (S/T)", 0x04BB, 1, false, false, "V", 0.1},
-	{"Line voltage L3 (T/R)", 0x04BC, 1, false, false, "V", 0.1},
-	{"Total load power", 0x04AF, 1, false, false, "kW", 0.01},
-	{"Power gen efficiency", 0x04BF, 1, false, false, "%", 0.01},
+// GridGroups contains grid-connected output register definitions organized into ProbeGroups.
+// Covers section 5.1.3 of the Sofar Modbus-G3 V1.38 protocol.
+var GridGroups = []ProbeGroup{
+	{Name: "General", Probes: []Probe{
+		{Name: "Grid frequency", Addr: 0x0484, Count: 1, Unit: "Hz", Scale: 0.01},
+		{Name: "Total active power", Addr: 0x0485, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "Total reactive power", Addr: 0x0486, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+		{Name: "Total apparent power", Addr: 0x0487, Count: 1, Signed: true, Unit: "kVA", Scale: 0.01},
+	}},
+	{Name: "Phase R", Layout: "column", Probes: []Probe{
+		{Name: "Voltage", Addr: 0x048D, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Current", Addr: 0x048E, Count: 1, Unit: "A", Scale: 0.01},
+		{Name: "Active power", Addr: 0x048F, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "Reactive power", Addr: 0x0490, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+		{Name: "Power factor", Addr: 0x0491, Count: 1, Signed: true, Scale: 0.001},
+	}},
+	{Name: "Phase S", Layout: "column", Probes: []Probe{
+		{Name: "Voltage", Addr: 0x0498, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Current", Addr: 0x0499, Count: 1, Unit: "A", Scale: 0.01},
+		{Name: "Active power", Addr: 0x049A, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "Reactive power", Addr: 0x049B, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+		{Name: "Power factor", Addr: 0x049C, Count: 1, Signed: true, Scale: 0.001},
+	}},
+	{Name: "Phase T", Layout: "column", Probes: []Probe{
+		{Name: "Voltage", Addr: 0x04A3, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Current", Addr: 0x04A4, Count: 1, Unit: "A", Scale: 0.01},
+		{Name: "Active power", Addr: 0x04A5, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "Reactive power", Addr: 0x04A6, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+		{Name: "Power factor", Addr: 0x04A7, Count: 1, Signed: true, Scale: 0.001},
+	}},
+	{Name: "PCC Power", Probes: []Probe{
+		{Name: "PCC active power", Addr: 0x0488, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "PCC reactive power", Addr: 0x0489, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+	}},
+	{Name: "Line Voltages", Probes: []Probe{
+		{Name: "L1 (R/S)", Addr: 0x04BA, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "L2 (S/T)", Addr: 0x04BB, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "L3 (T/R)", Addr: 0x04BC, Count: 1, Unit: "V", Scale: 0.1},
+	}},
+	{Name: "Load", Probes: []Probe{
+		{Name: "Total load power", Addr: 0x04AF, Count: 1, Unit: "kW", Scale: 0.01},
+		{Name: "Total power factor", Addr: 0x04BD, Count: 1, Signed: true, Scale: 0.001},
+		{Name: "Generation efficiency", Addr: 0x04BF, Count: 1, Unit: "%", Scale: 0.01},
+	}},
 }
 
-// EPSProbes contains grid-disconnected output register definitions (section 5.1.4).
-// Extracted from main.go.bak scanRegisters() lines 331-332.
-var EPSProbes = []Probe{
-	{"Load active power", 0x0504, 1, false, true, "kW", 0.01},
-	{"Output voltage freq", 0x0507, 1, false, false, "Hz", 0.01},
-}
-
-// PVProbes contains PV input register definitions (section 5.1.5-5.1.6).
-// Extracted from main.go.bak scanRegisters() lines 335-343.
-var PVProbes = []Probe{
-	{"PV1 Voltage", 0x0584, 1, false, false, "V", 0.1},
-	{"PV1 Current", 0x0585, 1, false, true, "A", 0.01},
-	{"PV1 Power", 0x0586, 1, false, false, "kW", 0.01},
-	{"PV2 Voltage", 0x0587, 1, false, false, "V", 0.1},
-	{"PV2 Current", 0x0588, 1, false, true, "A", 0.01},
-	{"PV2 Power", 0x0589, 1, false, false, "kW", 0.01},
-	{"Total PV power", 0x05C4, 1, false, false, "kW", 0.1},
+// EPSGroups contains grid-disconnected (EPS) output register definitions organized into ProbeGroups.
+// Covers section 5.1.4 of the Sofar Modbus-G3 V1.38 protocol.
+var EPSGroups = []ProbeGroup{
+	{Name: "General", Probes: []Probe{
+		{Name: "Load active power", Addr: 0x0504, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "Load reactive power", Addr: 0x0505, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+		{Name: "Load apparent power", Addr: 0x0506, Count: 1, Signed: true, Unit: "kVA", Scale: 0.01},
+		{Name: "Output voltage frequency", Addr: 0x0507, Count: 1, Unit: "Hz", Scale: 0.01},
+	}},
+	{Name: "Phase R", Layout: "column", Probes: []Probe{
+		{Name: "Inverter output voltage", Addr: 0x050A, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Load current", Addr: 0x050B, Count: 1, Signed: true, Unit: "A", Scale: 0.01},
+	}},
+	{Name: "Phase S", Layout: "column", Probes: []Probe{
+		{Name: "Inverter output voltage", Addr: 0x0512, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Load current", Addr: 0x0513, Count: 1, Signed: true, Unit: "A", Scale: 0.01},
+	}},
+	{Name: "Phase T", Layout: "column", Probes: []Probe{
+		{Name: "Inverter output voltage", Addr: 0x051A, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Load current", Addr: 0x051B, Count: 1, Signed: true, Unit: "A", Scale: 0.01},
+	}},
+	{Name: "Emergency Load", Probes: []Probe{
+		{Name: "Emergency load voltage R", Addr: 0x0510, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Emergency load voltage S", Addr: 0x0518, Count: 1, Unit: "V", Scale: 0.1},
+		{Name: "Emergency load voltage T", Addr: 0x0520, Count: 1, Unit: "V", Scale: 0.1},
+	}},
 }

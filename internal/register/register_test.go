@@ -1029,6 +1029,24 @@ func TestStatisticsAddresses(t *testing.T) {
 	}
 }
 
+func TestBMSInfoGroupsIncludesOnlineBitmap(t *testing.T) {
+	groups := BMSInfoGroups()
+	found := false
+	for _, g := range groups {
+		for _, p := range g.Probes {
+			if p.Addr == 0x9022 {
+				found = true
+				if p.Name != "Online Bitmap" {
+					t.Errorf("expected name 'Online Bitmap', got %q", p.Name)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("BMSInfoGroups missing probe at 0x9022")
+	}
+}
+
 func TestDecodeBMSClock(t *testing.T) {
 	// Encode 2026-04-10 14:03:05
 	var val uint32 = 0x6914E0C5

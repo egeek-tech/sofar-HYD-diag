@@ -20,15 +20,18 @@ var FormatValue = register.FormatValue
 
 // Section represents a data section with subscribers and auto-refresh timer.
 type Section struct {
-	Name        string
-	Probes      []register.Probe
-	subscribers map[*Client]bool
-	autoRefresh bool
-	ticker      *time.Ticker
-	timerCh     chan<- string  // sends section name on tick
-	reading     atomic.Bool   // true while a read is in progress (D-24)
-	interval    time.Duration
-	logger      *slog.Logger
+	Name         string
+	Probes       []register.Probe      // flattened from Groups for read requests
+	Groups       []register.ProbeGroup // source of truth for grouped sections (D-06)
+	faultSection bool                  // true for "system" section (reads fault registers)
+	subscribers  map[*Client]bool
+	autoRefresh  bool
+	ticker       *time.Ticker
+	stopCh       chan struct{} // closed by stopTimer to exit the ticker goroutine
+	timerCh      chan<- string  // sends section name on tick
+	reading      atomic.Bool   // true while a read is in progress (D-24)
+	interval     time.Duration
+	logger       *slog.Logger
 }
 
 // newSection creates a Section with probes and timer forwarding channel.
@@ -42,6 +45,32 @@ func newSection(name string, probes []register.Probe, timerCh chan<- string, log
 		interval:    defaultRefreshInterval,
 		logger:      logger.With("section", name),
 	}
+}
+
+// newGroupedSection creates a Section backed by ProbeGroups.
+// Probes are flattened from the groups for backward-compatible read request generation.
+// The faultSection flag is set for "system" to enable fault register reading.
+func newGroupedSection(name string, groups []register.ProbeGroup, timerCh chan<- string, logger *slog.Logger) *Section {
+	return &Section{
+		Name:         name,
+		Probes:       flattenProbeGroups(groups),
+		Groups:       groups,
+		faultSection: name == "system",
+		subscribers:  make(map[*Client]bool),
+		autoRefresh:  true,
+		timerCh:      timerCh,
+		interval:     defaultRefreshInterval,
+		logger:       logger.With("section", name),
+	}
+}
+
+// flattenProbeGroups extracts all probes from groups into a single flat slice.
+func flattenProbeGroups(groups []register.ProbeGroup) []register.Probe {
+	var probes []register.Probe
+	for _, g := range groups {
+		probes = append(probes, g.Probes...)
+	}
+	return probes
 }
 
 // SetInterval overrides the default refresh interval (for testing).
@@ -76,16 +105,23 @@ func (s *Section) startTimer() {
 		return // already running
 	}
 	s.ticker = time.NewTicker(s.interval)
-	// Capture ticker channel locally to avoid race with stopTimer setting s.ticker = nil
+	s.stopCh = make(chan struct{})
+	// Capture channels locally to avoid race with stopTimer setting fields to nil
 	tickCh := s.ticker.C
+	stopCh := s.stopCh
 	name := s.Name
 	timerCh := s.timerCh
 	go func() {
-		for range tickCh {
+		for {
 			select {
-			case timerCh <- name:
-			default:
-				// timer channel full, skip this tick
+			case <-tickCh:
+				select {
+				case timerCh <- name:
+				default:
+					// timer channel full, skip this tick
+				}
+			case <-stopCh:
+				return
 			}
 		}
 	}()
@@ -96,6 +132,8 @@ func (s *Section) startTimer() {
 func (s *Section) stopTimer() {
 	if s.ticker != nil {
 		s.ticker.Stop()
+		close(s.stopCh)
+		s.stopCh = nil
 		s.ticker = nil
 		s.logger.Debug("auto-refresh timer stopped")
 	}

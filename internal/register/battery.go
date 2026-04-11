@@ -71,6 +71,7 @@ func BMSInfoGroups() []ProbeGroup {
 				{Name: "SW Non-standard", Addr: 0x901A, Count: 1},
 				{Name: "SW Minor", Addr: 0x901B, Count: 1},
 				{Name: "SN", Addr: 0x9024, Count: 10, IsASCII: true},
+				{Name: "Online Bitmap", Addr: 0x9022, Count: 1},
 			},
 		},
 	}
