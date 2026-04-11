@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 260410-w8y Fyne PoC quick task
-last_updated: "2026-04-11T11:14:46.785Z"
-last_activity: 2026-04-11
+status: executing
+stopped_at: Phase 04 complete, ready to plan Phase 05
+last_updated: "2026-04-11T11:20:00.000Z"
+last_activity: 2026-04-11 -- Phase 04 complete
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 9
-  completed_plans: 10
-  percent: 100
+  completed_phases: 4
+  total_plans: 16
+  completed_plans: 16
+  percent: 80
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-10)
 
 **Core value:** Clear, real-time visibility into all Sofar HYD inverter parameters -- especially battery pack diagnostics -- through a reliable web interface
-**Current focus:** Phase 04 — Battery Overview and Statistics
+**Current focus:** Phase 05 — Deep Battery Pack Diagnostics
 
 ## Current Position
 
-Phase: 5
+Phase: 05
 Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-11
+Status: Ready to plan
+Last activity: 2026-04-11 -- Phase 04 complete
 
-Progress: [████████████████████] 100%
+Progress: [████████████████░░░░] 80%
 
 ## Performance Metrics
 
@@ -93,6 +93,7 @@ Recent decisions affecting current work:
 - [Phase 04]: U32 probes use Sofar word order (high word at low address); GenerateBatteryGroups follows dynamic generator pattern; statistics use stride-4 interleaved layout; BMSProtectionProbes returns flat slice for bitmap decoding
 - [Phase 04]: Custom section read dispatch for bms/battery in triggerSectionRead; BMS write-read cycle with 1s delay per tower; battery auto-detect from 0x066A; GroupData Type field for polymorphic rendering
 - [Phase 04]: Type-based widget dispatch in renderGroupedData for bitmap/protection groups; topology dropdown persistence pattern matching PV channel approach; electric plug Unicode for BMS nav icon
+- [Phase 04]: Gap closure: removed BMS 0x9020 write-read cycle (timeout-prone), reads 0x9022 bitmap as standard probe; disconnected subscribe sends section_error; auto-refresh toggle syncs on section navigate
 - [Phase quick]: Fyne v2 validated as native desktop UI with per-parameter streaming; canvas.Circle for status indicator; composite time register accumulation pattern
 
 ### Pending Todos
@@ -101,11 +102,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 1 is highest-risk: Modbus transport extraction must preserve all protocol quirks from proven CLI tool
 - Phase 5 needs research: atomic write-wait-read for pack selection, BMS fault bitmap decoding
 
 ## Session Continuity
 
-Last session: 2026-04-10T21:21:13.540Z
-Stopped at: Completed 260410-w8y Fyne PoC quick task
+Last session: 2026-04-11T11:20:00.000Z
+Stopped at: Phase 04 complete, ready to plan Phase 05
 Resume file: None
