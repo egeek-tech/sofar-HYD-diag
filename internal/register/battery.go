@@ -93,13 +93,12 @@ func BMSProtectionProbes() []Probe {
 // === Phase 05: Pack-level probe definitions, bitmap tables, encoding ===
 
 // EncodePackQuery maps UI coordinates (1-indexed input, tower, pack) to the 0x9020
-// register value for BMS pack selection. The encoding follows the proven main.go.bak
-// line 178: bits 0-7 = pack index (0-based), bits 8-11 = group index (0-based).
-// Group = (input-1)*towersPerInput + (tower-1), packIdx = pack-1.
+// register value for BMS pack selection. Pack and group are 1-based in the protocol,
+// matching the proven CLI encoding: queryWord = packNum | (groupNum << 8).
+// Tower 1, Pack 6 → group=1, pack=6 → 0x0106 → packID 262.
 func EncodePackQuery(input, tower, pack, towersPerInput int) uint16 {
-	group := (input-1)*towersPerInput + (tower - 1)
-	packIdx := pack - 1
-	return uint16(packIdx&0xFF) | uint16((group&0x0F)<<8)
+	group := (input-1)*towersPerInput + tower
+	return uint16(pack&0xFF) | uint16((group&0x0F)<<8)
 }
 
 // PackRTProbes returns probe definitions for pack real-time data registers 0x9044-0x907C.

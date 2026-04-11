@@ -1076,10 +1076,12 @@ func TestEncodePackQuery(t *testing.T) {
 		input, tower, pack, towersPerInput int
 		want                              uint16
 	}{
-		{"input1 tower2 pack5 tpi2", 1, 2, 5, 2, 0x0104},
-		{"input2 tower1 pack1 tpi2", 2, 1, 1, 2, 0x0200},
-		{"input1 tower1 pack1 tpi1", 1, 1, 1, 1, 0x0000},
-		{"input1 tower1 pack10 tpi2", 1, 1, 10, 2, 0x0009},
+		// 1-based encoding: group = (input-1)*tpi + tower, pack stays as-is
+		{"input1 tower2 pack5 tpi2", 1, 2, 5, 2, 0x0205},
+		{"input2 tower1 pack1 tpi2", 2, 1, 1, 2, 0x0301},
+		{"input1 tower1 pack1 tpi1", 1, 1, 1, 1, 0x0101},
+		{"input1 tower1 pack10 tpi2", 1, 1, 10, 2, 0x010A},
+		{"input1 tower1 pack6 tpi2", 1, 1, 6, 2, 0x0106}, // Tower 1 Pack 6 = packID 262
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
