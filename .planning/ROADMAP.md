@@ -103,9 +103,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 05-01-PLAN.md -- Pack RT/Info probe definitions, alarm/protection bitmap tables, EncodePackQuery, DecodeBalanceState
-- [ ] 05-02-PLAN.md -- Hub triggerPackRead write-settle-read cycle, select_pack handler, pack data/error messages
-- [ ] 05-03-PLAN.md -- Frontend bitmap click, pack detail sub-view, cell voltage grid, temp display, alarm card, balance pills
+- [x] 05-01-PLAN.md -- Pack RT/Info probe definitions, alarm/protection bitmap tables, EncodePackQuery, DecodeBalanceState
+- [x] 05-02-PLAN.md -- Hub triggerPackRead write-settle-read cycle, select_pack handler, pack data/error messages
+- [x] 05-03-PLAN.md -- Frontend bitmap click, pack detail sub-view, cell voltage grid, temp display, alarm card, balance pills
 
 ## Progress
 
