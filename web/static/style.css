@@ -817,6 +817,12 @@ body {
     gap: 8px;
 }
 
+.pack-selector-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
 /* === Phase 5: Bitmap Selected State (D-04) === */
 
 .bitmap-cell--selected {

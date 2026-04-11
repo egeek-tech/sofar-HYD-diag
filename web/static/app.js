@@ -6,12 +6,9 @@ const STORAGE_KEY = 'sofar_connection';
 var PV_STORAGE_KEY = 'sofar_pv_channels';
 var PV_DEFAULT_CHANNELS = 2;
 
-var BAT_INPUTS_KEY = 'sofar_bat_inputs';
-var BAT_TOWERS_KEY = 'sofar_bat_towers';
-var BAT_PACKS_KEY = 'sofar_bat_packs';
-var BAT_DEFAULT_INPUTS = 1;
-var BAT_DEFAULT_TOWERS = 2;
-var BAT_DEFAULT_PACKS = 10;
+// Hardcoded topology constants (Phase 06, D-01, D-02)
+var TOPO_TOWERS = 2;
+var TOPO_PACKS = 10;
 
 // === Pack Detail View State (Phase 5) ===
 
@@ -20,9 +17,8 @@ var packViewState = {
     selectedInput: 0,
     selectedTower: 0,
     selectedPack: 0,
-    topologyInputs: 1,
-    topologyTowers: 2,
-    topologyPacks: 10
+    topologyTowers: TOPO_TOWERS,
+    topologyPacks: TOPO_PACKS
 };
 
 // === DOM Helpers ===
@@ -130,7 +126,6 @@ document.addEventListener('DOMContentLoaded', function () {
     setupSidebarToggle();
     setupAutoRefreshToggle();
     initPVDropdown();
-    initTopologyDropdowns();
     initPackSelectors();
 });
 
@@ -295,8 +290,7 @@ function navigateToSection(section) {
         pvSelect.style.display = 'none';
     }
 
-    // Show/hide topology dropdowns based on active section (per UI-SPEC)
-    var topoControls = $('#topology-controls');
+    // Show/hide pack selector controls based on active section
     var packControls = $('#pack-selector-controls');
     if (section === 'bms') {
         // Reset pack view to overview mode when navigating to BMS
@@ -304,14 +298,10 @@ function navigateToSection(section) {
         packViewState.selectedInput = 0;
         packViewState.selectedTower = 0;
         packViewState.selectedPack = 0;
-        // Sync topology values into packViewState
-        packViewState.topologyInputs = loadTopologyValue(BAT_INPUTS_KEY) || BAT_DEFAULT_INPUTS;
-        packViewState.topologyTowers = loadTopologyValue(BAT_TOWERS_KEY) || BAT_DEFAULT_TOWERS;
-        packViewState.topologyPacks = loadTopologyValue(BAT_PACKS_KEY) || BAT_DEFAULT_PACKS;
-        topoControls.style.display = '';
+        packViewState.topologyTowers = TOPO_TOWERS;
+        packViewState.topologyPacks = TOPO_PACKS;
         if (packControls) packControls.style.display = 'none';
     } else {
-        topoControls.style.display = 'none';
         if (packControls) packControls.style.display = 'none';
     }
 
@@ -346,17 +336,6 @@ function navigateToSection(section) {
         });
     }
 
-    // Sync BMS topology config with backend
-    if (section === 'bms') {
-        var batInputs = loadTopologyValue(BAT_INPUTS_KEY) || BAT_DEFAULT_INPUTS;
-        var batTowers = loadTopologyValue(BAT_TOWERS_KEY) || BAT_DEFAULT_TOWERS;
-        var batPacks = loadTopologyValue(BAT_PACKS_KEY) || BAT_DEFAULT_PACKS;
-        App.ws.send({
-            type: 'configure',
-            section: 'bms',
-            config: { bat_inputs: batInputs, bat_towers: batTowers, bat_packs: batPacks }
-        });
-    }
 }
 
 // === Sidebar Toggle ===
@@ -769,95 +748,6 @@ function savePVChannels(channels) {
     } catch(e) {}
 }
 
-// === Topology Dropdowns (BAT-06, D-10, D-11, D-12) ===
-
-function initTopologyDropdowns() {
-    var inputsSel = $('#bat-inputs-select');
-    var towersSel = $('#bat-towers-select');
-    var packsSel = $('#bat-packs-select');
-
-    // Populate options
-    for (var i = 1; i <= 2; i++) {
-        var opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = String(i);
-        inputsSel.appendChild(opt);
-    }
-    for (var i = 1; i <= 4; i++) {
-        var opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = String(i);
-        towersSel.appendChild(opt);
-    }
-    for (var i = 4; i <= 10; i++) {
-        var opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = String(i);
-        packsSel.appendChild(opt);
-    }
-
-    // Load defaults: localStorage > /api/defaults > hardcoded
-    var storedInputs = loadTopologyValue(BAT_INPUTS_KEY);
-    var storedTowers = loadTopologyValue(BAT_TOWERS_KEY);
-    var storedPacks = loadTopologyValue(BAT_PACKS_KEY);
-
-    if (storedInputs) inputsSel.value = String(storedInputs);
-    if (storedTowers) towersSel.value = String(storedTowers);
-    if (storedPacks) packsSel.value = String(storedPacks);
-
-    // Also try /api/defaults if no localStorage values
-    if (!storedInputs || !storedTowers || !storedPacks) {
-        fetch('/api/defaults')
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (!loadTopologyValue(BAT_INPUTS_KEY) && data.bat_inputs) {
-                    inputsSel.value = String(data.bat_inputs);
-                    BAT_DEFAULT_INPUTS = data.bat_inputs;
-                }
-                if (!loadTopologyValue(BAT_TOWERS_KEY) && data.bat_towers) {
-                    towersSel.value = String(data.bat_towers);
-                    BAT_DEFAULT_TOWERS = data.bat_towers;
-                }
-                if (!loadTopologyValue(BAT_PACKS_KEY) && data.bat_packs) {
-                    packsSel.value = String(data.bat_packs);
-                    BAT_DEFAULT_PACKS = data.bat_packs;
-                }
-            })
-            .catch(function() {});
-    }
-
-    // On change: save to localStorage and send configure
-    inputsSel.addEventListener('change', sendTopologyConfigure);
-    towersSel.addEventListener('change', sendTopologyConfigure);
-    packsSel.addEventListener('change', sendTopologyConfigure);
-}
-
-function sendTopologyConfigure() {
-    var inputs = parseInt($('#bat-inputs-select').value, 10);
-    var towers = parseInt($('#bat-towers-select').value, 10);
-    var packs = parseInt($('#bat-packs-select').value, 10);
-    saveTopologyValue(BAT_INPUTS_KEY, inputs);
-    saveTopologyValue(BAT_TOWERS_KEY, towers);
-    saveTopologyValue(BAT_PACKS_KEY, packs);
-    App.ws.send({
-        type: 'configure',
-        section: 'bms',
-        config: { bat_inputs: inputs, bat_towers: towers, bat_packs: packs }
-    });
-}
-
-function loadTopologyValue(key) {
-    try {
-        var val = localStorage.getItem(key);
-        if (val) return parseInt(val, 10);
-        return null;
-    } catch(e) { return null; }
-}
-
-function saveTopologyValue(key, val) {
-    try { localStorage.setItem(key, String(val)); }
-    catch(e) {}
-}
 
 // === Bitmap Grid Renderer (BAT-05, D-06, D-07, D-08) ===
 
@@ -921,8 +811,8 @@ function renderBitmapGroup(group) {
 
             // Check if this cell is the currently selected pack
             if (packViewState.mode === 'pack_detail') {
-                var cellInput = Math.floor(t / packViewState.topologyTowers) + 1;
-                var cellTower = (t % packViewState.topologyTowers) + 1;
+                var cellInput = 1;
+                var cellTower = t + 1;
                 var cellPack = p + 1;
                 if (cellInput === packViewState.selectedInput &&
                     cellTower === packViewState.selectedTower &&
@@ -1083,11 +973,10 @@ function handleBitmapCellClick(towerIndex, packIndex, isOnline) {
         showBitmapWarning('Pack ' + (packIndex + 1) + ' is offline -- check BMS bitmap');
         return;
     }
-    // Map tower index to input/tower based on topology
-    var input = Math.floor(towerIndex / packViewState.topologyTowers) + 1;
-    var tower = (towerIndex % packViewState.topologyTowers) + 1;
+    // Hardcoded single input; tower maps directly from towerIndex (D-06)
+    var input = 1;
+    var tower = towerIndex + 1;
     var pack = packIndex + 1;
-
     sendSelectPack(input, tower, pack);
 }
 
@@ -1172,40 +1061,40 @@ function initPackSelectors() {
 
     var container = document.createElement('div');
     container.id = 'pack-selector-controls';
-    container.className = 'topology-controls';
+    container.className = 'pack-selector-controls';
     container.style.display = 'none';
 
     // Input dropdown
     var inputLabel = document.createElement('span');
-    inputLabel.className = 'topology-label';
+    inputLabel.className = 'pack-selector-label';
     inputLabel.textContent = 'Input:';
     container.appendChild(inputLabel);
 
     var inputSel = document.createElement('select');
     inputSel.id = 'pack-input-select';
-    inputSel.className = 'topology-select';
+    inputSel.className = 'pv-channel-select';
     container.appendChild(inputSel);
 
     // Tower dropdown
     var towerLabel = document.createElement('span');
-    towerLabel.className = 'topology-label';
+    towerLabel.className = 'pack-selector-label';
     towerLabel.textContent = 'Tower:';
     container.appendChild(towerLabel);
 
     var towerSel = document.createElement('select');
     towerSel.id = 'pack-tower-select';
-    towerSel.className = 'topology-select';
+    towerSel.className = 'pv-channel-select';
     container.appendChild(towerSel);
 
     // Pack dropdown
     var packLabel = document.createElement('span');
-    packLabel.className = 'topology-label';
+    packLabel.className = 'pack-selector-label';
     packLabel.textContent = 'Pack:';
     container.appendChild(packLabel);
 
     var packSel = document.createElement('select');
     packSel.id = 'pack-pack-select';
-    packSel.className = 'topology-select';
+    packSel.className = 'pv-channel-select';
     container.appendChild(packSel);
 
     // Insert before auto-refresh button
@@ -1229,12 +1118,10 @@ function populatePackSelectorOptions() {
     towerSel.textContent = '';
     packSel.textContent = '';
 
-    for (var i = 1; i <= packViewState.topologyInputs; i++) {
-        var opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = String(i);
-        inputSel.appendChild(opt);
-    }
+    var inputOpt = document.createElement('option');
+    inputOpt.value = '1';
+    inputOpt.textContent = '1';
+    inputSel.appendChild(inputOpt);
     for (var t = 1; t <= packViewState.topologyTowers; t++) {
         var opt = document.createElement('option');
         opt.value = String(t);
@@ -1269,16 +1156,12 @@ function onPackSelectorChange() {
 }
 
 function showPackSelectors() {
-    var topoControls = $('#topology-controls');
     var packControls = $('#pack-selector-controls');
-    if (topoControls) topoControls.style.display = 'none';
     if (packControls) packControls.style.display = '';
 }
 
-function showTopologyDropdowns() {
-    var topoControls = $('#topology-controls');
+function hidePackSelectors() {
     var packControls = $('#pack-selector-controls');
-    if (topoControls) topoControls.style.display = '';
     if (packControls) packControls.style.display = 'none';
 }
 
@@ -1349,8 +1232,8 @@ function returnToBMSOverview() {
     packViewState.selectedInput = 0;
     packViewState.selectedTower = 0;
     packViewState.selectedPack = 0;
-    // Toggle dropdowns
-    showTopologyDropdowns();
+    // Hide pack selectors
+    hidePackSelectors();
     // Re-subscribe to BMS to get overview data
     navigateToSection('bms');
 }
