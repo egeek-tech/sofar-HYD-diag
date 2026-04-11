@@ -56,7 +56,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section) {
 				if err != nil {
 					errStr = err.Error()
 				} else {
-					// Handle system time composition: collect but don't stream individual time registers
+					// Collect system time components for composition
 					if strings.HasPrefix(p.Name, "System time (") && len(data) >= 2 {
 						val := binary.BigEndian.Uint16(data[:2])
 						switch p.Name {
@@ -79,7 +79,6 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section) {
 							timeVals[5] = val
 							timeCount++
 						}
-						continue // don't stream individual time registers
 					}
 					value = FormatValue(p, data)
 				}
@@ -260,42 +259,36 @@ func (h *Hub) streamBMSRead(sec *Section) {
 					continue
 				}
 
-				// Handle special composition registers: collect but stream composed value later
+				// Collect composition registers while still streaming individual values
 				switch p.Addr {
 				case 0x9004:
 					if len(data) >= 2 {
 						clockHi = binary.BigEndian.Uint16(data[:2])
 						hasClockHi = true
 					}
-					continue
 				case 0x9005:
 					if len(data) >= 2 {
 						clockLo = binary.BigEndian.Uint16(data[:2])
 						hasClockLo = true
 					}
-					continue
 				case 0x9018:
 					swChar = FormatValue(p, data)
 					hasSWChar = true
-					continue
 				case 0x9019:
 					if len(data) >= 2 {
 						swMajor = binary.BigEndian.Uint16(data[:2])
 						hasSWMajor = true
 					}
-					continue
 				case 0x901A:
 					if len(data) >= 2 {
 						swNonStd = binary.BigEndian.Uint16(data[:2])
 						hasSWNonStd = true
 					}
-					continue
 				case 0x901B:
 					if len(data) >= 2 {
 						swMinor = binary.BigEndian.Uint16(data[:2])
 						hasSWMinor = true
 					}
-					continue
 				case 0x900D:
 					if len(data) >= 2 {
 						val := binary.BigEndian.Uint16(data[:2])
@@ -305,11 +298,11 @@ func (h *Hub) streamBMSRead(sec *Section) {
 							section: "bms",
 							msg:     NewRegisterValue("bms", g.Name, p.Name, value, ""),
 						}
+						continue // topology already streamed with custom format
 					}
-					continue
 				}
 
-				// Stream standard register value
+				// Stream register value (including composition source registers)
 				h.results <- sectionResult{
 					section: "bms",
 					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), ""),

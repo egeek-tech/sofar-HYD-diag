@@ -87,8 +87,8 @@
     --temp-critical: #c62828;
 
     /* Timing controls (Phase 7) */
-    --timing-input-bg: rgba(255, 255, 255, 0.1);
-    --timing-input-border: rgba(255, 255, 255, 0.2);
+    --timing-input-bg: rgba(255, 255, 255, 0.85);
+    --timing-input-border: rgba(255, 255, 255, 0.5);
     --timing-input-width: 64px;
     --timing-input-height: 28px;
 
@@ -520,7 +520,7 @@ body {
     padding: 0 4px;
     font-size: 12px;
     font-family: inherit;
-    color: var(--color-text-on-dark, #ffffff);
+    color: var(--color-text, #333333);
     background: var(--timing-input-bg);
     border: 1px solid var(--timing-input-border);
     border-radius: 4px;
