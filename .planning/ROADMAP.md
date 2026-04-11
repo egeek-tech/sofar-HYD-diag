@@ -99,8 +99,13 @@ Plans:
   2. User can view individual pack details: serial number, total voltage, SOC, current, remaining/full capacity, cycles, cell count
   3. User can view all 24 cell voltages per pack with min/max/spread highlighted (color-coded deviation from average)
   4. User can view pack temperatures (up to 8 sensors plus MOS and environment) and pack alarm/protection/fault/balance states decoded from bitmaps into readable text
-**Plans**: TBD
+**Plans:** 3 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 05-01-PLAN.md -- Pack RT/Info probe definitions, alarm/protection bitmap tables, EncodePackQuery, DecodeBalanceState
+- [ ] 05-02-PLAN.md -- Hub triggerPackRead write-settle-read cycle, select_pack handler, pack data/error messages
+- [ ] 05-03-PLAN.md -- Frontend bitmap click, pack detail sub-view, cell voltage grid, temp display, alarm card, balance pills
 
 ## Progress
 
@@ -113,4 +118,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. WebSocket Hub, API, and Connection UI | 3/3 | Done | 2026-04-10 |
 | 3. Core Monitoring Sections | 0/3 | In progress | - |
 | 4. Battery Overview and Statistics | 0/3 | Planned | - |
-| 5. Deep Battery Pack Diagnostics | 0/0 | Not started | - |
+| 5. Deep Battery Pack Diagnostics | 0/3 | Planned | - |
