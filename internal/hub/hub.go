@@ -606,8 +606,6 @@ func (h *Hub) triggerBatteryRead(sec *Section) {
 func (h *Hub) triggerBMSRead(sec *Section) {
 	groups := sec.Groups
 	probes := sec.Probes
-	towers := TopoTowers
-	packs := TopoPacksPerTower
 
 	// Build standard read requests for BMS info probes
 	reads := make([]broker.ReadRequest, len(probes))
@@ -642,17 +640,26 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 			}
 		}
 
-		// Step 3: Extract bitmap from 0x9022 standard read result (no write cycle needed)
-		onlineBitmaps := make([]uint16, towers)
-		for i, p := range probes {
-			if p.Addr == 0x9022 && i < len(results) && results[i].Err == nil && len(results[i].Data) >= 2 {
-				bitmapVal := binary.BigEndian.Uint16(results[i].Data[:2])
-				// Apply same bitmap to all towers at overview level
-				// Phase 5 will implement per-tower cycling via 0x9020 writes
-				for t := 0; t < towers; t++ {
-					onlineBitmaps[t] = bitmapVal
-				}
-				break
+		// Step 3: Per-tower bitmap cycling (D-03, D-04)
+		// Write each group index to 0x9020, wait 500ms settle, then read 0x9022.
+		// This gives true per-tower online status. ~2-3s total for 2 towers.
+		onlineBitmaps := make([]uint16, TopoTowers)
+		for t := 0; t < TopoTowers; t++ {
+			// Write group index to 0x9020: pack=0 in bits 0-7, group=t in bits 8-11
+			queryWord := uint16(t) << 8
+			err := h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
+			if err != nil {
+				h.logger.Warn("bitmap cycling: write failed for tower", "tower", t+1, "error", err)
+				continue // leave bitmap as 0 (all packs offline) for this tower
+			}
+			time.Sleep(500 * time.Millisecond)
+
+			// Read 0x9022 for this tower's bitmap
+			bitmapResults := h.broker.ReadBatch(h.ctx, []broker.ReadRequest{{Addr: 0x9022, Count: 1}})
+			if len(bitmapResults) > 0 && bitmapResults[0].Err == nil && len(bitmapResults[0].Data) >= 2 {
+				onlineBitmaps[t] = binary.BigEndian.Uint16(bitmapResults[0].Data[:2])
+			} else {
+				h.logger.Warn("bitmap cycling: read failed for tower", "tower", t+1)
 			}
 		}
 
@@ -664,8 +671,8 @@ func (h *Hub) triggerBMSRead(sec *Section) {
 			Name: "Battery Topology",
 			Type: "bitmap",
 			Bitmap: &BitmapData{
-				Towers:           towers,
-				PacksPerTower:    packs,
+				Towers:           TopoTowers,
+				PacksPerTower:    TopoPacksPerTower,
 				Online:           onlineBitmaps,
 				DetectedTopology: detectedStr,
 				Mismatch:         mismatch,
