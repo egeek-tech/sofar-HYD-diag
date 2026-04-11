@@ -19,6 +19,11 @@ const (
 	MsgTypeSelectPack  = "select_pack"
 	MsgTypePackData    = "pack_data"
 	MsgTypePackError   = "pack_error"
+
+	// Streaming message types (Phase 7: per-register streaming display)
+	MsgTypeRegisterValue   = "register_value"
+	MsgTypeSectionComplete = "section_complete"
+	MsgTypeSectionSchema   = "section_schema"
 )
 
 // GroupData represents a rendered probe group in the outbound message (D-02).
@@ -49,6 +54,12 @@ type ConfigPayload struct {
 	Channels int `json:"channels,omitempty"`
 }
 
+// TimingConfigPayload carries timing configuration from the client (D-04/D-06).
+type TimingConfigPayload struct {
+	ReadDelayMs  int `json:"read_delay_ms,omitempty"`
+	PackSettleMs int `json:"pack_settle_ms,omitempty"`
+}
+
 // InboundMessage represents a message from client to server.
 // Sent via WebSocket as JSON. Type determines which fields are relevant.
 type InboundMessage struct {
@@ -62,6 +73,8 @@ type InboundMessage struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// Configure payload (D-15)
 	Config *ConfigPayload `json:"config,omitempty"`
+	// Timing configuration payload (D-04/D-06)
+	TimingConfig *TimingConfigPayload `json:"timing_config,omitempty"`
 	// Pack selection fields (select_pack)
 	Input int `json:"input,omitempty"`
 	Tower int `json:"tower,omitempty"`
@@ -167,5 +180,70 @@ func NewStateMessage(state string, errMsg string) OutboundMessage {
 		Type:  MsgTypeState,
 		State: state,
 		Error: errMsg,
+	}
+}
+
+// === Streaming message types (Phase 7) ===
+
+// RegisterValueMessage carries a single register result during streaming reads.
+type RegisterValueMessage struct {
+	Type    string `json:"type"`
+	Section string `json:"section"`
+	Group   string `json:"group"`
+	Name    string `json:"name"`
+	Value   string `json:"value,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// SectionCompleteMessage signals that all registers in a section have been read.
+type SectionCompleteMessage struct {
+	Type      string `json:"type"`
+	Section   string `json:"section"`
+	Timestamp string `json:"timestamp"`
+}
+
+// SchemaGroup describes the structure of a probe group for the frontend to pre-render.
+type SchemaGroup struct {
+	Name      string   `json:"name"`
+	Layout    string   `json:"layout,omitempty"`
+	Type      string   `json:"type,omitempty"`
+	Registers []string `json:"registers"`
+}
+
+// SectionSchemaMessage sends the section layout to the client on subscribe,
+// so the frontend can pre-render placeholder slots before values stream in.
+type SectionSchemaMessage struct {
+	Type    string        `json:"type"`
+	Section string        `json:"section"`
+	Groups  []SchemaGroup `json:"groups"`
+}
+
+// NewRegisterValue creates a register_value message for a single probe result.
+func NewRegisterValue(section, group, name, value string, errStr string) RegisterValueMessage {
+	return RegisterValueMessage{
+		Type:    MsgTypeRegisterValue,
+		Section: section,
+		Group:   group,
+		Name:    name,
+		Value:   value,
+		Error:   errStr,
+	}
+}
+
+// NewSectionComplete creates a section_complete message with the current UTC timestamp.
+func NewSectionComplete(section string) SectionCompleteMessage {
+	return SectionCompleteMessage{
+		Type:      MsgTypeSectionComplete,
+		Section:   section,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
+// NewSectionSchema creates a section_schema message describing the layout of a section.
+func NewSectionSchema(section string, groups []SchemaGroup) SectionSchemaMessage {
+	return SectionSchemaMessage{
+		Type:    MsgTypeSectionSchema,
+		Section: section,
+		Groups:  groups,
 	}
 }
