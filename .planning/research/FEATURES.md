@@ -1,144 +1,170 @@
-# Feature Landscape
+# Feature Landscape: v1.2 Reliability & UX Refinements
 
 **Domain:** Inverter diagnostic/monitoring web tool (Sofar HYD hybrid inverter via TCP Modbus)
-**Researched:** 2026-04-10
-**Confidence:** HIGH (based on Sofar Modbus-G3 V1.38 protocol spec, existing CLI tool verified against hardware, and domain knowledge of inverter monitoring tools like SolarAssistant, SolarMan, Home Assistant solar integrations, and Fronius/SMA web portals)
+**Milestone:** v1.2 - Reliability & UX Refinements
+**Researched:** 2026-04-11
+**Confidence:** HIGH (grounded in SCADA/HMI conventions, existing codebase analysis, and Modbus protocol best practices)
 
 ## Table Stakes
 
-Features users expect from any inverter diagnostic/monitoring tool. Missing any of these and the tool feels broken or incomplete.
+Features that users of any industrial monitoring/diagnostic tool expect when the features they depend on are already present. Missing these makes the existing v1.0/v1.1 features feel broken or unreliable.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **Connection management** | Users need to connect/disconnect and see connection status at a glance | Low | IP, port, slave ID fields + connect button + status indicator. Already proven in CLI. |
-| **System identification** | First thing any tech checks: which inverter am I talking to? | Low | Inverter SN (0x0445), running state (0x0404), system time (0x042C-0x0431), firmware versions. One-shot read. |
-| **Real-time power overview** | The core reason to use the tool: what is the inverter doing right now? | Medium | Grid power, PV power, battery power, load power. Requires reading multiple register blocks with 500ms delays. |
-| **Grid parameters display** | Essential for grid-tied diagnostics: voltage, frequency, current per phase | Medium | Grid-connected (0x0484-0x04BC): frequency, V/I/P per phase R/S/T, line voltages, PCC power, load power, power factor. |
-| **PV input display** | Users need to see what their panels are producing | Low | PV1/PV2+ voltage/current/power (0x0584+), total PV power (0x05C4). Configurable channel count (2-16). |
-| **Battery status overview** | Hybrid inverter = battery is central. SOC/SOH/power are essential at a glance. | Low | Bat voltage/current/power/SOC/SOH/cycles/state per channel (0x0604-0x0646). |
-| **Visual connection feedback** | Users must know if data is fresh or stale | Low | Green flash on successful read, red on failure. Stale data indicator if refresh stops. |
-| **Auto-refresh toggle** | Diagnostic sessions need continuous monitoring, not manual clicking | Medium | WebSocket push with on/off toggle. Must respect 500ms Modbus timing. |
-| **Sectioned navigation** | Too much data to show at once. Users need to navigate to what they care about. | Medium | Tabs or collapsible sections: System Info, Grid, EPS, PV, Battery, Statistics. |
-| **Lazy loading by section** | Modbus is slow (500ms between reads). Loading everything kills responsiveness. | Medium | Only read registers for the currently visible section. Critical for usability given protocol timing constraints. |
-| **Electricity statistics** | Day/total generation, consumption, bought, sold, battery charge/discharge | Low | U32 registers at 0x0684-0x06B3. Simple display, no charting needed for table stakes. |
-| **Error/fault display** | If the inverter has a fault, the user MUST see it immediately | High | Fault registers 0x0405-0x0416 are bitmaps with 300+ possible fault codes. Need human-readable fault name lookup from Appendix 6.1. |
-| **EPS/off-grid status** | Hybrid inverters have emergency power mode. Users need to see if EPS is active. | Low | Load active power (0x0504), output voltage frequency (0x0507). Small section. |
+| Feature | Why Expected | Complexity | Dependencies | Notes |
+|---------|--------------|------------|--------------|-------|
+| **Stale value persistence** | SCADA convention: never show blank when you have a last-known-good value. Ignition SCADA overlays "Uncertain" quality on stale data rather than blanking. Grafana shows last known value with staleness markers. Users expect data continuity during refresh cycles. | Low | Frontend-only. Uses existing `data-row-h__value--stale` CSS class already partially implemented in `handleRegisterValue`. | Extend to all sections. Keep previous text, dim it (reduced opacity), show timestamp of last good read. ISA-101 pattern: neutral gray for uncertain state. |
+| **Register read retry** | Industrial Modbus best practice: 1-2 retries per register. Broker already has `maxAttempts = 2` in `executeRead`. The gap is at the streaming level -- if a single register in a section fails, the streaming hub currently marks it as error and moves on. Users expect transient errors to be retried transparently. | Low | Backend (hub streaming layer). Broker retry logic exists. Need streaming-level retry for individual registers that fail within a section read cycle. | FlowFuse best practice: "The right retry count for most industrial installations is 1, sometimes 2." Current broker does 2 attempts. Add 1 more at the streaming layer for individual register failures only. |
+| **Timing enforcement** | Known bug: read delay shows burst on section switch due to `enforceInterReadDelay` timing. When switching sections, the first read fires immediately without respecting the inter-read delay from the previous section's last read. | Low | Backend (`broker.go` `enforceInterReadDelay`). The `lastReadTime` is tracked but section switches create a gap where the delay is not enforced because the new streaming goroutine starts fresh. | Fix: the broker already tracks `lastReadTime` globally. The issue is likely that `enforceInterReadDelay` is called after `ensureConnected` but the timing gap occurs between the old section's last read and the new section's first read. Straightforward fix in broker. |
+| **Immediate disconnect** | When a user clicks Disconnect, they expect the UI to respond immediately. Current flow: `Disconnect` sends a command through the broker channel, but any in-progress streaming read holds the broker's command channel busy reading registers sequentially. The disconnect waits behind all queued reads. | Medium | Backend (broker + hub). Requires context cancellation propagation. The broker uses `context.Context` in `ReadRegisters`/`ReadBatch` but streaming goroutines in `hub_streaming.go` check `h.ctx.Err()` only between registers, not during the blocking `ReadRegisters` call itself. | Go pattern: `conn.SetReadDeadline(time.Now())` on context cancellation to abort a blocking TCP read. Broker needs a cancellable connection wrapper. |
 
 ## Differentiators
 
-Features that set this tool apart from Sofar's own cloud portal (SolarMan/SOFAR Cloud) and generic Modbus tools. These are not expected but provide significant diagnostic value.
+Features that go beyond what users expect from a v1.2 polish release. These make the tool feel noticeably more professional and diagnostic-capable.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **Deep battery pack drill-down** | No cloud portal shows individual cell voltages. This is THE killer feature for battery diagnostics. | High | Requires BMS_Inquire write (0x9020), 1s settle time, then reading 0x9044+ for cell voltages (24 cells), temperatures (8 sensors), SN, capacity, cycles, fault/alarm/protect states. Must iterate per-pack with pack switching. |
-| **Battery topology visualization** | Show the full hierarchy: inputs > towers > packs with online/offline status | Medium | Online bitmap (0x9022), configurable topology (inputs x towers x packs). Tree or grid navigation showing which packs are online, hibernating (0x9023), or faulted. |
-| **Cell voltage spread analysis** | Highlight imbalanced cells within a pack -- the #1 early warning sign of battery degradation | Medium | Read 24 cell voltages per pack (0x9051-0x9068), compute min/max/spread, color-code cells that deviate from mean. No competitor shows this at the cell level. |
-| **BMS protection/alarm/fault decoding** | Raw bitmap values are useless. Decode alarm (0x9076), protection (0x9077), fault (0x9078) into human-readable text. | Medium | Requires mapping bit positions to fault descriptions (similar to system faults but for BMS layer). Pack-level fault data at 0x9084-0x90B9 adds fault history per pack. |
-| **Battery cluster overview** | Show all towers in a cluster with per-tower BMS data at a glance | Medium | Cluster 1 (0x9400+) and Cluster 2 (0x9600+) provide per-BMS voltage/current/power/SOC/state for up to 8 BMS units each. Quick health comparison across towers. |
-| **Configurable topology** | Different HYD models have different PV counts and battery layouts. One tool fits all. | Low | Settings page: PV channels (2-16), battery inputs (1-2), towers per input (1-4), packs per tower (4-10). Persisted in browser localStorage. |
-| **Historical event log** | Last 100 fault events with timestamps, readable from the inverter's internal log | Medium | 0x1480-0x160F: 100 events, each with fault ID + timestamp. Decode fault ID via Appendix 6.1 lookup table. Presented as a scrollable table. |
-| **System fault register decoding** | Decode the 20 fault registers (0x0405-0x0416) into human-readable fault names with severity | High | 20 registers x 16 bits = 320 possible faults. Full lookup table from Appendix 6.1 must be embedded. Group by category (grid, PV, battery, thermal, communication). |
-| **Internal diagnostics** | Leakage current, DC components, bus voltages -- data only a technician needs | Low | Internal info (0x06C4-0x06EF): leakage current, balance current, DC components per phase, bus voltages, capacitor voltages. Low complexity to display, high value for troubleshooting. |
-| **Confluence/string current monitoring** | Per-string current data for diagnosing PV string issues | Low | 0x0704-0x0733: up to 16 groups with voltage + 2 string currents each. Useful for large PV arrays to spot underperforming strings. |
+| Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---------|-------------------|------------|--------------|-------|
+| **Parameter tooltips** | Professional SCADA tools (Ignition, WinCC) show register metadata on hover: address, raw hex value, data type, scale factor. No inverter monitoring tool in the solar ecosystem does this -- SolarAssistant, SolarMan, Fronius SolarWeb all show only formatted values. This turns the diagnostic tool into a protocol-level debugger. | Low | Frontend-only. Register address and raw value are available in the backend (`register.Probe` has `Addr`, `Count`). Need to add `addr` and `raw` fields to `RegisterValueMessage`. | Add `data-tooltip` or `title` attribute on each register value cell. Show: register name, hex address (e.g., `0x0484`), raw hex bytes, data type, scale. CSS-only tooltip or lightweight JS hover. |
+| **Battery pack UI reorder** | Move balance state (cell balancing bitmap) before temperature in pack detail view. Balance state is the most diagnostic-critical data: it tells you whether the BMS is actively balancing cells, which is the #1 indicator of pack health during charging. Current order buries it after temperatures. | Low | Frontend-only. Reorder `PackGroup` rendering in `buildPackDataMessage` or reorder groups in the frontend rendering. | No competitor (SolarAssistant, SolarMan) shows balance state at all. Placing it prominently is a differentiator for the diagnostic use case. Ordering: Pack Info > Cell Voltages > Balance State > Temperatures > Pack Status. |
+| **Pack drill-down streaming** | Fix the batch display issue where pack values appear all-at-once instead of streaming per-register like other sections. Currently `triggerPackRead` reads all pack registers via `ReadBatch` and sends a single `PackDataMessage`. Convert to per-register streaming with skeleton loading, consistent with the v1.1 streaming pattern used in all other sections. | Medium | Backend (hub) + Frontend. Requires adding schema/skeleton support for pack detail view and converting `triggerPackRead` from batch to streaming pattern (similar to `streamStandardRead`). | The challenge is that pack reads require a write-settle-read sequence (0x9020 write, 1s settle, then reads). The streaming must happen within the read phase after settle completes. Write+settle stays batch; individual register reads within the data phase stream. |
+| **Browser-only auto-refresh** | Remove backend auto-refresh timer, move refresh trigger to browser `setInterval`. Fixes sync state bugs where backend timer and frontend toggle get out of sync (especially on WebSocket reconnect, section switch, or multiple clients). The browser sends `refresh` messages on its own timer; backend just responds. | Medium | Backend (hub: remove section timers, `timerCh`, `handleTimerTick`) + Frontend (add `setInterval` timer management). This is an architectural change to the refresh flow. | Current architecture: backend `Section.startTimer`/`stopTimer` manages a `time.Ticker` that fires `timerCh`. Frontend just toggles. Problem: reconnect/section-switch creates timer desync. Browser-side timer is simpler: browser owns the interval, sends `refresh` messages, backend is stateless about refresh timing. Eliminates an entire class of sync bugs. |
 
 ## Anti-Features
 
-Features to explicitly NOT build. Each would add complexity without matching the tool's purpose as a local diagnostic utility.
+Features to explicitly NOT build as part of v1.2, even if they seem related.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| **Historical data storage / database** | Adds persistence layer, backup concerns, storage management. This is a real-time diagnostic tool, not a monitoring platform. | Show live data + the inverter's built-in 100-event history log. Users who need long-term history already use SolarMan cloud or Home Assistant. |
-| **Charts and graphs** | Tempting but wrong. Without persistent data, charts show only the current session. Real-time numbers update faster than charts can convey meaning. | Use numeric displays with color-coded ranges. A cell voltage spread bar per pack is more useful than a time-series chart of one cell. |
-| **Register writing / control commands** | Writing to inverter configuration registers (safety params, energy management, time periods) risks misconfiguration. One wrong write to a safety register can trip the inverter. | Read-only diagnostic tool. The ONE exception already exists: BMS_Inquire (0x9020) write to select battery packs. No other writes. |
-| **Multi-inverter support** | Modbus is inherently single-connection serial. Supporting multiple inverters means connection multiplexing, UI for switching, confusion about which inverter is shown. | Single inverter, single connection. User disconnects and reconnects to a different IP if needed. |
-| **User authentication** | This runs on a local network, accessed from a laptop sitting next to the inverter. Auth adds friction to a diagnostic workflow. | No auth. If network security is needed, the user's network handles it. |
-| **Mobile responsive design** | Diagnostic data is dense: 24 cell voltages, 3-phase grid params, battery hierarchy. It does not compress to a phone screen. | Desktop-only layout using full page width. The tool is used on a laptop at the inverter site. |
-| **Cloud connectivity / remote access** | Adds security concerns, hosting costs, complexity. Sofar already has SolarMan cloud for remote monitoring. | Local network only. Single binary, zero external dependencies. |
-| **Firmware update capability** | The protocol supports remote firmware upgrade (0x2034-0x203F). Extremely dangerous to expose. A failed firmware update can brick the inverter. | Do not even read the upgrade registers. Show firmware version info (read-only) in system info section only. |
-| **MQTT / Home Assistant integration** | Scope creep. Good integrations already exist (sofar2mqtt, ha-sofar). This tool solves a different problem: deep diagnostics. | Stay focused on the web UI diagnostic use case. Users who want HA integration use existing community tools. |
-| **Parameter configuration UI** | Safety parameters (0x0800+), energy management modes (0x1000+), time periods -- writable but dangerous without deep understanding. | Display current configuration values as read-only if useful for diagnostics, but never provide write UI. |
-| **PDF/CSV export** | Adds file generation, download handling, format decisions. Low value for a real-time tool. | Users can screenshot or copy values. If export becomes needed later, it is a simple addition (not architectural). |
+| **Automatic retry loop for persistently failing registers** | Some registers (e.g., PackInfoProbes 0x9104-0x9126) consistently return "illegal address" on certain BMS hardware. Retrying these every cycle wastes Modbus bandwidth and adds latency to every refresh. | Retry once per register per read cycle (total 3 attempts with broker's built-in 2). After that, mark as error and show stale value. Do not auto-retry across refresh cycles -- the next refresh cycle will try again naturally. |
+| **Per-register retry configuration** | Adding UI to configure retry count per register or per section is over-engineering for a diagnostic tool. | Use a fixed retry policy: broker does 2 attempts, streaming layer adds 1 more for failed registers. Consistent, predictable, no configuration needed. |
+| **Server-Sent Events (SSE) migration** | Some monitoring tools use SSE for server-push. WebSocket is already working, bidirectional (needed for commands), and the architecture is built around it. | Keep WebSocket. Browser-only auto-refresh still uses WebSocket for the `refresh` command and receiving streamed values. |
+| **Tooltip library / rich tooltip framework** | Adding a JS tooltip library (Tippy.js, Popper.js) for parameter metadata hover. Adds external dependency to a vanilla JS/CSS frontend. | Use CSS-only tooltips with `::after` pseudo-element on `[data-tooltip]` attributes, or native `title` attribute for simplicity. Native `title` is sufficient for diagnostic metadata. |
+| **Register value history within tooltips** | Showing last N values or sparkline in tooltip. Adds state management complexity with no persistent storage. | Show only current formatted value + raw hex + address in tooltip. Users who need history use external tools. |
+| **Auto-refresh interval configuration** | Letting users set the refresh interval (currently hardcoded 10s). Adds UI complexity and edge cases (too-fast intervals overwhelming Modbus). | Keep 10s interval. The interval is bounded by Modbus read time anyway (a full section read takes 3-15s depending on register count). Faster intervals just queue up reads. |
+| **Disconnect confirmation dialog** | Prompting "Are you sure?" before disconnecting. Adds friction to a diagnostic workflow where connect/disconnect cycles are frequent. | Disconnect immediately on button click. The "immediate disconnect" feature already makes this feel responsive and intentional. |
 
 ## Feature Dependencies
 
 ```
-Connection Management
+Timing enforcement (fix read delay burst)
   |
-  +---> System Identification (needs active connection)
+  +---> Register read retry (retry logic depends on correct inter-read timing)
   |
-  +---> Real-time Power Overview (needs active connection)
-  |      |
-  |      +---> Grid Parameters (subset of power overview registers)
-  |      +---> PV Input Display (separate register block)
-  |      +---> EPS Status (separate register block)
-  |
-  +---> Battery Status Overview (needs active connection)
-  |      |
-  |      +---> Battery Topology Visualization (needs online bitmap + config)
-  |      |      |
-  |      |      +---> Deep Battery Pack Drill-down (needs topology + BMS_Inquire write)
-  |      |             |
-  |      |             +---> Cell Voltage Spread Analysis (needs pack drill-down data)
-  |      |             +---> BMS Protection/Alarm/Fault Decoding (needs pack drill-down data)
-  |      |
-  |      +---> Battery Cluster Overview (separate register block, independent of pack drill-down)
-  |
-  +---> Error/Fault Display (needs active connection)
-  |      |
-  |      +---> System Fault Register Decoding (needs fault lookup table)
-  |      +---> Historical Event Log (needs fault lookup table + event registers)
-  |
-  +---> Electricity Statistics (needs active connection, independent section)
-  |
-  +---> Auto-refresh Toggle (needs WebSocket infrastructure)
+  +---> Browser-only auto-refresh (refresh trigger must respect timing)
          |
-         +---> Lazy Loading by Section (determines WHICH registers auto-refresh reads)
+         +---> Stale value persistence (values must persist across refresh cycles)
 
-Configurable Topology ---> Battery Topology Visualization (determines hierarchy)
-                     ---> PV Input Display (determines channel count)
+Immediate disconnect (context cancellation)
+  |
+  +---> Browser-only auto-refresh (browser must detect disconnect and stop timer)
+  |
+  +---> Pack drill-down streaming (streaming reads must be cancellable)
+
+Parameter tooltips (standalone, no dependencies on other v1.2 features)
+
+Battery pack UI reorder (standalone, no dependencies on other v1.2 features)
+
+Pack drill-down streaming
+  |
+  +---> Battery pack UI reorder (reorder applies to the new streaming layout)
+  |
+  +---> Stale value persistence (pack values need stale handling like other sections)
 ```
 
-## MVP Recommendation
+### Critical Path
 
-Build these first, in this order:
+```
+1. Timing enforcement (unblocks correct retry behavior)
+2. Immediate disconnect (architectural: context cancellation plumbing)
+3. Register read retry (builds on timing + cancellation)
+4. Browser-only auto-refresh (removes backend timers, simplifies architecture)
+5. Stale value persistence (builds on streaming, works with new refresh model)
+6. Pack drill-down streaming (converts pack reads to streaming pattern)
+7. Battery pack UI reorder (trivial once pack streaming is in place)
+8. Parameter tooltips (independent, can go anywhere in the sequence)
+```
 
-1. **Connection management** -- without this, nothing works
-2. **System identification** -- immediate proof the connection works, shows inverter SN
-3. **Sectioned navigation + lazy loading** -- architectural foundation; adding sections later is easy if the skeleton exists
-4. **Real-time power overview** (grid + PV + battery + load) -- the core dashboard
-5. **Auto-refresh via WebSocket** -- transforms from manual polling to live monitoring
-6. **Battery status overview** -- table stakes for a hybrid inverter tool
-7. **Error/fault display with decoding** -- safety-critical; users must see active faults
-8. **Deep battery pack drill-down** -- THE differentiator. Cell voltages, temperatures, per-pack status.
+## Expected UX Behaviors (SCADA/Monitoring Conventions)
 
-**Defer to later phases:**
-- **Electricity statistics**: useful but not diagnostic-critical. Simple to add once sections exist.
-- **Historical event log**: valuable but requires building the full fault ID lookup table (300+ codes). Can share the table with fault display once both are built.
-- **Battery cluster overview**: depends on BDU being online (failed in testing with current hardware). Implement when hardware is available for testing.
-- **Internal diagnostics**: niche, only useful for advanced troubleshooting. Low effort to add but low priority.
-- **Confluence/string current monitoring**: only relevant for large PV arrays. Low priority for typical 2-channel HYD setups.
+### Stale Data Display
+
+**Industry convention (ISA-101, Ignition SCADA, Grafana):**
+- Never blank a value that was previously good. The last known value is always more useful than an em-dash.
+- Ignition uses three quality overlay types: Pending (write in progress), Unknown/Uncertain (stale), and Error (bad). Each has small and large visual variants.
+- Stale values should be visually distinct but readable. Reduced opacity (0.5-0.6) is the standard approach -- the value is visible but clearly "aged."
+- A timestamp of the last successful read should be available (already partially implemented via `section_complete` timestamp).
+- FlowFuse warns: "your polling stack fills in the gap by returning the last successfully read value, making the problem invisible until someone notices the data has stopped changing." The dimmed visual is critical to prevent this invisibility.
+
+**Recommended implementation:**
+- On error: keep previous text, add `--stale` class (opacity: 0.5, italic or lighter font-weight).
+- On success: replace text, remove `--stale` class, flash green briefly.
+- On section load (no prior value): show em-dash skeleton with `--pending` class.
+- Include last-good-read timestamp in tooltip or section footer.
+
+### Abort/Disconnect Semantics
+
+**Industry convention:**
+- Disconnect must be immediate (sub-second UI response). Operators in industrial settings expect control actions to take effect within 1-2 seconds.
+- In-progress operations should be cancelled, not completed-then-disconnected.
+- Go pattern: `context.WithCancel` + `conn.SetReadDeadline(time.Now())` to interrupt blocking TCP reads.
+- After disconnect: all values become stale (dimmed). Connection status indicator changes immediately. No auto-reconnect unless explicitly triggered.
+
+**Recommended implementation:**
+- Hub creates a per-connection context (child of hub context) that is cancelled on disconnect.
+- Broker's `executeDisconnect` closes the TCP connection (already done), which causes any blocking `conn.Read` to return immediately with an error.
+- Streaming goroutines check `h.ctx.Err()` between registers (already done) AND the broker's read returns error when connection is closed mid-read.
+- Frontend: on `connection_state: disconnected`, dim all displayed values, stop browser-side auto-refresh timer, update button to "Connect".
+
+### Retry Strategy
+
+**Industry convention (FlowFuse Modbus best practices, SCADA field guide):**
+- 1-2 retries per register is the standard. "Three retries at a 250ms timeout means a single unresponsive device costs you 1 full second per poll cycle."
+- Retries should be transparent to the user -- no retry indicator unless all attempts fail.
+- Failed registers should not block the rest of the section read. "Report the error for that specific tag while continuing to deliver good data for the others."
+- Distinguish between transient errors (timeout, connection drop) and permanent errors (illegal address). Transient errors warrant retry; permanent errors should not be retried aggressively.
+
+**Recommended implementation:**
+- Broker: 2 attempts (already implemented in `executeRead`).
+- Streaming layer: on error from `ReadRegisters`, retry once more (3 total). If still failing, send `register_value` with error and move to next register.
+- Do not retry registers that return Modbus exception code 0x02 (illegal data address) -- these will never succeed. The existing `PackInfoProbes` (0x9104-0x9126) failure is this type.
+- Track retry count per register for logging but do not expose to UI. Show only success or final failure.
+
+### Register Metadata Tooltips
+
+**Industry convention (OPC UA, Ignition, Modbus diagnostic tools):**
+- OPC UA standardizes metadata: every data point has a structured address, data type, quality code, and timestamp.
+- Professional Modbus tools (Modbus Poll, ModRSsim2) always show register address in hex, raw value, and data type.
+- Diagnostic users expect to see "behind the formatted value" -- what register was read, what raw bytes came back, and how they were interpreted.
+
+**Recommended implementation:**
+- Extend `RegisterValueMessage` with: `addr` (hex string, e.g., "0x0484"), `raw` (hex bytes, e.g., "138A"), `count` (register count).
+- Frontend: add `title` attribute or `data-tooltip` with content: `"Register 0x0484 | Raw: 0x138A | U16 x0.01"`.
+- CSS tooltip positioning: above the value, appears on hover after 300ms delay, stays visible while hovering.
+- For multi-register values (ASCII, U32), show all raw register values: `"0x0445-0x044E | Raw: 534F 4641 5220..."`.
 
 ## Complexity Budget
 
-| Complexity | Feature Count | Key Risk |
-|------------|--------------|----------|
-| Low | 7 features | Straightforward register reads + display |
-| Medium | 8 features | WebSocket timing, section architecture, bitmap decoding, topology navigation |
-| High | 3 features | Pack drill-down (BMS_Inquire sequencing + pack switching delays), fault register decoding (300+ codes), system fault parsing (20 registers x 16 bits) |
+| Feature | Complexity | Effort Est. | Risk |
+|---------|------------|-------------|------|
+| Timing enforcement | Low | 1-2 hours | Low -- straightforward broker fix |
+| Register read retry | Low | 2-3 hours | Low -- adds retry loop in streaming functions |
+| Stale value persistence | Low | 2-3 hours | Low -- mostly CSS + frontend state management |
+| Parameter tooltips | Low | 3-4 hours | Low -- backend message extension + CSS tooltip |
+| Battery pack UI reorder | Low | 1 hour | Low -- reorder groups in build function |
+| Immediate disconnect | Medium | 4-6 hours | Medium -- context cancellation plumbing, must not break reconnect logic |
+| Browser-only auto-refresh | Medium | 6-8 hours | Medium -- removes backend timer system, introduces new frontend timer, must handle edge cases (section switch, reconnect, multiple tabs) |
+| Pack drill-down streaming | Medium | 6-8 hours | Medium -- write-settle-read sequence complicates streaming; must handle the batch pack_data -> streaming register_value message type change |
 
-The highest-risk feature is **deep battery pack drill-down** because it involves:
-- Write operation (0x9020) to select pack
-- 1-second settle time after pack switch
-- Sequential reads of multiple register blocks per pack
-- Iterating across all packs in a tower (up to 10)
-- Handling offline/hibernating packs gracefully
-- All while maintaining WebSocket responsiveness
+**Total estimated effort:** 25-35 hours across 8 features.
 
-This feature should be built carefully with explicit user-triggered pack selection (not auto-scan of all packs) to keep the UX responsive.
+**Highest risk:** Browser-only auto-refresh, because it replaces a working (if buggy) backend timer system with a fundamentally different architecture. Must handle: tab visibility (pause when hidden), WebSocket reconnect (restart timer), section switch (reset timer), disconnect (stop timer).
+
+**Lowest risk:** Battery pack UI reorder and timing enforcement -- both are targeted, isolated changes.
 
 ## Sources
 
-- Sofar_Inverter_MODBUS_V1.38_EN.pdf (V1.38, January 2025) -- complete register map, fault tables, protocol constraints
-- Existing main.go CLI tool (707 lines) -- verified register reads against real Sofar HYD hardware (2026-03-16)
-- Domain knowledge: SolarAssistant, SolarMan/SOFAR Cloud portal, Fronius SolarWeb, SMA Sunny Portal, Home Assistant solar integrations, sofar2mqtt community tool
-- Confidence: HIGH for all features (protocol-verified), MEDIUM for anti-features (opinion-based, informed by ecosystem patterns)
+- [Ignition SCADA Quality Codes and Overlays](https://www.docs.inductiveautomation.com/docs/8.1/platform/tags/quality-codes-and-overlays) -- Authoritative reference for stale/uncertain/bad quality visual indicators (HIGH confidence)
+- [FlowFuse: Most Modbus Polling Setups Are Wrong](https://flowfuse.com/blog/2026/04/modbus-polling-best-practices/) -- Retry count recommendations, stale data masking, timeout configuration (HIGH confidence)
+- [Modbus Troubleshooting in SCADA](https://scadaprotocols.com/modbus-troubleshooting-scada-guide/) -- Error categorization, retry logic, exception code handling (HIGH confidence)
+- [HMI Design Best Practices 2025](https://plcprogramming.io/blog/hmi-design-best-practices-complete-guide) -- ISA-101 high-performance HMI patterns, color conventions (MEDIUM confidence)
+- [Go Context Cancellation](https://www.willem.dev/articles/context-cancellation-explained/) -- Pattern for aborting in-progress TCP reads via context + SetReadDeadline (HIGH confidence)
+- [SolarAssistant Battery View](https://solar-assistant.io/help/dashboard/battery) -- Competitor reference for battery monitoring layout (MEDIUM confidence)
+- Existing codebase analysis: `internal/hub/hub_streaming.go`, `internal/broker/broker.go`, `web/static/app.js` -- Current implementation patterns (HIGH confidence)
