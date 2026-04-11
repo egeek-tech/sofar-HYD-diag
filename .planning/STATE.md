@@ -1,42 +1,40 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: UX Polish & Battery Pack Fix
+milestone: v1.2
+milestone_name: Reliability & UX Refinements
 status: planning
-stopped_at: Roadmap created for v1.1
-last_updated: "2026-04-11T21:51:44.176Z"
-last_activity: 2026-04-11
+stopped_at: Milestone v1.2 started — defining requirements
+last_updated: "2026-04-12"
+last_activity: 2026-04-12
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-11)
+See: .planning/PROJECT.md (updated 2026-04-12)
 
 **Core value:** Clear, real-time visibility into all Sofar HYD inverter parameters -- especially battery pack diagnostics -- through a reliable web interface
-**Current focus:** Milestone v1.1 — Phase 6: Battery Pack Access Fix
+**Current focus:** Milestone v1.2 — Defining requirements
 
 ## Current Position
 
-Phase: 07 of 7 (streaming display and configurable timing)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-04-11
-
-Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-12 — Milestone v1.2 started
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6 (v1.1)
+- Total plans completed: 0 (v1.2)
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -48,15 +46,16 @@ Decisions are logged in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None yet.
+- PackInfoProbes (0x9104-0x9126) returns illegal address on this BMS hardware
+- Pack drill-down values appear as batch instead of streaming
+- Read delay shows burst on section switch due to enforceInterReadDelay timing
 
 ### Blockers/Concerns
 
-- Battery pack access: only 2 of 20 packs showing as available -- needs investigation against old CLI tool behavior
-- Pack settle time may need to be longer than 1s for reliable reads
+None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-11T18:30:00.000Z
-Stopped at: Roadmap created for v1.1
+Last session: 2026-04-12
+Stopped at: Milestone v1.2 started — defining requirements
 Resume file: None

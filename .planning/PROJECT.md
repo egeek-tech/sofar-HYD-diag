@@ -102,6 +102,20 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
+## Current Milestone: v1.2 Reliability & UX Refinements
+
+**Goal:** Fix auto-refresh architecture, improve read reliability, and polish the diagnostic UI with better feedback and control.
+
+**Target features:**
+- Backend auto-refresh removed — browser-only refresh trigger, fixing sync state bugs
+- Immediate disconnect — abort in-progress Modbus reads on disconnect
+- Register read retry — automatically retry values that return errors
+- Stale value persistence — show previous values dimmed until refreshed
+- Parameter tooltips — hover to see register address and raw value
+- Battery pack UI reorder — balance state moved before temperature
+- Pack drill-down streaming — fix batch display, stream per-register like other sections
+- Timing enforcement — fix read delay burst on section switch
+
 ## Current State
 
 Shipped v1.1 with 9,334 LOC Go + vanilla HTML/JS/CSS.
@@ -114,4 +128,4 @@ Two milestones complete (v1.0 MVP + v1.1 UX Polish & Battery Pack Fix).
 - Read delay shows burst on section switch due to enforceInterReadDelay timing
 
 ---
-*Last updated: 2026-04-11 after v1.1 milestone*
+*Last updated: 2026-04-12 after v1.2 milestone start*
