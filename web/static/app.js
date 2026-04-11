@@ -13,6 +13,18 @@ var BAT_DEFAULT_INPUTS = 1;
 var BAT_DEFAULT_TOWERS = 2;
 var BAT_DEFAULT_PACKS = 10;
 
+// === Pack Detail View State (Phase 5) ===
+
+var packViewState = {
+    mode: 'overview',        // 'overview' or 'pack_detail'
+    selectedInput: 0,
+    selectedTower: 0,
+    selectedPack: 0,
+    topologyInputs: 1,
+    topologyTowers: 2,
+    topologyPacks: 10
+};
+
 // === DOM Helpers ===
 
 function $(sel) { return document.querySelector(sel); }
@@ -103,6 +115,8 @@ document.addEventListener('DOMContentLoaded', function () {
     App.ws.on('connection_state', handleConnectionState);
     App.ws.on('section_data', handleSectionData);
     App.ws.on('section_error', handleSectionError);
+    App.ws.on('pack_data', handlePackData);
+    App.ws.on('pack_error', handlePackError);
 
     // Connect WebSocket to server
     App.ws.connect();
@@ -117,6 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setupAutoRefreshToggle();
     initPVDropdown();
     initTopologyDropdowns();
+    initPackSelectors();
 });
 
 // === Connection Form (CONN-01, CONN-03) ===
@@ -282,10 +297,22 @@ function navigateToSection(section) {
 
     // Show/hide topology dropdowns based on active section (per UI-SPEC)
     var topoControls = $('#topology-controls');
+    var packControls = $('#pack-selector-controls');
     if (section === 'bms') {
+        // Reset pack view to overview mode when navigating to BMS
+        packViewState.mode = 'overview';
+        packViewState.selectedInput = 0;
+        packViewState.selectedTower = 0;
+        packViewState.selectedPack = 0;
+        // Sync topology values into packViewState
+        packViewState.topologyInputs = loadTopologyValue(BAT_INPUTS_KEY) || BAT_DEFAULT_INPUTS;
+        packViewState.topologyTowers = loadTopologyValue(BAT_TOWERS_KEY) || BAT_DEFAULT_TOWERS;
+        packViewState.topologyPacks = loadTopologyValue(BAT_PACKS_KEY) || BAT_DEFAULT_PACKS;
         topoControls.style.display = '';
+        if (packControls) packControls.style.display = 'none';
     } else {
         topoControls.style.display = 'none';
+        if (packControls) packControls.style.display = 'none';
     }
 
     // Show loading spinner
@@ -441,6 +468,9 @@ function handleConnectionState(msg) {
 
 function handleSectionData(msg) {
     if (msg.section !== App.activeSection) return;
+
+    // If we are in pack_detail mode for BMS, do not overwrite with overview data
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
 
     var body = $('#content-body');
     body.textContent = '';
@@ -887,6 +917,39 @@ function renderBitmapGroup(group) {
             var isOnline = (online >> p) & 1;
             cell.className = 'bitmap-cell ' + (isOnline ? 'bitmap-cell--online' : 'bitmap-cell--offline');
             cell.textContent = String(p + 1);
+            cell.style.cursor = 'pointer';
+
+            // Check if this cell is the currently selected pack
+            if (packViewState.mode === 'pack_detail') {
+                var cellInput = Math.floor(t / packViewState.topologyTowers) + 1;
+                var cellTower = (t % packViewState.topologyTowers) + 1;
+                var cellPack = p + 1;
+                if (cellInput === packViewState.selectedInput &&
+                    cellTower === packViewState.selectedTower &&
+                    cellPack === packViewState.selectedPack) {
+                    cell.className = 'bitmap-cell bitmap-cell--selected';
+                }
+            }
+
+            // Click and hover handlers via closure
+            (function(towerIdx, packIdx, cellOnline, cellEl) {
+                cellEl.addEventListener('click', function() {
+                    handleBitmapCellClick(towerIdx, packIdx, cellOnline);
+                });
+                cellEl.addEventListener('mouseenter', function() {
+                    if (cellEl.classList.contains('bitmap-cell--selected')) return;
+                    if (cellOnline) {
+                        cellEl.style.backgroundColor = 'var(--bitmap-hover, #2e7d32)';
+                    } else {
+                        cellEl.style.backgroundColor = '#9e9e9e';
+                    }
+                });
+                cellEl.addEventListener('mouseleave', function() {
+                    if (cellEl.classList.contains('bitmap-cell--selected')) return;
+                    cellEl.style.backgroundColor = '';
+                });
+            })(t, p, isOnline, cell);
+
             grid.appendChild(cell);
         }
         rowWrap.appendChild(grid);
@@ -972,4 +1035,588 @@ function renderProtectionGroup(group) {
     }
 
     return card;
+}
+
+// === Pack Detail Sub-View (Phase 5, BAT-07 through BAT-11) ===
+
+function handlePackData(msg) {
+    packViewState.mode = 'pack_detail';
+    packViewState.selectedInput = msg.input;
+    packViewState.selectedTower = msg.tower;
+    packViewState.selectedPack = msg.pack;
+
+    // Switch header controls to pack selectors
+    showPackSelectors();
+    syncPackSelectorValues();
+
+    renderPackDetail(msg);
+    triggerFlash('success');
+}
+
+function handlePackError(msg) {
+    packViewState.mode = 'pack_detail';
+    packViewState.selectedInput = msg.input;
+    packViewState.selectedTower = msg.tower;
+    packViewState.selectedPack = msg.pack;
+
+    // Switch header controls to pack selectors
+    showPackSelectors();
+    syncPackSelectorValues();
+
+    var body = $('#content-body');
+    body.textContent = '';
+
+    // Breadcrumb
+    body.appendChild(renderBreadcrumb(msg.input, msg.tower, msg.pack));
+
+    // Error message (D-03)
+    var errEl = document.createElement('div');
+    errEl.className = 'pack-error';
+    errEl.textContent = 'Failed to read pack data. Pack may be offline -- check BMS bitmap.';
+    body.appendChild(errEl);
+
+    triggerFlash('error');
+}
+
+function handleBitmapCellClick(towerIndex, packIndex, isOnline) {
+    if (!isOnline) {
+        showBitmapWarning('Pack ' + (packIndex + 1) + ' is offline -- check BMS bitmap');
+        return;
+    }
+    // Map tower index to input/tower based on topology
+    var input = Math.floor(towerIndex / packViewState.topologyTowers) + 1;
+    var tower = (towerIndex % packViewState.topologyTowers) + 1;
+    var pack = packIndex + 1;
+
+    sendSelectPack(input, tower, pack);
+}
+
+function showBitmapWarning(message) {
+    // Remove any existing warning
+    var existing = document.querySelector('.bitmap-warning');
+    if (existing) existing.parentNode.removeChild(existing);
+
+    // Find the bitmap group card to append warning below
+    var bitmapGroups = document.querySelectorAll('.bitmap-group');
+    if (bitmapGroups.length === 0) return;
+    var target = bitmapGroups[bitmapGroups.length - 1];
+
+    var warn = document.createElement('div');
+    warn.className = 'bitmap-warning';
+    warn.textContent = message;
+    target.appendChild(warn);
+
+    // Auto-remove after 3 seconds
+    setTimeout(function() {
+        if (warn.parentNode) warn.parentNode.removeChild(warn);
+    }, 3000);
+}
+
+function sendSelectPack(input, tower, pack) {
+    packViewState.selectedInput = input;
+    packViewState.selectedTower = tower;
+    packViewState.selectedPack = pack;
+
+    // Show loading state
+    showPackLoading();
+
+    // Switch header controls
+    showPackSelectors();
+    syncPackSelectorValues();
+
+    // Send WS message
+    var msg = {
+        type: 'select_pack',
+        section: 'bms',
+        input: input,
+        tower: tower,
+        pack: pack
+    };
+    if (App.ws && App.ws.ws && App.ws.ws.readyState === WebSocket.OPEN) {
+        App.ws.send(msg);
+    }
+}
+
+function showPackLoading() {
+    var body = $('#content-body');
+    body.textContent = '';
+
+    // Add breadcrumb even during loading
+    body.appendChild(renderBreadcrumb(
+        packViewState.selectedInput,
+        packViewState.selectedTower,
+        packViewState.selectedPack
+    ));
+
+    var loading = document.createElement('div');
+    loading.className = 'pack-loading';
+
+    var spinner = document.createElement('div');
+    spinner.className = 'loading__spinner';
+    loading.appendChild(spinner);
+
+    var text = document.createElement('p');
+    text.className = 'loading__text';
+    text.textContent = 'Reading pack data...';
+    loading.appendChild(text);
+
+    body.appendChild(loading);
+}
+
+// === Pack Selector Dropdowns (D-07) ===
+
+function initPackSelectors() {
+    // Create pack selector controls container in content header
+    var headerControls = document.querySelector('.content__header-controls');
+    if (!headerControls) return;
+
+    var container = document.createElement('div');
+    container.id = 'pack-selector-controls';
+    container.className = 'topology-controls';
+    container.style.display = 'none';
+
+    // Input dropdown
+    var inputLabel = document.createElement('span');
+    inputLabel.className = 'topology-label';
+    inputLabel.textContent = 'Input:';
+    container.appendChild(inputLabel);
+
+    var inputSel = document.createElement('select');
+    inputSel.id = 'pack-input-select';
+    inputSel.className = 'topology-select';
+    container.appendChild(inputSel);
+
+    // Tower dropdown
+    var towerLabel = document.createElement('span');
+    towerLabel.className = 'topology-label';
+    towerLabel.textContent = 'Tower:';
+    container.appendChild(towerLabel);
+
+    var towerSel = document.createElement('select');
+    towerSel.id = 'pack-tower-select';
+    towerSel.className = 'topology-select';
+    container.appendChild(towerSel);
+
+    // Pack dropdown
+    var packLabel = document.createElement('span');
+    packLabel.className = 'topology-label';
+    packLabel.textContent = 'Pack:';
+    container.appendChild(packLabel);
+
+    var packSel = document.createElement('select');
+    packSel.id = 'pack-pack-select';
+    packSel.className = 'topology-select';
+    container.appendChild(packSel);
+
+    // Insert before auto-refresh button
+    var autoBtn = $('#btn-auto-refresh');
+    headerControls.insertBefore(container, autoBtn);
+
+    // On change: select new pack
+    inputSel.addEventListener('change', onPackSelectorChange);
+    towerSel.addEventListener('change', onPackSelectorChange);
+    packSel.addEventListener('change', onPackSelectorChange);
+}
+
+function populatePackSelectorOptions() {
+    var inputSel = $('#pack-input-select');
+    var towerSel = $('#pack-tower-select');
+    var packSel = $('#pack-pack-select');
+    if (!inputSel || !towerSel || !packSel) return;
+
+    // Clear existing options
+    inputSel.textContent = '';
+    towerSel.textContent = '';
+    packSel.textContent = '';
+
+    for (var i = 1; i <= packViewState.topologyInputs; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = String(i);
+        inputSel.appendChild(opt);
+    }
+    for (var t = 1; t <= packViewState.topologyTowers; t++) {
+        var opt = document.createElement('option');
+        opt.value = String(t);
+        opt.textContent = String(t);
+        towerSel.appendChild(opt);
+    }
+    for (var p = 1; p <= packViewState.topologyPacks; p++) {
+        var opt = document.createElement('option');
+        opt.value = String(p);
+        opt.textContent = String(p);
+        packSel.appendChild(opt);
+    }
+}
+
+function syncPackSelectorValues() {
+    populatePackSelectorOptions();
+    var inputSel = $('#pack-input-select');
+    var towerSel = $('#pack-tower-select');
+    var packSel = $('#pack-pack-select');
+    if (!inputSel) return;
+
+    inputSel.value = String(packViewState.selectedInput);
+    towerSel.value = String(packViewState.selectedTower);
+    packSel.value = String(packViewState.selectedPack);
+}
+
+function onPackSelectorChange() {
+    var input = parseInt($('#pack-input-select').value, 10);
+    var tower = parseInt($('#pack-tower-select').value, 10);
+    var pack = parseInt($('#pack-pack-select').value, 10);
+    sendSelectPack(input, tower, pack);
+}
+
+function showPackSelectors() {
+    var topoControls = $('#topology-controls');
+    var packControls = $('#pack-selector-controls');
+    if (topoControls) topoControls.style.display = 'none';
+    if (packControls) packControls.style.display = '';
+}
+
+function showTopologyDropdowns() {
+    var topoControls = $('#topology-controls');
+    var packControls = $('#pack-selector-controls');
+    if (topoControls) topoControls.style.display = '';
+    if (packControls) packControls.style.display = 'none';
+}
+
+// === Breadcrumb Navigation (D-05) ===
+
+function renderBreadcrumb(input, tower, pack) {
+    var bar = document.createElement('div');
+    bar.className = 'breadcrumb-bar';
+
+    // Left side: breadcrumb segments
+    var segments = document.createElement('div');
+    segments.className = 'breadcrumb-segments';
+
+    // "Battery" segment - clickable, navigates to Battery section
+    var batteryLink = document.createElement('span');
+    batteryLink.className = 'breadcrumb-link';
+    batteryLink.textContent = 'Battery';
+    batteryLink.addEventListener('click', function() { navigateToSection('battery'); });
+    segments.appendChild(batteryLink);
+
+    appendBreadcrumbSeparator(segments);
+
+    // "Input N" segment - clickable, returns to BMS overview
+    var inputLink = document.createElement('span');
+    inputLink.className = 'breadcrumb-link';
+    inputLink.textContent = 'Input ' + input;
+    inputLink.addEventListener('click', function() { returnToBMSOverview(); });
+    segments.appendChild(inputLink);
+
+    appendBreadcrumbSeparator(segments);
+
+    // "Tower M" segment - clickable, returns to BMS overview
+    var towerLink = document.createElement('span');
+    towerLink.className = 'breadcrumb-link';
+    towerLink.textContent = 'Tower ' + tower;
+    towerLink.addEventListener('click', function() { returnToBMSOverview(); });
+    segments.appendChild(towerLink);
+
+    appendBreadcrumbSeparator(segments);
+
+    // "Pack P" segment - current location, not clickable
+    var packText = document.createElement('span');
+    packText.className = 'breadcrumb-current';
+    packText.textContent = 'Pack ' + pack;
+    segments.appendChild(packText);
+
+    bar.appendChild(segments);
+
+    // Right side: "Back to BMS" button
+    var backBtn = document.createElement('span');
+    backBtn.className = 'breadcrumb-back';
+    backBtn.textContent = 'Back to BMS';
+    backBtn.addEventListener('click', function() { returnToBMSOverview(); });
+    bar.appendChild(backBtn);
+
+    return bar;
+}
+
+function appendBreadcrumbSeparator(parent) {
+    var sep = document.createElement('span');
+    sep.className = 'breadcrumb-separator';
+    sep.textContent = '>';
+    parent.appendChild(sep);
+}
+
+function returnToBMSOverview() {
+    packViewState.mode = 'overview';
+    packViewState.selectedInput = 0;
+    packViewState.selectedTower = 0;
+    packViewState.selectedPack = 0;
+    // Toggle dropdowns
+    showTopologyDropdowns();
+    // Re-subscribe to BMS to get overview data
+    navigateToSection('bms');
+}
+
+// === Pack Detail Renderer (D-06) ===
+
+function renderPackDetail(msg) {
+    var body = $('#content-body');
+    body.textContent = '';
+
+    // Breadcrumb bar
+    body.appendChild(renderBreadcrumb(msg.input, msg.tower, msg.pack));
+
+    // Render each group
+    var groups = msg.groups || [];
+    for (var i = 0; i < groups.length; i++) {
+        var group = groups[i];
+
+        if (group.type === 'cell_grid') {
+            body.appendChild(renderCellVoltageGrid(group));
+        } else if (group.type === 'pack_status') {
+            body.appendChild(renderPackStatusCard(group));
+        } else if (group.type === 'balance') {
+            body.appendChild(renderBalanceState(group));
+        } else if (group.temp_raw && group.temp_raw.length > 0) {
+            body.appendChild(renderPackTemperatures(group));
+        } else {
+            body.appendChild(renderGroupCard(group));
+        }
+    }
+
+    // Timestamp
+    if (msg.timestamp) {
+        var ts = $('#content-timestamp');
+        var d = new Date(msg.timestamp);
+        ts.textContent = 'Last updated: ' + d.toLocaleTimeString();
+        ts.style.display = '';
+    }
+}
+
+// === Cell Voltage Grid (D-08, D-09, D-10, D-11) ===
+
+function renderCellVoltageGrid(group) {
+    var container = document.createElement('div');
+    container.className = 'group-card';
+
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    container.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    container.appendChild(sep);
+
+    var cells = group.cells || [];
+    if (cells.length === 0) {
+        var empty = document.createElement('div');
+        empty.textContent = 'No cell voltage data';
+        container.appendChild(empty);
+        return container;
+    }
+
+    // Compute statistics
+    var sum = 0;
+    for (var i = 0; i < cells.length; i++) { sum += cells[i]; }
+    var avg = sum / cells.length;
+
+    var minVal = group.min_cell || cells[0];
+    var maxVal = group.max_cell || cells[0];
+    var minIdx = group.min_cell_index || 1;
+    var maxIdx = group.max_cell_index || 1;
+    var spread = maxVal - minVal;
+
+    // Summary row (D-10)
+    var summary = document.createElement('div');
+    summary.className = 'cell-summary';
+
+    var items = [
+        { label: 'Min', value: (minVal / 1000).toFixed(3) + 'V (Cell ' + minIdx + ')' },
+        { label: 'Max', value: (maxVal / 1000).toFixed(3) + 'V (Cell ' + maxIdx + ')' },
+        { label: 'Spread', value: spread + 'mV', cls: spread <= 30 ? 'spread--ok' : spread <= 50 ? 'spread--warn' : 'spread--danger' },
+        { label: 'Avg', value: (avg / 1000).toFixed(3) + 'V' }
+    ];
+
+    for (var s = 0; s < items.length; s++) {
+        var item = document.createElement('div');
+        item.className = 'cell-summary-item';
+        var lbl = document.createElement('span');
+        lbl.className = 'cell-summary-label';
+        lbl.textContent = items[s].label;
+        item.appendChild(lbl);
+        var val = document.createElement('span');
+        val.className = 'cell-summary-value';
+        if (items[s].cls) val.className += ' ' + items[s].cls;
+        val.textContent = items[s].value;
+        item.appendChild(val);
+        summary.appendChild(item);
+    }
+    container.appendChild(summary);
+
+    // Cell voltage grid (D-08, D-09)
+    var grid = document.createElement('div');
+    grid.className = 'cell-grid';
+
+    for (var c = 0; c < cells.length; c++) {
+        var cellDiv = document.createElement('div');
+        var dev = Math.abs(cells[c] - avg);
+        var cls = 'cell-voltage';
+        if (dev <= 5) cls += ' cell--good';
+        else if (dev <= 20) cls += ' cell--warn';
+        else cls += ' cell--danger';
+        cellDiv.className = cls;
+
+        var numSpan = document.createElement('span');
+        numSpan.className = 'cell-number';
+        numSpan.textContent = 'Cell ' + (c + 1);
+        cellDiv.appendChild(numSpan);
+
+        var voltSpan = document.createElement('span');
+        voltSpan.className = 'cell-value';
+        voltSpan.textContent = (cells[c] / 1000).toFixed(3) + 'V';
+        cellDiv.appendChild(voltSpan);
+
+        grid.appendChild(cellDiv);
+    }
+    container.appendChild(grid);
+
+    return container;
+}
+
+// === Pack Temperatures (D-16, D-17, D-18) ===
+
+function renderPackTemperatures(group) {
+    // Render standard group card first
+    var card = renderGroupCard(group);
+
+    // Apply temperature color coding to value elements based on temp_raw
+    var tempRaw = group.temp_raw || [];
+    var valueEls = card.querySelectorAll('.data-row-h__value');
+
+    for (var i = 0; i < Math.min(tempRaw.length, valueEls.length); i++) {
+        var tempC = tempRaw[i] / 10.0;
+        if (tempC > 55 || tempC < -10) {
+            valueEls[i].classList.add('temp--critical');
+        } else if ((tempC > 45 && tempC <= 55) || (tempC < 0 && tempC >= -10)) {
+            valueEls[i].classList.add('temp--elevated');
+        } else {
+            valueEls[i].classList.add('temp--normal');
+        }
+    }
+
+    return card;
+}
+
+// === Pack Status Card (D-12, D-13) ===
+
+function renderPackStatusCard(group) {
+    var card = document.createElement('div');
+
+    var alarm = group.alarm || 0;
+    var protection = group.protection || 0;
+    var fault = group.fault || 0;
+    var alarm2 = group.alarm2 || 0;
+    var protection2 = group.protection2 || 0;
+    var fault2 = group.fault2 || 0;
+    var decoded = group.decoded || [];
+
+    var allClear = (alarm === 0 && protection === 0 && fault === 0 &&
+                    alarm2 === 0 && protection2 === 0 && fault2 === 0);
+
+    if (allClear) {
+        card.className = 'fault-card fault-card--clear';
+
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u2713 Pack Status';
+        card.appendChild(heading);
+
+        var clearText = document.createElement('p');
+        clearText.className = 'fault-card__clear-text';
+        clearText.textContent = 'All clear -- no alarms, protections, or faults';
+        card.appendChild(clearText);
+    } else {
+        card.className = 'fault-card fault-card--active';
+
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u26A0 Pack Status';
+        card.appendChild(heading);
+
+        var list = document.createElement('div');
+        list.className = 'fault-card__list';
+
+        if (decoded.length > 0) {
+            for (var i = 0; i < decoded.length; i++) {
+                var item = document.createElement('div');
+                item.className = 'fault-card__item';
+                var text = decoded[i].toLowerCase();
+                if (text.indexOf('protection') !== -1 || text.indexOf('fault') !== -1) {
+                    item.style.color = '#c62828';
+                }
+                item.textContent = '\u2022 ' + decoded[i];
+                list.appendChild(item);
+            }
+        } else {
+            // Hex fallback if decoded is empty but bitmaps non-zero
+            var hexItems = [];
+            if (alarm !== 0) hexItems.push('Alarm: 0x' + alarm.toString(16).toUpperCase().padStart(4, '0'));
+            if (protection !== 0) hexItems.push('Protection: 0x' + protection.toString(16).toUpperCase().padStart(4, '0'));
+            if (fault !== 0) hexItems.push('Fault: 0x' + fault.toString(16).toUpperCase().padStart(4, '0'));
+            if (alarm2 !== 0) hexItems.push('Alarm 2: 0x' + alarm2.toString(16).toUpperCase().padStart(4, '0'));
+            if (protection2 !== 0) hexItems.push('Protection 2: 0x' + protection2.toString(16).toUpperCase().padStart(4, '0'));
+            if (fault2 !== 0) hexItems.push('Fault 2: 0x' + fault2.toString(16).toUpperCase().padStart(4, '0'));
+            for (var h = 0; h < hexItems.length; h++) {
+                var hexItem = document.createElement('div');
+                hexItem.className = 'fault-card__item';
+                hexItem.textContent = '\u2022 ' + hexItems[h];
+                list.appendChild(hexItem);
+            }
+        }
+        card.appendChild(list);
+    }
+
+    return card;
+}
+
+// === Balance State (D-14) ===
+
+function renderBalanceState(group) {
+    var container = document.createElement('div');
+    container.className = 'group-card';
+
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    container.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    container.appendChild(sep);
+
+    var bitmap = group.balance_bitmap || 0;
+    if (bitmap === 0) {
+        var balanced = document.createElement('div');
+        balanced.className = 'balance-status balance-status--ok';
+        balanced.textContent = 'Balanced';
+        container.appendChild(balanced);
+    } else {
+        var status = document.createElement('div');
+        status.className = 'balance-status balance-status--active';
+        status.textContent = 'Balancing Active';
+        container.appendChild(status);
+
+        var pills = document.createElement('div');
+        pills.className = 'balance-pills';
+        for (var i = 0; i < 24; i++) {
+            if (bitmap & (1 << i)) {
+                var pill = document.createElement('span');
+                pill.className = 'balance-pill';
+                pill.textContent = 'Cell ' + (i + 1);
+                pills.appendChild(pill);
+            }
+        }
+        container.appendChild(pills);
+    }
+
+    return container;
 }
