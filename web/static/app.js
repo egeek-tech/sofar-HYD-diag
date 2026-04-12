@@ -1095,7 +1095,20 @@ function hideTooltip() {
 
 function handleSectionSchema(msg) {
     if (msg.section !== App.activeSection) return;
-    // Don't replace pack_detail view with schema
+
+    // Pack schema detection: pack_context present means pack drill-down
+    if (msg.pack_context) {
+        packViewState.mode = 'pack_detail';
+        packViewState.selectedInput = msg.pack_context.input;
+        packViewState.selectedTower = msg.pack_context.tower;
+        packViewState.selectedPack = msg.pack_context.pack;
+        showPackSelectors();
+        syncPackSelectorValues();
+        renderPackSkeleton(msg);
+        return;
+    }
+
+    // BMS overview guard: if in pack_detail mode and no pack_context, ignore overview schema
     if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
 
     var body = $('#content-body');
@@ -1180,10 +1193,678 @@ function renderSkeletonCard(group) {
     return card;
 }
 
+// === Phase 11: Pack Skeleton Renderers and Streaming Value Handlers ===
+
+// Track arrived cell values for progressive summary computation (D-08, D-09)
+var packCellState = {
+    values: {},    // cell name -> millivolt value (integer)
+    count: 0,
+    totalCells: 16
+};
+
+function resetPackCellState() {
+    packCellState.values = {};
+    packCellState.count = 0;
+}
+
+// Track temperature values for progressive summary computation
+var packTempState = {
+    values: {},  // probe name -> raw value (x10 integer)
+    count: 0
+};
+
+function resetPackTempState() {
+    packTempState.values = {};
+    packTempState.count = 0;
+}
+
+// Track pack status registers for progressive rendering
+var packStatusState = {
+    registers: {},  // register name -> raw int value
+    count: 0
+};
+
+function resetPackStatusState() {
+    packStatusState.registers = {};
+    packStatusState.count = 0;
+}
+
+function renderPackSkeleton(msg) {
+    // Reset all progressive state trackers
+    resetPackCellState();
+    resetPackTempState();
+    resetPackStatusState();
+
+    var body = $('#content-body');
+    body.textContent = '';
+
+    // Breadcrumb
+    body.appendChild(renderBreadcrumb(msg.pack_context.input, msg.pack_context.tower, msg.pack_context.pack));
+
+    var groups = msg.groups || [];
+    for (var i = 0; i < groups.length; i++) {
+        var group = groups[i];
+
+        if (group.type === 'cell_grid') {
+            body.appendChild(renderCellGridSkeleton(group));
+        } else if (group.type === 'balance') {
+            // D-17: Balance renders inside the cell voltage card, not as standalone
+            var cellCard = body.querySelector('.cell-grid-card');
+            if (cellCard) {
+                cellCard.appendChild(renderBalanceSkeleton(group));
+            } else {
+                // Fallback: render as standalone card if cell card not found
+                body.appendChild(renderBalanceSkeletonStandalone(group));
+            }
+        } else if (group.type === 'pack_status') {
+            body.appendChild(renderPackStatusSkeleton(group));
+        } else if (group.name === 'Temperatures') {
+            // D-14: Temperatures use 4-column grid layout matching cell voltages
+            body.appendChild(renderTempGridSkeleton(group));
+        } else {
+            // Standard group (Pack Info)
+            body.appendChild(renderSkeletonCard(group));
+        }
+    }
+
+    // Phase 10: Restore cached values after skeleton DOM is built (DISP-02)
+    var cacheKey = getCacheKey();
+    restoreFromCache(cacheKey);
+}
+
+function renderCellGridSkeleton(group) {
+    var container = document.createElement('div');
+    container.className = 'group-card cell-grid-card';
+
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    container.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    container.appendChild(sep);
+
+    // Summary row with pending placeholders
+    var summary = document.createElement('div');
+    summary.className = 'cell-summary';
+    summary.setAttribute('data-pack-summary', 'cells');
+
+    var summaryItems = ['Min', 'Max', 'Spread', 'Avg'];
+    for (var s = 0; s < summaryItems.length; s++) {
+        var item = document.createElement('div');
+        item.className = 'cell-summary-item';
+        var lbl = document.createElement('span');
+        lbl.className = 'cell-summary-label';
+        lbl.textContent = summaryItems[s];
+        item.appendChild(lbl);
+        var val = document.createElement('span');
+        val.className = 'cell-summary-value data-row-h__value--pending';
+        val.textContent = '\u2014';
+        val.setAttribute('data-cell-summary', summaryItems[s].toLowerCase());
+        item.appendChild(val);
+        summary.appendChild(item);
+    }
+    container.appendChild(summary);
+
+    // Cell grid with 16 cells
+    var cellCount = group.cell_count || 16;
+    var grid = document.createElement('div');
+    grid.className = 'cell-grid';
+    grid.setAttribute('data-pack-grid', 'cells');
+
+    for (var c = 0; c < cellCount; c++) {
+        var cellDiv = document.createElement('div');
+        cellDiv.className = 'cell-voltage';
+
+        var numSpan = document.createElement('span');
+        numSpan.className = 'cell-number';
+        numSpan.textContent = 'Cell ' + (c + 1);
+        cellDiv.appendChild(numSpan);
+
+        var voltSpan = document.createElement('span');
+        voltSpan.className = 'cell-value data-row-h__value data-row-h__value--pending';
+        voltSpan.textContent = '\u2014';
+        voltSpan.setAttribute('data-register', 'Cell Voltages::Cell ' + (c + 1));
+        cellDiv.appendChild(voltSpan);
+
+        grid.appendChild(cellDiv);
+    }
+    container.appendChild(grid);
+
+    return container;
+}
+
+function renderBalanceSkeleton(group) {
+    // Balance renders as a sub-section within the cell card, not a separate card (D-17)
+    var balanceSection = document.createElement('div');
+    balanceSection.className = 'balance-inline';
+
+    var balanceSep = document.createElement('hr');
+    balanceSep.className = 'group-card__separator';
+    balanceSection.appendChild(balanceSep);
+
+    var balanceLabel = document.createElement('h4');
+    balanceLabel.className = 'group-card__name';
+    balanceLabel.style.fontSize = '14px';
+    balanceLabel.style.marginTop = '8px';
+    balanceLabel.textContent = 'Balance State';
+    balanceSection.appendChild(balanceLabel);
+
+    var balanceValue = document.createElement('div');
+    balanceValue.className = 'balance-status data-row-h__value--pending';
+    balanceValue.textContent = '\u2014';
+    balanceValue.setAttribute('data-register', 'Balance State::Balance State');
+    balanceValue.setAttribute('data-pack-balance', 'true');
+    balanceSection.appendChild(balanceValue);
+
+    return balanceSection;
+}
+
+function renderBalanceSkeletonStandalone(group) {
+    // Fallback: standalone balance card (if cell card not found)
+    var container = document.createElement('div');
+    container.className = 'group-card';
+
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    container.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    container.appendChild(sep);
+
+    var balanceValue = document.createElement('div');
+    balanceValue.className = 'balance-status data-row-h__value--pending';
+    balanceValue.textContent = '\u2014';
+    balanceValue.setAttribute('data-register', 'Balance State::Balance State');
+    balanceValue.setAttribute('data-pack-balance', 'true');
+    container.appendChild(balanceValue);
+
+    return container;
+}
+
+function renderPackStatusSkeleton(group) {
+    var card = document.createElement('div');
+    card.className = 'fault-card fault-card--clear';
+    card.setAttribute('data-pack-status', 'true');
+
+    var heading = document.createElement('h3');
+    heading.className = 'fault-card__heading';
+    heading.textContent = '\u2713 Pack Status';
+    card.appendChild(heading);
+
+    var clearText = document.createElement('p');
+    clearText.className = 'fault-card__clear-text data-row-h__value--pending';
+    clearText.textContent = '\u2014';
+    card.appendChild(clearText);
+
+    return card;
+}
+
+function renderTempGridSkeleton(group) {
+    var container = document.createElement('div');
+    container.className = 'group-card';
+
+    var heading = document.createElement('h3');
+    heading.className = 'group-card__name';
+    heading.textContent = group.name;
+    container.appendChild(heading);
+
+    var sep = document.createElement('hr');
+    sep.className = 'group-card__separator';
+    container.appendChild(sep);
+
+    // Summary row (D-15: Min/Max/Spread from Temp 1-8, excluding zeros and Env/MOS)
+    var summary = document.createElement('div');
+    summary.className = 'cell-summary';
+    summary.setAttribute('data-pack-summary', 'temps');
+
+    var summaryItems = ['Min', 'Max', 'Spread'];
+    for (var s = 0; s < summaryItems.length; s++) {
+        var item = document.createElement('div');
+        item.className = 'cell-summary-item';
+        var lbl = document.createElement('span');
+        lbl.className = 'cell-summary-label';
+        lbl.textContent = summaryItems[s];
+        item.appendChild(lbl);
+        var val = document.createElement('span');
+        val.className = 'cell-summary-value data-row-h__value--pending';
+        val.textContent = '\u2014';
+        val.setAttribute('data-temp-summary', summaryItems[s].toLowerCase());
+        item.appendChild(val);
+        summary.appendChild(item);
+    }
+    container.appendChild(summary);
+
+    // 4-column temperature grid (D-14)
+    var grid = document.createElement('div');
+    grid.className = 'cell-grid'; // Reuse cell-grid CSS for 4-column layout
+    grid.setAttribute('data-pack-grid', 'temps');
+
+    var registers = group.registers || [];
+    for (var i = 0; i < registers.length; i++) {
+        var tempDiv = document.createElement('div');
+        // Env Temp and MOS Temp get visually distinct styling
+        var isSpecial = (registers[i] === 'MOS Temp' || registers[i] === 'Env Temp');
+        tempDiv.className = 'cell-voltage' + (isSpecial ? ' temp-sensor--special' : '');
+        if (isSpecial) {
+            tempDiv.style.opacity = '0.8';
+            tempDiv.style.borderStyle = 'dashed';
+        }
+
+        var labelSpan = document.createElement('span');
+        labelSpan.className = 'cell-number';
+        labelSpan.textContent = registers[i];
+        tempDiv.appendChild(labelSpan);
+
+        var valSpan = document.createElement('span');
+        valSpan.className = 'cell-value data-row-h__value data-row-h__value--pending';
+        valSpan.textContent = '\u2014';
+        valSpan.setAttribute('data-register', group.name + '::' + registers[i]);
+        tempDiv.appendChild(valSpan);
+
+        grid.appendChild(tempDiv);
+    }
+    container.appendChild(grid);
+
+    return container;
+}
+
+// === Phase 11: Pack Register Value Handlers ===
+
+function handlePackRegisterValue(msg) {
+    if (msg.group === 'Cell Voltages') {
+        updateCellValue(msg);
+    } else if (msg.group === 'Balance State') {
+        updateBalanceValue(msg);
+    } else if (msg.group === 'Pack Status') {
+        updatePackStatusValue(msg);
+    } else if (msg.group === 'Temperatures') {
+        updateTemperatureValue(msg);
+    } else {
+        // Standard group (Pack Info) -- use standard register value update logic
+        updateStandardPackValue(msg);
+    }
+}
+
+function updateStandardPackValue(msg) {
+    var key = msg.group + '::' + msg.name;
+    var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
+    if (!el) return;
+
+    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var now = new Date();
+    var timeStr = now.toTimeString().slice(0, 8);
+
+    if (msg.error) {
+        el.classList.add('data-row-h__value--stale');
+        el.classList.remove('data-row-h__value--pending');
+        el.classList.add('data-row-h__value--fresh');
+    } else {
+        el.textContent = msg.value || '\u2014';
+        el.classList.remove('data-row-h__value--pending', 'data-row-h__value--stale');
+        el.classList.add('data-row-h__value--fresh');
+    }
+
+    el.setAttribute('data-register-addr', addrHex);
+    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    el.setAttribute('data-register-time', timeStr);
+
+    updateCache(key, {
+        value: msg.value || '',
+        registerAddr: addrHex,
+        rawValue: msg.raw_value || '',
+        timestamp: timeStr,
+        error: !!msg.error
+    });
+}
+
+function updateCellValue(msg) {
+    var key = msg.group + '::' + msg.name;
+    var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
+    if (!el) return;
+
+    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var now = new Date();
+    var timeStr = now.toTimeString().slice(0, 8);
+
+    if (msg.error) {
+        el.classList.add('data-row-h__value--stale');
+        el.classList.remove('data-row-h__value--pending');
+        el.classList.add('data-row-h__value--fresh');
+    } else {
+        el.textContent = msg.value || '\u2014';
+        el.classList.remove('data-row-h__value--pending', 'data-row-h__value--stale');
+        el.classList.add('data-row-h__value--fresh');
+
+        // Track cell value for progressive summary (D-08, D-09)
+        // Parse millivolt from raw_value (integer string)
+        if (msg.name.indexOf('Cell ') === 0 && msg.raw_value) {
+            var cellMv = parseInt(msg.raw_value, 10);
+            if (!isNaN(cellMv)) {
+                packCellState.values[msg.name] = cellMv;
+                packCellState.count = Object.keys(packCellState.values).length;
+
+                // D-08: Recompute summary progressively as each cell arrives
+                // D-09: Recompute average and recolor ALL received cells on every arrival
+                computeCellSummary();
+                applyCellDeviationColors();
+            }
+        }
+        // Max Cell Voltage and Min Cell Voltage are summary probes -- ignore for cell tracking
+    }
+
+    el.setAttribute('data-register-addr', addrHex);
+    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    el.setAttribute('data-register-time', timeStr);
+
+    updateCache(key, {
+        value: msg.value || '',
+        registerAddr: addrHex,
+        rawValue: msg.raw_value || '',
+        timestamp: timeStr,
+        error: !!msg.error
+    });
+}
+
+function computeCellSummary() {
+    var vals = packCellState.values;
+    var keys = Object.keys(vals);
+    if (keys.length === 0) return;
+
+    var sum = 0, min = Infinity, max = -Infinity, minIdx = 1, maxIdx = 1;
+    for (var i = 0; i < keys.length; i++) {
+        var cellNum = parseInt(keys[i].replace('Cell ', ''), 10);
+        var v = vals[keys[i]];
+        sum += v;
+        if (v > max) { max = v; maxIdx = cellNum; }
+        if (v < min) { min = v; minIdx = cellNum; }
+    }
+    var avg = sum / keys.length;
+    var spread = max - min;
+
+    // Update summary elements
+    var minEl = document.querySelector('[data-cell-summary="min"]');
+    var maxEl = document.querySelector('[data-cell-summary="max"]');
+    var spreadEl = document.querySelector('[data-cell-summary="spread"]');
+    var avgEl = document.querySelector('[data-cell-summary="avg"]');
+
+    if (minEl) {
+        minEl.textContent = (min / 1000).toFixed(3) + 'V (Cell ' + minIdx + ')';
+        minEl.classList.remove('data-row-h__value--pending');
+    }
+    if (maxEl) {
+        maxEl.textContent = (max / 1000).toFixed(3) + 'V (Cell ' + maxIdx + ')';
+        maxEl.classList.remove('data-row-h__value--pending');
+    }
+    if (spreadEl) {
+        spreadEl.textContent = spread + 'mV';
+        spreadEl.classList.remove('data-row-h__value--pending');
+        // Apply spread color class
+        spreadEl.classList.remove('spread--ok', 'spread--warn', 'spread--danger');
+        if (spread <= 30) spreadEl.classList.add('spread--ok');
+        else if (spread <= 50) spreadEl.classList.add('spread--warn');
+        else spreadEl.classList.add('spread--danger');
+    }
+    if (avgEl) {
+        avgEl.textContent = (avg / 1000).toFixed(3) + 'V';
+        avgEl.classList.remove('data-row-h__value--pending');
+    }
+}
+
+function applyCellDeviationColors() {
+    var vals = packCellState.values;
+    var keys = Object.keys(vals);
+    if (keys.length === 0) return;
+
+    var sum = 0;
+    for (var i = 0; i < keys.length; i++) sum += vals[keys[i]];
+    var avg = sum / keys.length;
+
+    // Apply deviation colors to each cell
+    for (var j = 0; j < keys.length; j++) {
+        var cellName = keys[j];
+        var v = vals[cellName];
+        var dev = Math.abs(v - avg);
+        var cellEl = document.querySelector('[data-register="' + CSS.escape('Cell Voltages::' + cellName) + '"]');
+        if (!cellEl || !cellEl.parentElement) continue;
+
+        var cellDiv = cellEl.parentElement; // the cell-voltage div
+        cellDiv.classList.remove('cell--good', 'cell--warn', 'cell--danger');
+        if (dev <= 5) cellDiv.classList.add('cell--good');
+        else if (dev <= 20) cellDiv.classList.add('cell--warn');
+        else cellDiv.classList.add('cell--danger');
+    }
+}
+
+function updateBalanceValue(msg) {
+    var el = document.querySelector('[data-pack-balance="true"]');
+    if (!el) return;
+
+    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var now = new Date();
+    var timeStr = now.toTimeString().slice(0, 8);
+
+    if (msg.error) {
+        el.classList.add('data-row-h__value--stale');
+        el.classList.remove('data-row-h__value--pending');
+        el.classList.add('data-row-h__value--fresh');
+    } else {
+        // Parse bitmap from raw_value
+        var bitmap = parseInt(msg.raw_value || '0', 10);
+
+        // Clear existing content
+        while (el.firstChild) el.removeChild(el.firstChild);
+
+        el.classList.remove('data-row-h__value--pending', 'data-row-h__value--stale',
+                            'balance-status--ok', 'balance-status--active');
+        el.classList.add('data-row-h__value--fresh');
+
+        if (bitmap === 0) {
+            el.className = 'balance-status balance-status--ok data-row-h__value--fresh';
+            el.textContent = 'Balanced';
+        } else {
+            el.className = 'balance-status balance-status--active data-row-h__value--fresh';
+
+            var statusText = document.createElement('span');
+            statusText.textContent = 'Balancing Active';
+            el.appendChild(statusText);
+
+            var pills = document.createElement('div');
+            pills.className = 'balance-pills';
+            for (var b = 0; b < 24; b++) {
+                if (bitmap & (1 << b)) {
+                    var pill = document.createElement('span');
+                    pill.className = 'balance-pill';
+                    pill.textContent = 'Cell ' + (b + 1);
+                    pills.appendChild(pill);
+                }
+            }
+            el.appendChild(pills);
+        }
+    }
+
+    el.setAttribute('data-register-addr', addrHex);
+    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    el.setAttribute('data-register-time', timeStr);
+
+    var key = 'Balance State::Balance State';
+    updateCache(key, {
+        value: msg.value || '',
+        registerAddr: addrHex,
+        rawValue: msg.raw_value || '',
+        timestamp: timeStr,
+        error: !!msg.error
+    });
+}
+
+function updateTemperatureValue(msg) {
+    // Use standard value update first
+    updateStandardPackValue(msg);
+
+    // Track temperature for summary and apply color coding
+    if (!msg.error && msg.raw_value) {
+        var rawVal = parseInt(msg.raw_value, 10);
+        if (!isNaN(rawVal)) {
+            packTempState.values[msg.name] = rawVal;
+            packTempState.count = Object.keys(packTempState.values).length;
+
+            // Apply temperature color coding to this value
+            var key = msg.group + '::' + msg.name;
+            var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
+            if (el) {
+                var tempC = rawVal / 10.0;
+                el.classList.remove('temp--normal', 'temp--elevated', 'temp--critical');
+                if (tempC > 55 || tempC < -10) {
+                    el.classList.add('temp--critical');
+                } else if ((tempC > 45 && tempC <= 55) || (tempC < 0 && tempC >= -10)) {
+                    el.classList.add('temp--elevated');
+                } else {
+                    el.classList.add('temp--normal');
+                }
+            }
+
+            // Progressive temperature summary computation
+            computeTempSummary();
+        }
+    }
+}
+
+function computeTempSummary() {
+    var vals = packTempState.values;
+    var min = Infinity, max = -Infinity;
+    var count = 0;
+
+    // D-15: Summary from Temp 1-8 only, excluding 0.00C readings
+    for (var i = 1; i <= 8; i++) {
+        var name = 'Temp ' + i;
+        if (vals[name] === undefined) continue;
+        var raw = vals[name]; // x10 integer
+        var tempC = raw / 10.0;
+        if (tempC === 0.0) continue; // exclude zero readings (sensor not connected)
+        if (tempC < min) min = tempC;
+        if (tempC > max) max = tempC;
+        count++;
+    }
+
+    if (count === 0) return;
+
+    var spread = max - min;
+
+    var minEl = document.querySelector('[data-temp-summary="min"]');
+    var maxEl = document.querySelector('[data-temp-summary="max"]');
+    var spreadEl = document.querySelector('[data-temp-summary="spread"]');
+
+    if (minEl) {
+        minEl.textContent = min.toFixed(1) + '\u00b0C';
+        minEl.classList.remove('data-row-h__value--pending');
+    }
+    if (maxEl) {
+        maxEl.textContent = max.toFixed(1) + '\u00b0C';
+        maxEl.classList.remove('data-row-h__value--pending');
+    }
+    if (spreadEl) {
+        spreadEl.textContent = spread.toFixed(1) + '\u00b0C';
+        spreadEl.classList.remove('data-row-h__value--pending');
+    }
+}
+
+function updatePackStatusValue(msg) {
+    var card = document.querySelector('[data-pack-status="true"]');
+    if (!card) return;
+
+    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var now = new Date();
+    var timeStr = now.toTimeString().slice(0, 8);
+
+    if (!msg.error && msg.raw_value) {
+        var rawInt = parseInt(msg.raw_value, 10);
+        packStatusState.registers[msg.name] = rawInt;
+        packStatusState.count = Object.keys(packStatusState.registers).length;
+
+        // After 3+ status registers arrive, render current state
+        // (3 = Alarm, Protection, Fault from RT block always present)
+        if (packStatusState.count >= 3) {
+            renderPackStatusFromState(card);
+        }
+    }
+
+    // Cache entry
+    var key = msg.group + '::' + msg.name;
+    updateCache(key, {
+        value: msg.value || '',
+        registerAddr: addrHex,
+        rawValue: msg.raw_value || '',
+        timestamp: timeStr,
+        error: !!msg.error
+    });
+}
+
+function renderPackStatusFromState(card) {
+    var regs = packStatusState.registers;
+    var alarm = regs['Alarm Status'] || 0;
+    var protection = regs['Protection Status'] || 0;
+    var fault = regs['Fault Status'] || 0;
+    var alarm2 = regs['Alarm Status 2'] || 0;
+    var protection2 = regs['Protection Status 2'] || 0;
+    var fault2 = regs['Fault Status 2'] || 0;
+
+    var allClear = (alarm === 0 && protection === 0 && fault === 0 &&
+                    alarm2 === 0 && protection2 === 0 && fault2 === 0);
+
+    // Clear existing card content
+    while (card.firstChild) card.removeChild(card.firstChild);
+    card.setAttribute('data-pack-status', 'true');
+
+    if (allClear) {
+        card.className = 'fault-card fault-card--clear';
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u2713 Pack Status';
+        card.appendChild(heading);
+
+        var clearText = document.createElement('p');
+        clearText.className = 'fault-card__clear-text';
+        clearText.textContent = 'All clear -- no alarms, protections, or faults';
+        card.appendChild(clearText);
+    } else {
+        card.className = 'fault-card fault-card--active';
+        var heading = document.createElement('h3');
+        heading.className = 'fault-card__heading';
+        heading.textContent = '\u26A0 Pack Status';
+        card.appendChild(heading);
+
+        var list = document.createElement('div');
+        list.className = 'fault-card__list';
+
+        var hexItems = [];
+        if (alarm !== 0) hexItems.push('Alarm: 0x' + alarm.toString(16).toUpperCase().padStart(4, '0'));
+        if (protection !== 0) hexItems.push('Protection: 0x' + protection.toString(16).toUpperCase().padStart(4, '0'));
+        if (fault !== 0) hexItems.push('Fault: 0x' + fault.toString(16).toUpperCase().padStart(4, '0'));
+        if (alarm2 !== 0) hexItems.push('Alarm 2: 0x' + alarm2.toString(16).toUpperCase().padStart(4, '0'));
+        if (protection2 !== 0) hexItems.push('Protection 2: 0x' + protection2.toString(16).toUpperCase().padStart(4, '0'));
+        if (fault2 !== 0) hexItems.push('Fault 2: 0x' + fault2.toString(16).toUpperCase().padStart(4, '0'));
+
+        for (var h = 0; h < hexItems.length; h++) {
+            var item = document.createElement('div');
+            item.className = 'fault-card__item';
+            item.textContent = '\u2022 ' + hexItems[h];
+            list.appendChild(item);
+        }
+        card.appendChild(list);
+    }
+}
+
 function handleRegisterValue(msg) {
     if (msg.section !== App.activeSection) return;
-    // Don't update if in pack_detail mode for BMS
-    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
+
+    // Route to pack handler when in pack_detail mode
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') {
+        handlePackRegisterValue(msg);
+        return;
+    }
 
     var key = msg.group + '::' + msg.name;
     var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
@@ -1235,6 +1916,17 @@ function handleSectionComplete(msg) {
         ts.style.display = '';
     }
     triggerFlash('success');
+
+    // Phase 11: Final summary computation for pack streaming
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') {
+        if (packCellState.count > 0) {
+            computeCellSummary();
+            applyCellDeviationColors();
+        }
+        if (packTempState.count > 0) {
+            computeTempSummary();
+        }
+    }
 
     // Phase 10 D-06: Remove container-level dim on section complete (cleanup sweep)
     var contentBody = $('#content-body');
