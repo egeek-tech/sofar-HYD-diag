@@ -540,3 +540,100 @@ func TestBrokerReadBatch(t *testing.T) {
 		t.Errorf("batch read completed too fast: %v (expected >= 1000ms for inter-read delays)", elapsed)
 	}
 }
+
+// slowMockServer accepts a connection and holds it open for the given
+// duration before closing, simulating a slow/unresponsive Modbus device.
+func slowMockServer(t *testing.T, listener net.Listener, holdDuration time.Duration) {
+	t.Helper()
+	conn, err := listener.Accept()
+	if err != nil {
+		t.Logf("slowMockServer: accept error: %v", err)
+		return
+	}
+	defer conn.Close()
+	// Hold connection open without sending a response
+	time.Sleep(holdDuration)
+}
+
+func TestBrokerAbortRead(t *testing.T) {
+	// Start a slow mock server that holds the connection for 10s
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().String()
+	go slowMockServer(t, listener, 10*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	// Connect to the slow server
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	// Start a read in background -- this will block on the slow server
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := b.ReadRegisters(ctx, 0x0404, 1)
+		readDone <- err
+	}()
+
+	// Give the read a moment to start blocking on TCP
+	time.Sleep(200 * time.Millisecond)
+
+	// Disconnect should abort the blocking read and complete quickly
+	start := time.Now()
+	if err := b.Disconnect(ctx); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	// Disconnect must complete within 2 seconds (D-02 requires <1s, allow margin)
+	if elapsed > 2*time.Second {
+		t.Errorf("Disconnect took %v, expected < 2s", elapsed)
+	}
+
+	// Broker should be disconnected
+	if s := b.CurrentState(); s != broker.StateDisconnected {
+		t.Errorf("expected StateDisconnected, got %v", s)
+	}
+
+	// The blocked read should also have returned (with an error)
+	select {
+	case err := <-readDone:
+		if err == nil {
+			t.Error("expected read to fail after abort, got nil error")
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("read goroutine did not return within 3s after disconnect")
+	}
+}
+
+func TestBrokerAbortReadNoConn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "127.0.0.1:1", 1, false)
+	go b.Run(ctx)
+	defer b.Close()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// abortRead on dormant broker (no conn) should not panic.
+	// We call Disconnect which internally calls abortRead.
+	err := b.Disconnect(ctx)
+	if err != nil {
+		t.Fatalf("Disconnect on dormant broker failed: %v", err)
+	}
+
+	if s := b.CurrentState(); s != broker.StateDisconnected {
+		t.Errorf("expected StateDisconnected, got %v", s)
+	}
+}
