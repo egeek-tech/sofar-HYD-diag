@@ -14,6 +14,18 @@ var TOPO_PACKS = 10;
 var TIMING_STORAGE_KEY = 'sofar_timing';
 var TIMING_DEFAULTS = { readDelay: 500, packSettle: 1000 };
 
+// Cycle delay configuration (Phase 8)
+var CYCLE_DELAY_KEY = 'sofar_cycle_delay';
+
+// Browser-driven refresh state (Phase 8)
+var refreshState = {
+    active: false,      // whether auto-refresh is enabled
+    cycleCount: 0,      // number of completed cycles (shown in button label)
+    delayTimer: null,    // setTimeout handle for cycle delay
+    cycleDelay: 0,       // delay in ms between cycles (0 = Continuous)
+    readingInProgress: false  // true while waiting for section_complete
+};
+
 // === Pack Detail View State (Phase 5) ===
 
 var packViewState = {
@@ -116,7 +128,6 @@ class WSClient {
 const App = {
     ws: null,
     activeSection: null,
-    autoRefresh: true,
     connectionState: 'disconnected'
 };
 
@@ -148,6 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initPVDropdown();
     initPackSelectors();
     initTimingControls();
+    initCycleDelayDropdown();
 });
 
 // === Connection Form (CONN-01, CONN-03) ===
@@ -278,6 +290,15 @@ function setupSectionNav() {
 }
 
 function navigateToSection(section) {
+    // Phase 8: Clear pending cycle delay timer on section switch (Pitfall 4)
+    if (refreshState.delayTimer) {
+        clearTimeout(refreshState.delayTimer);
+        refreshState.delayTimer = null;
+    }
+    refreshState.cycleCount = 0;
+    refreshState.readingInProgress = false;
+    updateAutoRefreshButton();
+
     // Update active nav item highlight
     $$('.section-nav__item').forEach(function (item) {
         item.classList.remove('section-nav__item--active');
@@ -334,18 +355,25 @@ function navigateToSection(section) {
     autoBtn.style.display = '';
     updateAutoRefreshButton();
 
+    // Show cycle delay dropdown when connected and viewing a section
+    var cycleDelaySelect = $('#cycle-delay-select');
+    if (cycleDelaySelect) {
+        cycleDelaySelect.style.display = '';
+    }
+
+    // Show/hide manual Refresh button based on auto-refresh state
+    updateRefreshButtonVisibility();
+
     // Hide timestamp
     $('#content-timestamp').style.display = 'none';
 
     // Send subscribe via WebSocket (D-17; auto-unsubscribes previous per D-18; triggers immediate read per D-20)
     App.ws.send({ type: 'subscribe', section: section });
 
-    // Sync auto-refresh toggle state with server (fixes global vs per-section mismatch)
-    App.ws.send({
-        type: 'auto_refresh',
-        section: section,
-        enabled: App.autoRefresh
-    });
+    // Phase 8: Mark reading in progress since subscribe triggers immediate read (D-01/D-20)
+    if (refreshState.active) {
+        refreshState.readingInProgress = true;
+    }
 
     // Sync PV channel config with backend
     if (section === 'pv') {
@@ -383,27 +411,74 @@ function setupSidebarToggle() {
 
 function setupAutoRefreshToggle() {
     $('#btn-auto-refresh').addEventListener('click', function () {
-        App.autoRefresh = !App.autoRefresh;
-        updateAutoRefreshButton();
+        refreshState.active = !refreshState.active;
 
-        if (App.activeSection) {
-            App.ws.send({
-                type: 'auto_refresh',
-                section: App.activeSection,
-                enabled: App.autoRefresh
-            });
+        if (!refreshState.active) {
+            // D-13: Stop immediately -- clear pending delay timer
+            if (refreshState.delayTimer) {
+                clearTimeout(refreshState.delayTimer);
+                refreshState.delayTimer = null;
+            }
+            refreshState.cycleCount = 0;
+        } else {
+            // Start first cycle immediately
+            refreshState.cycleCount = 0;
+            if (App.activeSection && App.connectionState === 'connected') {
+                refreshState.readingInProgress = true;
+                App.ws.send({ type: 'read_cycle', section: App.activeSection });
+            }
+        }
+
+        updateAutoRefreshButton();
+        updateRefreshButtonVisibility();
+    });
+
+    // Manual Refresh button (D-11)
+    $('#btn-refresh').addEventListener('click', function () {
+        if (refreshState.readingInProgress) return;
+        if (App.activeSection && App.connectionState === 'connected') {
+            refreshState.readingInProgress = true;
+            updateRefreshButtonState();
+            App.ws.send({ type: 'read_cycle', section: App.activeSection });
         }
     });
 }
 
 function updateAutoRefreshButton() {
     var btn = $('#btn-auto-refresh');
-    if (App.autoRefresh) {
-        btn.textContent = 'Auto (10s)';
+    if (refreshState.active) {
+        if (refreshState.cycleCount > 0) {
+            btn.textContent = 'Auto (#' + refreshState.cycleCount + ')';
+        } else {
+            btn.textContent = 'Auto';
+        }
         btn.classList.add('btn-auto-refresh--active');
+        btn.setAttribute('aria-pressed', 'true');
     } else {
         btn.textContent = 'Auto';
         btn.classList.remove('btn-auto-refresh--active');
+        btn.setAttribute('aria-pressed', 'false');
+    }
+}
+
+function updateRefreshButtonVisibility() {
+    var refreshBtn = $('#btn-refresh');
+    if (!refreshBtn) return;
+    if (refreshState.active || !App.activeSection) {
+        refreshBtn.style.display = 'none';
+    } else {
+        refreshBtn.style.display = '';
+    }
+}
+
+function updateRefreshButtonState() {
+    var refreshBtn = $('#btn-refresh');
+    if (!refreshBtn) return;
+    refreshBtn.disabled = refreshState.readingInProgress;
+    if (refreshState.readingInProgress) {
+        refreshBtn.setAttribute('aria-busy', 'true');
+    } else {
+        refreshBtn.removeAttribute('aria-busy');
     }
 }
 
@@ -463,6 +538,20 @@ function handleConnectionState(msg) {
             // Hide timing controls when disconnected
             var timingCtrlsDisc = $('#timing-controls');
             if (timingCtrlsDisc) timingCtrlsDisc.style.display = 'none';
+            // Phase 8: Cancel pending refresh on disconnect
+            if (refreshState.delayTimer) {
+                clearTimeout(refreshState.delayTimer);
+                refreshState.delayTimer = null;
+            }
+            refreshState.readingInProgress = false;
+            refreshState.cycleCount = 0;
+            updateAutoRefreshButton();
+            updateRefreshButtonState();
+            // Phase 8: Hide cycle delay dropdown and Refresh button when disconnected
+            var cycleDelaySelect = $('#cycle-delay-select');
+            if (cycleDelaySelect) cycleDelaySelect.style.display = 'none';
+            var refreshBtn = $('#btn-refresh');
+            if (refreshBtn) refreshBtn.style.display = 'none';
             // Show connection error if present (e.g. connection refused)
             if (msg.error) {
                 showConnectionError(msg.error);
@@ -925,6 +1014,7 @@ function handleRegisterValue(msg) {
 function handleSectionComplete(msg) {
     if (msg.section !== App.activeSection) return;
 
+    // Update timestamp display (existing logic preserved)
     if (msg.timestamp) {
         var ts = $('#content-timestamp');
         var d = new Date(msg.timestamp);
@@ -932,6 +1022,24 @@ function handleSectionComplete(msg) {
         ts.style.display = '';
     }
     triggerFlash('success');
+
+    // Phase 8: Browser-driven refresh cycle
+    refreshState.readingInProgress = false;
+    updateRefreshButtonState();
+
+    if (refreshState.active) {
+        refreshState.cycleCount++;
+        updateAutoRefreshButton();
+
+        // Schedule next cycle after configured delay (D-04, REFR-02)
+        refreshState.delayTimer = setTimeout(function () {
+            refreshState.delayTimer = null;
+            if (refreshState.active && App.activeSection === msg.section && App.connectionState === 'connected') {
+                refreshState.readingInProgress = true;
+                App.ws.send({ type: 'read_cycle', section: App.activeSection });
+            }
+        }, refreshState.cycleDelay);
+    }
 }
 
 // === Timing Controls (Phase 7, TIMING-01, TIMING-02) ===
@@ -993,6 +1101,30 @@ function initTimingControls() {
     });
     packSettleInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { packSettleInput.blur(); }
+    });
+}
+
+// === Cycle Delay Dropdown (Phase 8, D-05, D-06, D-07) ===
+
+function initCycleDelayDropdown() {
+    var select = $('#cycle-delay-select');
+    if (!select) return;
+
+    // Load from localStorage (D-07)
+    var saved = localStorage.getItem(CYCLE_DELAY_KEY);
+    if (saved !== null) {
+        var val = parseInt(saved, 10);
+        if (!isNaN(val)) {
+            refreshState.cycleDelay = val;
+            select.value = String(val);
+        }
+    }
+
+    select.addEventListener('change', function () {
+        var val = parseInt(select.value, 10);
+        if (isNaN(val)) val = 0;
+        refreshState.cycleDelay = val;
+        localStorage.setItem(CYCLE_DELAY_KEY, String(val));
     });
 }
 
