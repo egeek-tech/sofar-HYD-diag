@@ -997,7 +997,7 @@ function handleRegisterValue(msg) {
     if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
 
     var key = msg.group + '::' + msg.name;
-    var el = document.querySelector('[data-register="' + key.replace(/"/g, '\\"') + '"]');
+    var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
     if (!el) return;
 
     if (msg.error) {
