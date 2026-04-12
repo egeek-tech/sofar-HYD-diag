@@ -703,6 +703,14 @@ function renderGroupCard(group) {
         valEl.className = 'data-row-h__value';
         valEl.textContent = items[keys[i]];
 
+        // Phase 10: Set tooltip data attributes from item_meta (D-15)
+        var meta = group.item_meta && group.item_meta[keys[i]];
+        if (meta) {
+            var addrHex = '0x' + meta.register_addr.toString(16).toUpperCase().padStart(4, '0');
+            valEl.setAttribute('data-register-addr', addrHex);
+            if (meta.raw_value) valEl.setAttribute('data-register-raw', meta.raw_value);
+        }
+
         row.appendChild(keyEl);
         row.appendChild(valEl);
         body.appendChild(row);
@@ -1319,6 +1327,35 @@ function handlePackData(msg) {
     syncPackSelectorValues();
 
     renderPackDetail(msg);
+
+    // Phase 10: Set timestamps on all tooltip-enabled elements and populate cache (D-15, D-09)
+    var timeStr = new Date().toTimeString().slice(0, 8);
+    var body = document.getElementById('content-body');
+    var tooltipEls = body.querySelectorAll('[data-register-addr]');
+    for (var ti = 0; ti < tooltipEls.length; ti++) {
+        tooltipEls[ti].setAttribute('data-register-time', timeStr);
+    }
+
+    // Populate section cache for pack drill-down if cache is available (DISP-02, D-09)
+    if (typeof sectionCache !== 'undefined' && sectionCache) {
+        var packCacheKey = 'bms:pack:' + msg.input + ':' + msg.tower + ':' + msg.pack;
+        if (!sectionCache.has(packCacheKey)) {
+            sectionCache.set(packCacheKey, new Map());
+        }
+        var packCache = sectionCache.get(packCacheKey);
+        for (var ci = 0; ci < tooltipEls.length; ci++) {
+            var el = tooltipEls[ci];
+            var regKey = el.getAttribute('data-register') || el.getAttribute('data-register-addr') || ('pack-item-' + ci);
+            packCache.set(regKey, {
+                value: el.textContent,
+                registerAddr: el.getAttribute('data-register-addr') || '',
+                rawValue: el.getAttribute('data-register-raw') || '',
+                timestamp: timeStr,
+                error: false
+            });
+        }
+    }
+
     triggerFlash('success');
 }
 
@@ -1733,8 +1770,16 @@ function renderCellVoltageGrid(group) {
         cellDiv.appendChild(numSpan);
 
         var voltSpan = document.createElement('span');
-        voltSpan.className = 'cell-value';
+        voltSpan.className = 'cell-value data-row-h__value';
         voltSpan.textContent = (cells[c] / 1000).toFixed(3) + 'V';
+
+        // Phase 10: Cell voltage tooltip data attributes (D-15)
+        if (group.cell_addrs && group.cell_addrs[c]) {
+            var cellAddrHex = '0x' + group.cell_addrs[c].toString(16).toUpperCase().padStart(4, '0');
+            voltSpan.setAttribute('data-register-addr', cellAddrHex);
+            voltSpan.setAttribute('data-register-raw', String(cells[c]));
+        }
+
         cellDiv.appendChild(voltSpan);
 
         grid.appendChild(cellDiv);
