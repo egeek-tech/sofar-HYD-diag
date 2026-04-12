@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -635,5 +636,205 @@ func TestBrokerAbortReadNoConn(t *testing.T) {
 
 	if s := b.CurrentState(); s != broker.StateDisconnected {
 		t.Errorf("expected StateDisconnected, got %v", s)
+	}
+}
+
+// buildExceptionResponse constructs a Modbus TCP exception response.
+// exceptionCode is the Modbus exception code (0x02 = illegal data address).
+func buildExceptionResponse(txID uint16, slaveID byte, funcCode byte, exceptionCode byte) []byte {
+	// MBAP header: txID(2) + protocolID(2) + length(2) + unitID(1) = 7
+	// PDU: errorFuncCode(1) + exceptionCode(1) = 2
+	resp := make([]byte, 9)
+	binary.BigEndian.PutUint16(resp[0:2], txID)
+	binary.BigEndian.PutUint16(resp[2:4], 0) // protocol ID
+	binary.BigEndian.PutUint16(resp[4:6], 3) // length: unitID(1) + PDU(2)
+	resp[6] = slaveID
+	resp[7] = funcCode | 0x80 // error flag
+	resp[8] = exceptionCode
+	return resp
+}
+
+func TestBrokerRetryThreeAttempts(t *testing.T) {
+	// Server that closes connection immediately (simulates connection error for reads)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().String()
+
+	var attemptCount int32
+	go func() {
+		for i := 0; i < 6; i++ { // enough accepts for connect + 3 read attempts (each reconnects)
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			atomic.AddInt32(&attemptCount, 1)
+			// Close immediately to cause read failure
+			conn.Close()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	b.SetBackoff(50*time.Millisecond, 100*time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	// Connect
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	// Read should fail after 3 attempts
+	_, err = b.ReadRegisters(ctx, 0x0404, 1)
+	if err == nil {
+		t.Fatal("expected error after 3 failed attempts, got nil")
+	}
+
+	t.Logf("read failed as expected after retries: %v", err)
+}
+
+func TestBrokerNoRetryIllegalAddress(t *testing.T) {
+	// Server that returns Modbus exception 0x02 (illegal data address)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().String()
+
+	var requestCount int32
+	go func() {
+		// Initial connect (from Reconfigure)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Handle read requests -- return exception 0x02 every time
+		for {
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			req := make([]byte, 12)
+			_, err := readAll(conn, req)
+			if err != nil {
+				return
+			}
+			atomic.AddInt32(&requestCount, 1)
+			txID := binary.BigEndian.Uint16(req[0:2])
+			slaveID := req[6]
+
+			resp := buildExceptionResponse(txID, slaveID, 0x83, 0x02)
+			conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+			if _, err := conn.Write(resp); err != nil {
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	// Read should fail immediately without retry (illegal address)
+	_, err = b.ReadRegisters(ctx, 0x0404, 1)
+	if err == nil {
+		t.Fatal("expected error for illegal address, got nil")
+	}
+	if !strings.Contains(err.Error(), "err=0x02") {
+		t.Fatalf("expected illegal address error, got: %v", err)
+	}
+
+	// Only 1 request should have been made (no retries)
+	count := atomic.LoadInt32(&requestCount)
+	if count != 1 {
+		t.Errorf("expected 1 request (no retry), got %d", count)
+	}
+
+	// Broker should still be connected (handleError not called for non-retryable errors)
+	if s := b.CurrentState(); s != broker.StateConnected {
+		t.Errorf("expected StateConnected (connection not closed for non-retryable), got %v", s)
+	}
+}
+
+func TestBrokerRetrySuccess(t *testing.T) {
+	// Server: first read gets connection closed, reconnect + second read succeeds
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+	addr := listener.Addr().String()
+
+	var requestNum int32
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+
+			// Handle requests on this connection
+			for {
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				req := make([]byte, 12)
+				_, err := readAll(conn, req)
+				if err != nil {
+					conn.Close()
+					break
+				}
+
+				n := atomic.AddInt32(&requestNum, 1)
+				txID := binary.BigEndian.Uint16(req[0:2])
+				slaveID := req[6]
+
+				if n == 1 {
+					// First read: close connection (simulates failure)
+					conn.Close()
+					break
+				}
+				// Subsequent reads: success
+				resp := buildReadResponse(txID, slaveID, 0xBEEF)
+				conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+				conn.Write(resp)
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	b.SetBackoff(50*time.Millisecond, 100*time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	// Read should succeed on retry (first attempt fails, second succeeds)
+	data, err := b.ReadRegisters(ctx, 0x0404, 1)
+	if err != nil {
+		t.Fatalf("expected successful retry, got error: %v", err)
+	}
+
+	val := binary.BigEndian.Uint16(data)
+	if val != 0xBEEF {
+		t.Errorf("expected 0xBEEF, got 0x%04X", val)
 	}
 }
