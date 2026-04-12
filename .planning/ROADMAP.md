@@ -85,7 +85,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. In the pack drill-down view, the balance state section appears before the temperature section
   2. Pack drill-down values stream per-register as they are read, with each value appearing in the UI as soon as it arrives (consistent with System, Grid, and other sections)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 11-01-PLAN.md -- Backend pack streaming (PackProbeGroups, streamPackRead, pack schema, skip tracking)
+- [ ] 11-02-PLAN.md -- Frontend pack skeleton renderers and streaming value handlers
 **UI hint**: yes
 
 ## Progress
@@ -105,4 +108,4 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11
 | 8. Refresh Architecture | v1.2 | 0/2 | Planning | - |
 | 9. Connection & Read Resilience | v1.2 | 0/0 | Not started | - |
 | 10. Data Persistence & Tooltips | v1.2 | 0/3 | Planning | - |
-| 11. Battery Pack Polish | v1.2 | 0/0 | Not started | - |
+| 11. Battery Pack Polish | v1.2 | 0/2 | Planning | - |
