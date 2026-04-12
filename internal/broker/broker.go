@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -381,10 +382,10 @@ func (b *Broker) execute(ctx context.Context, cmd command) {
 }
 
 // executeRead performs a single register read with inter-read delay enforcement.
-// On communication error, it closes the connection, reconnects, and retries once
-// (matching the original readWithRetry pattern from main.go.bak).
+// On communication error, it closes the connection, reconnects, and retries up to
+// maxAttempts times. Non-retryable errors (e.g. illegal address 0x02) return immediately.
 func (b *Broker) executeRead(ctx context.Context, req ReadRequest) Result {
-	const maxAttempts = 2
+	const maxAttempts = 3 // D-05: increased from 2 to 3
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if err := b.ensureConnected(ctx); err != nil {
@@ -407,6 +408,13 @@ func (b *Broker) executeRead(ctx context.Context, req ReadRequest) Result {
 			return Result{Data: data}
 		}
 
+		// D-06: Don't retry non-retryable errors (illegal address 0x02).
+		// Return immediately without calling handleError -- no point closing
+		// the connection for a register that doesn't exist on hardware.
+		if !isRetryable(err) {
+			return Result{Err: err}
+		}
+
 		b.handleError(err)
 
 		// If abortRead() was called (disconnect in progress), skip retry
@@ -418,7 +426,10 @@ func (b *Broker) executeRead(ctx context.Context, req ReadRequest) Result {
 			return Result{Err: err}
 		}
 
-		b.logger.Debug("retrying read after error", "addr", fmt.Sprintf("0x%04X", req.Addr), "attempt", attempt)
+		b.logger.Debug("retrying read after error",
+			"addr", fmt.Sprintf("0x%04X", req.Addr),
+			"attempt", attempt,
+			"maxAttempts", maxAttempts)
 	}
 
 	// Unreachable, but satisfies compiler
@@ -592,4 +603,19 @@ func (b *Broker) cleanup() {
 	b.connMu.Unlock()
 	b.setState(StateDisconnected, nil)
 	close(b.stateCh) // signal consumers the broker is done
+}
+
+// isRetryable returns false for permanent Modbus errors that should not be retried.
+// Modbus exception 0x02 (illegal data address) indicates the register does not exist
+// on this hardware -- retrying is pointless (D-06).
+// All other errors (timeout, connection reset, other exceptions like 0x04 slave device failure)
+// are potentially transient and should be retried.
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Error format from modbus/tcp.go and modbus/rtu.go is:
+	// "exception: func=0xNN err=0xNN"
+	// Match specifically "err=0x02" to avoid false matches on other hex values.
+	return !strings.Contains(err.Error(), "err=0x02")
 }
