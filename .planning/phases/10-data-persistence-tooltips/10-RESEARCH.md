@@ -441,17 +441,17 @@ function handleRegisterValue(msg) {
 
 **If this table is empty:** N/A -- three low-risk assumptions identified above.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **How to handle pack drill-down tooltips given pack_data is batch-rendered (not streamed)?**
+1. **How to handle pack drill-down tooltips given pack_data is batch-rendered (not streamed)?** (RESOLVED)
    - What we know: Pack drill-down currently receives `pack_data` as a single batch message (Phase 11 will add streaming). Cell values, temperatures, and status are all rendered in `renderPackDetail()`.
-   - What's unclear: The `pack_data` message uses `PackDataMessage` (not `RegisterValueMessage`), so it doesn't carry per-register addresses. Should this phase add address metadata to `PackGroup.Items`?
-   - Recommendation: For Phase 10, add tooltip support only for streamed `register_value` sections (all main sections). Pack drill-down tooltips should wait until Phase 11 (BATT-02) converts pack reads to streaming. Per D-15, "every parameter value" should have tooltips, but pack drill-down is being restructured in Phase 11 -- adding tooltip infrastructure now for batch pack_data would be throwaway work. Document this limitation.
+   - What was unclear: The `pack_data` message uses `PackDataMessage` (not `RegisterValueMessage`), so it doesn't carry per-register addresses. Should this phase add address metadata to `PackGroup.Items`?
+   - Resolution: Plan 03 extends `PackGroup` with a new `ItemMeta` field (`map[string]PackItemMeta`) carrying `RegisterAddr` and `RawValue` per item. The `buildPackDataMessage` function in `hub.go` populates this metadata from probe definitions. The frontend `renderGroupCard` and other pack renderers set `data-register-addr`, `data-register-raw`, and `data-register-time` on pack drill-down value elements. Cell voltages use the cell register address (0x9051+index). This delivers full D-15 compliance for pack drill-down views within Phase 10 without waiting for Phase 11 streaming.
 
-2. **Composed value register address representation**
+2. **Composed value register address representation** (RESOLVED)
    - What we know: Composed values (System time, BMS Clock, SW Version) are synthesized from multiple register reads. They have no single register address.
-   - What's unclear: What should the tooltip show for these values?
-   - Recommendation: Send `register_addr: 0` and empty `raw_value`. Frontend omits Register and Raw lines when addr is 0x0000. Tooltip shows only "Last read: HH:MM:SS" for composed values.
+   - What was unclear: What should the tooltip show for these values?
+   - Resolution: Send `register_addr: 0` and empty `raw_value`. Frontend omits Register and Raw lines when addr is 0x0000 (implemented in Plan 02 Task 2 `showTooltip` function). Tooltip shows only "Last read: HH:MM:SS" for composed values.
 
 ## Validation Architecture
 

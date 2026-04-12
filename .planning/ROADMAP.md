@@ -71,7 +71,11 @@ Plans:
   1. When a new refresh cycle begins, previously read values remain visible (dimmed/faded) until replaced by fresh values
   2. Navigating away from a section and back shows the last-read values (dimmed) immediately, without waiting for a new read cycle
   3. Hovering over any parameter value shows a tooltip displaying the Modbus register address (hex) and the raw register value
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 10-01-PLAN.md -- Backend RegisterValueMessage extension with register_addr and raw_value fields
+- [ ] 10-02-PLAN.md -- Frontend refresh dimming, section caching, parameter tooltips
+- [ ] 10-03-PLAN.md -- Pack drill-down tooltip metadata and frontend wiring (D-15 full compliance)
 **UI hint**: yes
 
 ### Phase 11: Battery Pack Polish
@@ -100,5 +104,5 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11
 | 7. Streaming Display and Configurable Timing | v1.1 | 3/3 | Done | 2026-04-11 |
 | 8. Refresh Architecture | v1.2 | 0/2 | Planning | - |
 | 9. Connection & Read Resilience | v1.2 | 0/0 | Not started | - |
-| 10. Data Persistence & Tooltips | v1.2 | 0/0 | Not started | - |
+| 10. Data Persistence & Tooltips | v1.2 | 0/3 | Planning | - |
 | 11. Battery Pack Polish | v1.2 | 0/0 | Not started | - |
