@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"sofar-hyd-diag/internal/broker"
@@ -47,12 +48,11 @@ type Hub struct {
 	commands   chan ClientCommand
 	funcs      chan func()         // thread-safe arbitrary function execution on hub goroutine
 	results    chan sectionResult  // read results routed back to event loop
-	timerCh    chan string
 	ctx        context.Context
 	cancel     context.CancelFunc
-	connected          bool          // tracks whether broker is connected for timer pause/resume (D-28)
-	refreshOverride    time.Duration // if non-zero, overrides defaultRefreshInterval for all sections (testing)
+	connected          bool          // tracks whether broker is connected (D-28)
 	defaultPVChannels  int           // default PV channel count for PV section (D-16)
+	skipPackInfo       atomic.Bool   // skip PackInfoProbes after illegal address error
 	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
 	readDelayMs        int           // configurable inter-read delay in milliseconds (D-04, default 500)
 	packSettleMs       int           // configurable pack settle time in milliseconds (D-04, default 1000)
@@ -83,7 +83,6 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 		commands:          make(chan ClientCommand, 64),
 		funcs:             make(chan func(), 8),
 		results:           make(chan sectionResult, 32),
-		timerCh:           make(chan string, 16),
 		defaultPVChannels: pvChannels,
 	}
 	h.readDelayMs = 500
@@ -109,27 +108,15 @@ func (h *Hub) Command(c *Client, msg InboundMessage) {
 // RegisterSection creates a Section and adds it to the hub's section map.
 // Must be called before Run() or from within the Run goroutine.
 func (h *Hub) RegisterSection(name string, probes []Probe) {
-	sec := newSection(name, probes, h.timerCh, h.logger)
-	if h.refreshOverride > 0 {
-		sec.SetInterval(h.refreshOverride)
-	}
+	sec := newSection(name, probes, h.logger)
 	h.sections[name] = sec
 }
 
 // RegisterGroupedSection creates a ProbeGroup-based Section and adds it to the hub.
 // Must be called before Run() or from within the Run goroutine.
 func (h *Hub) RegisterGroupedSection(name string, groups []register.ProbeGroup) {
-	sec := newGroupedSection(name, groups, h.timerCh, h.logger)
-	if h.refreshOverride > 0 {
-		sec.SetInterval(h.refreshOverride)
-	}
+	sec := newGroupedSection(name, groups, h.logger)
 	h.sections[name] = sec
-}
-
-// SetRefreshOverride sets a custom refresh interval applied to all sections.
-// Must be called before Run(). Used for testing with shorter intervals.
-func (h *Hub) SetRefreshOverride(d time.Duration) {
-	h.refreshOverride = d
 }
 
 // ClientCount returns the number of registered clients.
@@ -202,8 +189,6 @@ func (h *Hub) Run(ctx context.Context) {
 				return
 			}
 			h.handleStateEvent(evt)
-		case sectionName := <-h.timerCh:
-			h.handleTimerTick(sectionName)
 		case res := <-h.results:
 			h.broadcastResultToSection(res.section, res.msg)
 		case fn := <-h.funcs:
@@ -237,8 +222,8 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 		h.unsubscribeClient(cmd.Client, msg.Section)
 	case MsgTypeRefresh:
 		h.triggerSectionRead(msg.Section)
-	case MsgTypeAutoRefresh:
-		h.handleAutoRefreshToggle(cmd.Client, msg)
+	case MsgTypeReadCycle:
+		h.handleReadCycle(cmd.Client, msg)
 	case MsgTypeConfigure:
 		h.handleConfigure(cmd)
 	case MsgTypeSelectPack:
@@ -248,7 +233,7 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 	}
 }
 
-// handleStateEvent broadcasts state changes to all clients and manages timer pause/resume.
+// handleStateEvent broadcasts state changes to all clients and cancels reads on disconnect.
 func (h *Hub) handleStateEvent(evt broker.StateEvent) {
 	var errMsg string
 	if evt.Err != nil {
@@ -259,32 +244,11 @@ func (h *Hub) handleStateEvent(evt broker.StateEvent) {
 	switch evt.State {
 	case broker.StateConnected:
 		h.connected = true
-		// Resume all section timers that have subscribers (D-28)
-		for _, sec := range h.sections {
-			sec.resumeTimer()
-		}
 	case broker.StateDisconnected, broker.StateReconnecting:
 		h.connected = false
-		// Pause all section timers (D-28)
+		// Cancel all in-progress reads (D-13: disconnection stops reads)
 		for _, sec := range h.sections {
-			sec.pauseTimer()
-		}
-	}
-}
-
-// handleAutoRefreshToggle toggles auto-refresh for a section.
-func (h *Hub) handleAutoRefreshToggle(c *Client, msg InboundMessage) {
-	sec, ok := h.sections[msg.Section]
-	if !ok {
-		h.sendToClient(c, NewSectionError(msg.Section, "unknown section"))
-		return
-	}
-	if msg.Enabled != nil {
-		sec.autoRefresh = *msg.Enabled
-		if *msg.Enabled && sec.SubscriberCount() > 0 {
-			sec.startTimer()
-		} else if !*msg.Enabled {
-			sec.stopTimer()
+			sec.cancelRead()
 		}
 	}
 }
@@ -295,6 +259,10 @@ func (h *Hub) handleAutoRefreshToggle(c *Client, msg InboundMessage) {
 func (h *Hub) subscribeClient(c *Client, sectionName string) {
 	// Unsubscribe from previous section if any (D-18)
 	if c.section != "" && c.section != sectionName {
+		// Cancel in-progress read for old section (D-02)
+		if oldSec, ok := h.sections[c.section]; ok {
+			oldSec.cancelRead()
+		}
 		h.unsubscribeClient(c, c.section)
 	}
 
@@ -349,38 +317,42 @@ func (h *Hub) unsubscribeClient(c *Client, sectionName string) {
 	if sectionName == "bms" {
 		h.selectedPack = nil
 	}
+	// Cancel in-progress read if no subscribers remain
+	if sec.SubscriberCount() == 0 {
+		sec.cancelRead()
+	}
 	h.logger.Debug("client unsubscribed", "section", sectionName, "subscribers", sec.SubscriberCount())
 }
 
-// handleTimerTick processes a timer tick for a section.
-func (h *Hub) handleTimerTick(sectionName string) {
-	sec, ok := h.sections[sectionName]
-	if !ok {
-		return
-	}
-	// Skip if no subscribers
-	if sec.SubscriberCount() == 0 {
-		return
-	}
-	// Skip overlapping reads (D-24)
-	if sec.reading.Load() {
-		h.logger.Debug("skipping overlapping read", "section", sectionName)
-		return
-	}
-	// Skip if not connected (D-28)
+// handleReadCycle handles a browser-driven read_cycle message (REFR-01).
+// Triggers a section read if connected, has subscribers, and no read is in progress.
+func (h *Hub) handleReadCycle(c *Client, msg InboundMessage) {
 	if !h.connected {
 		return
 	}
-	// If BMS section has a selected pack, re-trigger pack read instead of BMS overview
-	if sectionName == "bms" && h.selectedPack != nil {
+	sec, ok := h.sections[msg.Section]
+	if !ok {
+		return
+	}
+	if sec.SubscriberCount() == 0 {
+		return
+	}
+	// Skip if already reading (same logic as old handleTimerTick D-24)
+	if sec.reading.Load() {
+		h.logger.Debug("skipping overlapping read_cycle", "section", msg.Section)
+		return
+	}
+	// If BMS with selected pack, trigger pack read instead
+	if msg.Section == "bms" && h.selectedPack != nil {
 		h.triggerPackRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client)
 		return
 	}
-	h.triggerSectionRead(sectionName)
+	h.triggerSectionRead(msg.Section)
 }
 
 // triggerSectionRead initiates a Modbus read for all probes in a section.
 // The read runs in a goroutine; results are broadcast to section subscribers.
+// Cancels any previous in-progress read before starting (D-02).
 // BMS and battery sections have custom read cycles; all others use the standard path.
 func (h *Hub) triggerSectionRead(sectionName string) {
 	sec, ok := h.sections[sectionName]
@@ -388,20 +360,25 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 		return
 	}
 
+	// Cancel previous read if still running (D-02: prevents orphaned goroutines)
+	sec.cancelRead()
+
+	readCtx, cancel := context.WithCancel(h.ctx)
+	sec.readCancel = cancel
 	sec.reading.Store(true)
 
 	// Dispatch to streaming read handlers (Phase 07: per-register streaming)
 	switch sectionName {
 	case "bms":
-		h.streamBMSRead(sec)
+		h.streamBMSRead(sec, readCtx)
 		return
 	case "battery":
-		h.streamBatteryRead(sec)
+		h.streamBatteryRead(sec, readCtx)
 		return
 	}
 
 	// Standard streaming read path for system, grid, eps, pv, stats
-	h.streamStandardRead(sectionName, sec)
+	h.streamStandardRead(sectionName, sec, readCtx)
 }
 
 // buildGroupedResult builds a standard grouped OutboundMessage from probe groups and results.
@@ -661,7 +638,7 @@ func (h *Hub) shutdown() {
 		delete(h.clients, c)
 	}
 	for _, sec := range h.sections {
-		sec.stopTimer()
+		sec.cancelRead()
 	}
 	h.logger.Info("hub shut down")
 }
@@ -681,10 +658,7 @@ func (h *Hub) registerBuiltinSections() {
 // (write-read for bitmap), so it is registered separately.
 func (h *Hub) registerBMSSection() {
 	groups := register.BMSInfoGroups()
-	sec := newGroupedSection("bms", groups, h.timerCh, h.logger)
-	if h.refreshOverride > 0 {
-		sec.SetInterval(h.refreshOverride)
-	}
+	sec := newGroupedSection("bms", groups, h.logger)
 	h.sections["bms"] = sec
 }
 
@@ -840,8 +814,22 @@ func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
 		}
 
 		// Step 4: Read Pack Info (0x9104-0x9126 = 35 registers)
-		infoReads := []broker.ReadRequest{{Addr: 0x9104, Count: 35}}
-		infoResults := h.broker.ReadBatch(h.ctx, infoReads)
+		// Skip if previously failed with illegal address error (session-level skip)
+		var infoResults []broker.Result
+		if !h.skipPackInfo.Load() {
+			infoReads := []broker.ReadRequest{{Addr: 0x9104, Count: 35}}
+			infoResults = h.broker.ReadBatch(h.ctx, infoReads)
+			if len(infoResults) > 0 && infoResults[0].Err != nil {
+				errStr := infoResults[0].Err.Error()
+				if strings.Contains(errStr, "0x02") || strings.Contains(errStr, "illegal") {
+					h.skipPackInfo.Store(true)
+					h.logger.Debug("PackInfoProbes not supported, skipping for session", "error", errStr)
+					infoResults = nil
+				}
+			}
+		} else {
+			h.logger.Debug("PackInfoProbes skipped (previously failed)")
+		}
 
 		// Step 5: Read Temps 5-8 (0x90BC-0x90BF = 4 registers)
 		temps58Reads := []broker.ReadRequest{{Addr: 0x90BC, Count: 4}}

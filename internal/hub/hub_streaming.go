@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -30,7 +31,7 @@ func (h *Hub) buildSectionSchema(sectionName string, sec *Section) SectionSchema
 // streamStandardRead replaces triggerStandardRead with per-register streaming.
 // Instead of calling ReadBatch and waiting for all results, it reads each register
 // individually and sends a register_value message immediately after each read (STREAM-01, D-01).
-func (h *Hub) streamStandardRead(sectionName string, sec *Section) {
+func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx context.Context) {
 	groups := sec.Groups
 	isFault := sec.faultSection
 
@@ -44,11 +45,11 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section) {
 			timeCount := 0
 
 			for _, p := range g.Probes {
-				if h.ctx.Err() != nil {
+				if readCtx.Err() != nil {
 					return
 				}
 
-				data, err := h.broker.ReadRegisters(h.ctx, p.Addr, p.Count)
+				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
 
 				var errStr string
 				var value string
@@ -109,7 +110,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section) {
 			for _, fp := range register.FaultRegisters {
 				faultReads = append(faultReads, broker.ReadRequest{Addr: fp.Addr, Count: fp.Count})
 			}
-			faultResults := h.broker.ReadBatch(h.ctx, faultReads)
+			faultResults := h.broker.ReadBatch(readCtx, faultReads)
 			faultData := make(map[uint16]uint16)
 			for i, fp := range register.FaultRegisters {
 				if i >= len(faultResults) || faultResults[i].Err != nil {
@@ -148,7 +149,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section) {
 
 // streamBatteryRead replaces triggerBatteryRead with per-register streaming.
 // Streams individual registers while collecting results for auto-detection logic.
-func (h *Hub) streamBatteryRead(sec *Section) {
+func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 	groups := sec.Groups
 	probes := sec.Probes
 
@@ -161,11 +162,11 @@ func (h *Hub) streamBatteryRead(sec *Section) {
 
 		for _, g := range groups {
 			for _, p := range g.Probes {
-				if h.ctx.Err() != nil {
+				if readCtx.Err() != nil {
 					return
 				}
 
-				data, err := h.broker.ReadRegisters(h.ctx, p.Addr, p.Count)
+				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
 				result := broker.Result{Data: data, Err: err}
 				allResults[probeIdx] = result
 				probeIdx++
@@ -220,7 +221,7 @@ func (h *Hub) streamBatteryRead(sec *Section) {
 // streamBMSRead replaces triggerBMSRead with per-register streaming.
 // Streams individual BMS info registers while collecting results for
 // topology/bitmap/protection post-processing (Pitfall 6: "stream the reads, batch the computation").
-func (h *Hub) streamBMSRead(sec *Section) {
+func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 	groups := sec.Groups
 	probes := sec.Probes
 
@@ -243,11 +244,11 @@ func (h *Hub) streamBMSRead(sec *Section) {
 			var hasSWChar, hasSWMajor, hasSWNonStd, hasSWMinor bool
 
 			for _, p := range g.Probes {
-				if h.ctx.Err() != nil {
+				if readCtx.Err() != nil {
 					return
 				}
 
-				data, err := h.broker.ReadRegisters(h.ctx, p.Addr, p.Count)
+				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
 				probeResults[probeIdx] = broker.Result{Data: data, Err: err}
 				probeIdx++
 
@@ -376,7 +377,7 @@ func (h *Hub) streamBMSRead(sec *Section) {
 		for _, pp := range protectionProbes {
 			protReads = append(protReads, broker.ReadRequest{Addr: pp.Addr, Count: pp.Count})
 		}
-		protResults := h.broker.ReadBatch(h.ctx, protReads)
+		protResults := h.broker.ReadBatch(readCtx, protReads)
 		protGroup := h.buildProtectionGroup(protectionProbes, protResults)
 
 		// Send computed groups as section_data for bitmap/protection widgets
