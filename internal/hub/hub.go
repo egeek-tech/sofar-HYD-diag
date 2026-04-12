@@ -211,6 +211,10 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 			}
 		}()
 	case MsgTypeDisconnect:
+		// D-01: Cancel all section reads FIRST so streaming goroutines exit
+		for _, sec := range h.sections {
+			sec.cancelRead()
+		}
 		go func() {
 			if err := h.broker.Disconnect(h.ctx); err != nil {
 				h.logger.Error("disconnect failed", "error", err)
