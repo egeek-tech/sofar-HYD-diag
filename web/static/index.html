@@ -106,7 +106,14 @@
                         <span class="timing-control__unit">ms</span>
                     </span>
                 </div>
+                <select id="cycle-delay-select" class="pv-channel-select" style="display:none;">
+                    <option value="0" selected>Continuous</option>
+                    <option value="5000">5s</option>
+                    <option value="10000">10s</option>
+                    <option value="30000">30s</option>
+                </select>
                 <button id="btn-auto-refresh" class="btn-auto-refresh" style="display:none;">Auto</button>
+                <button id="btn-refresh" class="btn-refresh" style="display:none;">Refresh</button>
             </div>
         </div>
         <div id="content-body" class="content__body">

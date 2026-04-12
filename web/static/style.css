@@ -493,6 +493,31 @@ body {
     color: var(--color-text-on-dark);
 }
 
+/* Manual Refresh button (Phase 8, D-11) -- matches auto-refresh inactive styling */
+.btn-refresh {
+    height: 32px;
+    padding: 0 var(--space-md);
+    border: none;
+    border-radius: 16px;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    font-family: var(--font-family);
+    cursor: pointer;
+    transition: background-color var(--transition-speed) ease;
+    white-space: nowrap;
+    background-color: #e0e0e0;
+    color: #666666;
+}
+
+.btn-refresh:hover:not(:disabled) {
+    background-color: #d0d0d0;
+}
+
+.btn-refresh:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* === Phase 7: Timing Controls === */
 
 .timing-controls {
