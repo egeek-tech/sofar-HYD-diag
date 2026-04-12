@@ -783,13 +783,18 @@ func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
 	infoProbes := register.PackInfoProbes()
 	temps58Probes := register.PackTemps58Probes()
 
+	// Capture packSettleMs before goroutine to avoid data race (CR-01).
+	// This field is written on the hub event loop (handleConfigure) but read
+	// from the goroutine below — snapshot it while still on the event loop.
+	settleMs := h.packSettleMs
+
 	go func() {
 		// Step 1: Write 0x9020 to select pack (function 0x10 via WriteRegister)
 		err := h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
 		if err != nil {
 			h.logger.Warn("pack select write failed, retrying with double settle", "error", err)
 			// Retry once with double settle time
-			time.Sleep(time.Duration(h.packSettleMs*2) * time.Millisecond)
+			time.Sleep(time.Duration(settleMs*2) * time.Millisecond)
 			err = h.broker.WriteRegister(h.ctx, 0x9020, queryWord)
 			if err != nil {
 				h.logger.Error("pack select write failed after retry", "error", err)
@@ -799,7 +804,7 @@ func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
 		}
 
 		// Step 2: Wait for configurable settle time
-		time.Sleep(time.Duration(h.packSettleMs) * time.Millisecond)
+		time.Sleep(time.Duration(settleMs) * time.Millisecond)
 
 		// Step 3: Read Pack RT data (0x9044-0x907F = 60 registers)
 		rtReads := []broker.ReadRequest{{Addr: 0x9044, Count: 60}}
