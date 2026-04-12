@@ -86,6 +86,7 @@ type Broker struct {
 	useRTU         bool
 	conn           net.Conn
 	connMu         sync.Mutex // protects conn for abortRead() from outside Run()
+	aborting       atomic.Bool // set by abortRead(), checked by executeRead retry
 	state          atomic.Int32
 	stateCh        chan StateEvent
 	backoff        *Backoff
@@ -251,6 +252,7 @@ func (b *Broker) Close() {
 // by setting the read deadline to now. Safe to call from any goroutine.
 // Must be non-blocking to avoid deadlock with the Run() loop.
 func (b *Broker) abortRead() {
+	b.aborting.Store(true)
 	b.connMu.Lock()
 	defer b.connMu.Unlock()
 	if b.conn != nil {
@@ -407,6 +409,11 @@ func (b *Broker) executeRead(ctx context.Context, req ReadRequest) Result {
 
 		b.handleError(err)
 
+		// If abortRead() was called (disconnect in progress), skip retry
+		if b.aborting.Load() {
+			return Result{Err: err}
+		}
+
 		if attempt == maxAttempts {
 			return Result{Err: err}
 		}
@@ -499,6 +506,7 @@ func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) {
 // executeDisconnect closes the connection and enters dormant-like disconnected state.
 // No auto-reconnect will occur until Reconfigure is called again.
 func (b *Broker) executeDisconnect() {
+	b.aborting.Store(false)
 	b.connMu.Lock()
 	if b.conn != nil {
 		b.conn.Close()
