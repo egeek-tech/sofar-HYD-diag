@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -84,6 +85,7 @@ type Broker struct {
 	slaveID        byte
 	useRTU         bool
 	conn           net.Conn
+	connMu         sync.Mutex // protects conn for abortRead() from outside Run()
 	state          atomic.Int32
 	stateCh        chan StateEvent
 	backoff        *Backoff
@@ -245,6 +247,17 @@ func (b *Broker) Close() {
 	close(b.done)
 }
 
+// abortRead forces any in-progress socket read to fail immediately
+// by setting the read deadline to now. Safe to call from any goroutine.
+// Must be non-blocking to avoid deadlock with the Run() loop.
+func (b *Broker) abortRead() {
+	b.connMu.Lock()
+	defer b.connMu.Unlock()
+	if b.conn != nil {
+		b.conn.SetReadDeadline(time.Now())
+	}
+}
+
 // Reconfigure closes any existing connection and connects to a new address with a new slave ID.
 // The operation is serialized through the command channel.
 func (b *Broker) Reconfigure(ctx context.Context, addr string, slaveID byte) error {
@@ -274,6 +287,8 @@ func (b *Broker) Reconfigure(ctx context.Context, addr string, slaveID byte) err
 // Disconnect closes the current connection without triggering auto-reconnect.
 // The broker returns to a disconnected state and will not reconnect until Reconfigure is called.
 func (b *Broker) Disconnect(ctx context.Context) error {
+	b.abortRead() // unblock any pending read FIRST (D-02)
+
 	respCh := make(chan interface{}, 1)
 	select {
 	case b.commands <- command{
@@ -455,10 +470,12 @@ func (b *Broker) executeBatch(ctx context.Context, req BatchReadRequest) BatchRe
 // If connection fails, the broker returns to StateDisconnected so the user can retry.
 func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) {
 	// Close existing connection if any
+	b.connMu.Lock()
 	if b.conn != nil {
 		b.conn.Close()
 		b.conn = nil
 	}
+	b.connMu.Unlock()
 	b.addr = req.Addr
 	b.slaveID = req.SlaveID
 	b.dormant = false
@@ -473,17 +490,21 @@ func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) {
 		b.logger.Error("connection failed", "addr", b.addr, "error", err)
 		return
 	}
+	b.connMu.Lock()
 	b.conn = conn
+	b.connMu.Unlock()
 	b.setState(StateConnected, nil)
 }
 
 // executeDisconnect closes the connection and enters dormant-like disconnected state.
 // No auto-reconnect will occur until Reconfigure is called again.
 func (b *Broker) executeDisconnect() {
+	b.connMu.Lock()
 	if b.conn != nil {
 		b.conn.Close()
 		b.conn = nil
 	}
+	b.connMu.Unlock()
 	b.dormant = true
 	b.setState(StateDisconnected, nil)
 	b.logger.Info("broker disconnected by request")
@@ -540,10 +561,12 @@ func (b *Broker) ensureConnected(ctx context.Context) error {
 // to prevent auto-reconnection after an explicit Disconnect.
 func (b *Broker) handleError(err error) {
 	b.logger.Error("modbus operation failed", "error", err)
+	b.connMu.Lock()
 	if b.conn != nil {
 		b.conn.Close()
 		b.conn = nil
 	}
+	b.connMu.Unlock()
 	if b.dormant {
 		b.setState(StateDisconnected, err)
 	} else {
@@ -553,10 +576,12 @@ func (b *Broker) handleError(err error) {
 
 // cleanup closes resources when the broker stops.
 func (b *Broker) cleanup() {
+	b.connMu.Lock()
 	if b.conn != nil {
 		b.conn.Close()
 		b.conn = nil
 	}
+	b.connMu.Unlock()
 	b.setState(StateDisconnected, nil)
 	close(b.stateCh) // signal consumers the broker is done
 }
