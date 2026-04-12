@@ -26,6 +26,66 @@ var refreshState = {
     readingInProgress: false  // true while waiting for section_complete
 };
 
+// === Phase 10: Section Value Cache (DISP-02, D-08 to D-14) ===
+// In-memory cache of last-read values per section. Cleared on disconnect (D-12).
+// Key: section name (e.g., "system") or pack key (e.g., "bms:pack:1:1:3")
+// Value: Map of data-register key to { value, registerAddr, rawValue, timestamp, error }
+var sectionCache = new Map();
+
+function getCacheKey() {
+    if (App.activeSection === 'bms' && packViewState.mode === 'pack_detail') {
+        return 'bms:pack:' + packViewState.selectedInput + ':' +
+               packViewState.selectedTower + ':' + packViewState.selectedPack;
+    }
+    return App.activeSection;
+}
+
+function updateCache(registerKey, entry) {
+    var cacheKey = getCacheKey();
+    if (!sectionCache.has(cacheKey)) {
+        sectionCache.set(cacheKey, new Map());
+    }
+    sectionCache.get(cacheKey).set(registerKey, entry);
+}
+
+function restoreFromCache(sectionCacheKey) {
+    var cache = sectionCache.get(sectionCacheKey);
+    if (!cache || cache.size === 0) return false;
+
+    var body = $('#content-body');
+    cache.forEach(function(entry, registerKey) {
+        var el = body.querySelector('[data-register="' + CSS.escape(registerKey) + '"]');
+        if (!el) return;
+        if (entry.error) {
+            el.classList.add('data-row-h__value--stale');
+            el.classList.remove('data-row-h__value--pending');
+        } else {
+            el.textContent = entry.value || '\u2014';
+            el.classList.remove('data-row-h__value--pending', 'data-row-h__value--stale');
+        }
+        // Set tooltip data attributes from cache
+        if (entry.registerAddr) el.setAttribute('data-register-addr', entry.registerAddr);
+        if (entry.rawValue) el.setAttribute('data-register-raw', entry.rawValue);
+        if (entry.timestamp) el.setAttribute('data-register-time', entry.timestamp);
+    });
+
+    // Mark section as refreshing (cached values shown dimmed) per D-08
+    body.classList.add('content__body--refreshing');
+    return true;
+}
+
+// Phase 10 D-01, D-04: Apply container-level dim when a read cycle starts
+function applyRefreshDimming() {
+    var body = $('#content-body');
+    // Remove all --fresh classes from previous cycle (Pitfall 2)
+    var freshEls = body.querySelectorAll('.data-row-h__value--fresh');
+    for (var i = 0; i < freshEls.length; i++) {
+        freshEls[i].classList.remove('data-row-h__value--fresh');
+    }
+    // Apply container-level dim
+    body.classList.add('content__body--refreshing');
+}
+
 // === Pack Detail View State (Phase 5) ===
 
 var packViewState = {
@@ -160,6 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initPackSelectors();
     initTimingControls();
     initCycleDelayDropdown();
+    initTooltip();
 });
 
 // === Connection Form (CONN-01, CONN-03) ===
@@ -347,6 +408,10 @@ function navigateToSection(section) {
         if (packControls) packControls.style.display = 'none';
     }
 
+    // Phase 10: Hide tooltip on section navigation (Pitfall 5)
+    hideTooltip();
+    clearTimeout(tooltipTimer);
+
     // Show loading spinner
     showLoading();
 
@@ -424,6 +489,7 @@ function setupAutoRefreshToggle() {
             // Start first cycle immediately
             refreshState.cycleCount = 0;
             if (App.activeSection && App.connectionState === 'connected') {
+                applyRefreshDimming();
                 refreshState.readingInProgress = true;
                 App.ws.send({ type: 'read_cycle', section: App.activeSection });
             }
@@ -437,6 +503,7 @@ function setupAutoRefreshToggle() {
     $('#btn-refresh').addEventListener('click', function () {
         if (refreshState.readingInProgress) return;
         if (App.activeSection && App.connectionState === 'connected') {
+            applyRefreshDimming();
             refreshState.readingInProgress = true;
             updateRefreshButtonState();
             App.ws.send({ type: 'read_cycle', section: App.activeSection });
@@ -552,6 +619,23 @@ function handleConnectionState(msg) {
             if (cycleDelaySelect) cycleDelaySelect.style.display = 'none';
             var refreshBtn = $('#btn-refresh');
             if (refreshBtn) refreshBtn.style.display = 'none';
+            // Phase 10 D-12, D-14: Clear section cache and reset all values to em-dash skeletons
+            sectionCache.clear();
+            var contentBody = $('#content-body');
+            contentBody.classList.remove('content__body--refreshing');
+            // Reset all value elements to em-dash pending state
+            var allValues = contentBody.querySelectorAll('.data-row-h__value');
+            for (var vi = 0; vi < allValues.length; vi++) {
+                allValues[vi].textContent = '\u2014';
+                allValues[vi].className = 'data-row-h__value data-row-h__value--pending';
+                allValues[vi].removeAttribute('data-register-addr');
+                allValues[vi].removeAttribute('data-register-raw');
+                allValues[vi].removeAttribute('data-register-time');
+                allValues[vi].removeAttribute('aria-describedby');
+            }
+            // Hide tooltip if visible (Pitfall 5)
+            hideTooltip();
+            clearTimeout(tooltipTimer);
             // Show connection error if present (e.g. connection refused)
             if (msg.error) {
                 showConnectionError(msg.error);
@@ -917,6 +1001,96 @@ function savePVChannels(channels) {
 }
 
 
+// === Phase 10: Parameter Tooltip (DISP-03, D-15 to D-19) ===
+var tooltipEl = null;
+var tooltipTimer = null;
+
+function initTooltip() {
+    tooltipEl = document.createElement('div');
+    tooltipEl.className = 'param-tooltip';
+    tooltipEl.style.display = 'none';
+    tooltipEl.setAttribute('role', 'tooltip');
+    tooltipEl.id = 'param-tooltip';
+    document.body.appendChild(tooltipEl);
+
+    var body = $('#content-body');
+
+    // Event delegation with useCapture for dynamically-created elements (D-15)
+    body.addEventListener('mouseenter', function(e) {
+        var target = e.target.closest('.data-row-h__value');
+        if (!target) return;
+        clearTimeout(tooltipTimer);
+        tooltipTimer = setTimeout(function() {
+            showTooltip(target);
+        }, 300); // D-18: 300ms hover delay
+    }, true);
+
+    body.addEventListener('mouseleave', function(e) {
+        var target = e.target.closest('.data-row-h__value');
+        if (!target) return;
+        clearTimeout(tooltipTimer);
+        hideTooltip();
+    }, true);
+}
+
+function showTooltip(el) {
+    var addr = el.getAttribute('data-register-addr');
+    var raw = el.getAttribute('data-register-raw');
+    var time = el.getAttribute('data-register-time');
+
+    var lines = [];
+    // D-19: Omit Register line if addr is 0x0000 (composed values)
+    if (addr && addr !== '0x0000') lines.push('Register: ' + addr);
+    if (raw) lines.push('Raw: ' + raw);
+    if (time) lines.push('Last read: ' + time);
+
+    if (lines.length === 0) return;
+
+    // Build tooltip content using textContent (not innerHTML) for XSS safety
+    tooltipEl.textContent = '';
+    lines.forEach(function(line) {
+        var div = document.createElement('div');
+        div.textContent = line;
+        tooltipEl.appendChild(div);
+    });
+
+    // Remove directional modifier before positioning
+    tooltipEl.classList.remove('param-tooltip--below');
+    tooltipEl.style.display = '';
+
+    // Position above element (D-18)
+    var rect = el.getBoundingClientRect();
+    var tipWidth = tooltipEl.offsetWidth;
+    var tipHeight = tooltipEl.offsetHeight;
+    var left = rect.left + rect.width / 2 - tipWidth / 2;
+    var top = rect.top - tipHeight - 8; // 8px gap
+
+    // Clamp horizontal position to viewport
+    if (left < 4) left = 4;
+    if (left + tipWidth > window.innerWidth - 4) left = window.innerWidth - 4 - tipWidth;
+
+    // If tooltip goes above viewport, flip to below
+    if (top < 4) {
+        top = rect.bottom + 8;
+        tooltipEl.classList.add('param-tooltip--below');
+    }
+
+    tooltipEl.style.left = left + 'px';
+    tooltipEl.style.top = top + 'px';
+
+    // Set aria-describedby on the value element
+    el.setAttribute('aria-describedby', 'param-tooltip');
+}
+
+function hideTooltip() {
+    if (tooltipEl) {
+        tooltipEl.style.display = 'none';
+    }
+    // Remove aria-describedby from any element that has it
+    var described = document.querySelector('[aria-describedby="param-tooltip"]');
+    if (described) described.removeAttribute('aria-describedby');
+}
+
 // === Streaming Message Handlers (Phase 7) ===
 
 function handleSectionSchema(msg) {
@@ -958,6 +1132,13 @@ function handleSectionSchema(msg) {
     }
 
     body.appendChild(container);
+
+    // Phase 10: Restore cached values after skeleton DOM is built (DISP-02, D-08)
+    // Must happen after DOM build to avoid Pitfall 1 (querySelector finds nothing)
+    var cacheKey = getCacheKey();
+    restoreFromCache(cacheKey);
+    // If no cache was restored but auto-refresh is active, the subscribe
+    // triggers an immediate read -- skeleton stays as-is (em-dashes, no dim needed per D-10)
 }
 
 function renderSkeletonCard(group) {
@@ -1008,15 +1189,39 @@ function handleRegisterValue(msg) {
     var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
     if (!el) return;
 
+    // Format register address as hex for tooltip (D-16)
+    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+
+    // Format timestamp (D-16: HH:MM:SS)
+    var now = new Date();
+    var timeStr = now.toTimeString().slice(0, 8);
+
     if (msg.error) {
-        // D-03: show last known value dimmed with error icon
-        // If element still has em-dash (no prior value), keep em-dash
+        // D-03: show last known value dimmed with error icon (Phase 9 behavior preserved)
         el.classList.add('data-row-h__value--stale');
         el.classList.remove('data-row-h__value--pending');
+        // Phase 10: Still add fresh class to override container dim (value is visible, just styled as stale)
+        el.classList.add('data-row-h__value--fresh');
     } else {
         el.textContent = msg.value || '\u2014';
         el.classList.remove('data-row-h__value--pending', 'data-row-h__value--stale');
+        // Phase 10 D-02: Snap value back to full opacity
+        el.classList.add('data-row-h__value--fresh');
     }
+
+    // Phase 10: Set tooltip data attributes (D-16, D-19)
+    el.setAttribute('data-register-addr', addrHex);
+    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    el.setAttribute('data-register-time', timeStr);
+
+    // Phase 10: Update section cache (DISP-02)
+    updateCache(key, {
+        value: msg.value || '',
+        registerAddr: addrHex,
+        rawValue: msg.raw_value || '',
+        timestamp: timeStr,
+        error: !!msg.error
+    });
 }
 
 function handleSectionComplete(msg) {
@@ -1031,6 +1236,10 @@ function handleSectionComplete(msg) {
     }
     triggerFlash('success');
 
+    // Phase 10 D-06: Remove container-level dim on section complete (cleanup sweep)
+    var contentBody = $('#content-body');
+    contentBody.classList.remove('content__body--refreshing');
+
     // Phase 8: Browser-driven refresh cycle
     refreshState.readingInProgress = false;
     updateRefreshButtonState();
@@ -1043,6 +1252,7 @@ function handleSectionComplete(msg) {
         refreshState.delayTimer = setTimeout(function () {
             refreshState.delayTimer = null;
             if (refreshState.active && App.activeSection === msg.section && App.connectionState === 'connected') {
+                applyRefreshDimming();
                 refreshState.readingInProgress = true;
                 App.ws.send({ type: 'read_cycle', section: App.activeSection });
             }
