@@ -278,10 +278,8 @@ func (b *Broker) Reconfigure(ctx context.Context, addr string, slaveID byte) err
 	}
 	select {
 	case resp := <-respCh:
-		if err, ok := resp.(error); ok {
-			return err
-		}
-		return nil
+		r := resp.(Result)
+		return r.Err // WR-01: returns nil on success, dial error on failure
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -368,8 +366,8 @@ func (b *Broker) execute(ctx context.Context, cmd command) {
 		cmd.response <- result
 	case CmdReconfigure:
 		req := cmd.request.(ReconfigureRequest)
-		b.executeReconfigure(ctx, req)
-		cmd.response <- Result{}
+		dialErr := b.executeReconfigure(ctx, req)
+		cmd.response <- Result{Err: dialErr} // WR-01: propagate dial error to caller
 	case CmdDisconnect:
 		b.executeDisconnect()
 		cmd.response <- Result{}
@@ -486,7 +484,8 @@ func (b *Broker) executeBatch(ctx context.Context, req BatchReadRequest) BatchRe
 // executeReconfigure closes any existing connection and connects to a new address.
 // Uses a single dial attempt (5s timeout) to avoid blocking the command loop.
 // If connection fails, the broker returns to StateDisconnected so the user can retry.
-func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) {
+// Returns the dial error (if any) so callers of Reconfigure() can observe it (WR-01).
+func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) error {
 	// Close existing connection if any
 	b.connMu.Lock()
 	if b.conn != nil {
@@ -506,12 +505,13 @@ func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) {
 	if err != nil {
 		b.setState(StateDisconnected, err)
 		b.logger.Error("connection failed", "addr", b.addr, "error", err)
-		return
+		return err
 	}
 	b.connMu.Lock()
 	b.conn = conn
 	b.connMu.Unlock()
 	b.setState(StateConnected, nil)
+	return nil
 }
 
 // executeDisconnect closes the connection and enters dormant-like disconnected state.
