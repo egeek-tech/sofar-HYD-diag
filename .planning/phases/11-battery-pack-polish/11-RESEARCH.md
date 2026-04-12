@@ -173,7 +173,7 @@ type SectionSchemaMessage struct {
 ### Anti-Patterns to Avoid
 - **Sending PackDataMessage for streaming:** The existing `PackDataMessage` type carries all groups at once. Do NOT use it for the streaming path. Use the standard `RegisterValueMessage` and `SectionSchemaMessage` types.
 - **Per-register delay in streaming function:** Do NOT add `time.Sleep(500ms)` in `streamPackRead`. The broker's `enforceInterReadDelay()` handles this automatically for every `ReadRegisters` call. [VERIFIED: broker.go:393]
-- **Rebuilding cell statistics on every cell value:** Cell statistics (min/max/spread/avg) should only update after all 16 cell values arrive (using a counter), not incrementally per cell. Incremental updates cause visual jitter on summary values.
+- **Waiting for all 16 cells before computing cell statistics:** Per D-08/D-09, cell statistics (min/max/spread/avg) and deviation colors MUST update progressively as each cell value arrives. Do NOT gate computation behind a counter. Accept that early statistics will be partial (fewer cells = less accurate average) as the user-approved behavior.
 - **Clearing DOM on each register_value:** The skeleton must be built once (from schema), then only values are updated. Never clear `content-body` on register_value arrival.
 
 ## Don't Hand-Roll
@@ -208,11 +208,11 @@ type SectionSchemaMessage struct {
 **How to avoid:** Track unsupported registers in `packSkipRegisters` map. On timeout or illegal address error, add register to skip list. On pack switch, clear the skip list (D-05). For skipped registers, do not send a register_value message -- the frontend skeleton shows the em-dash placeholder and the register remains pending.
 **Warning signs:** If all Info block values show as pending permanently on a BMS that supports them, the skip list may be clearing incorrectly.
 
-### Pitfall 4: Cell Statistics Need All 16 Values Before Accurate Rendering
-**What goes wrong:** Cell deviation colors and summary statistics (min/max/spread/avg) are meaningless until all 16 cells have reported values.
-**Why it happens:** Cells arrive one-by-one. Computing min/max from partial data gives incorrect results.
-**How to avoid:** Frontend tracks a cell arrival counter per read cycle. Summary row and deviation colors are recalculated only when all 16 cells have arrived (or on section_complete as a fallback). Individual cell values are displayed as they arrive but without deviation coloring until the full set is available.
-**Warning signs:** Cell colors flickering between good/warn/danger as values stream in.
+### Pitfall 4: Cell Statistics Progressive Rendering (D-08/D-09)
+**What goes wrong:** If summary statistics and deviation colors are only computed after all 16 cells arrive, this violates D-08 ("No waiting for all 16 cells") and D-09 ("as each cell arrives, recompute average and recolor ALL received cells").
+**Why it matters:** The user explicitly locked progressive cell rendering. Early statistics from partial data are expected -- the average improves as more cells arrive.
+**How to implement correctly:** On every cell arrival, recompute min/max/spread/avg from all received cells so far. Recolor ALL previously received cells based on the updated average. Accept that early deviation colors (with 1-3 cells) may shift as more data arrives -- this is the intended "live calculation" behavior per CONTEXT.md specifics.
+**Warning signs:** If summary bar stays as em-dash until all 16 cells arrive, the progressive behavior is broken.
 
 ### Pitfall 5: Pack Schema Must Differentiate from BMS Overview Schema
 **What goes wrong:** Frontend receives `section_schema` with `section: "bms"` and cannot tell if it is for BMS overview or pack detail.
@@ -349,7 +349,7 @@ function handleRegisterValue(msg) {
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | Cell statistics should only be calculated when all 16 cells have values (not incrementally) | Pitfall 4 | Minor -- incremental would cause visual jitter but not data corruption. Could be acceptable UX tradeoff. |
+| A1 | Cell statistics update progressively on every cell arrival per D-08/D-09 (not waiting for all 16) | Pitfall 4 | None -- this is the locked user decision. Early partial statistics are accepted. |
 | A2 | Streaming reads should be ordered by register block (RT, Info, Temps58) not by display group for Modbus efficiency | Pitfall 1 | Low -- individual ReadRegisters calls go through broker queue regardless of order. Block ordering may reduce connection churn but has no timing impact since broker enforces delay anyway. |
 
 **Both assumptions are implementation details within Claude's discretion and have low risk if wrong.**
@@ -383,17 +383,15 @@ function handleRegisterValue(msg) {
 - [ ] `internal/register/battery_test.go` -- test for `PackProbeGroups()` group ordering
 - [ ] `internal/hub/hub_test.go` -- tests for pack streaming message flow, schema context, skip register logic
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Cell statistics rendering strategy**
-   - What we know: All 16 cell values arrive sequentially. Summary (min/max/spread/avg) needs all values.
-   - What's unclear: Should individual cells show with pending deviation colors until all arrive, or should they show without color classes?
-   - Recommendation: Show cell values as they arrive (text updates), apply deviation colors only when all 16 are present. The UI-SPEC does not specify timing of color application, so this is implementation detail.
+1. **Cell statistics rendering strategy** -- RESOLVED
+   - What we know: All 16 cell values arrive sequentially. Summary (min/max/spread/avg) needs all values for full accuracy.
+   - Resolution: Per D-08 and D-09, update summary bar and deviation colors progressively on every cell arrival. Recompute average from all received cells so far and recolor ALL received cells. Accept that early statistics (with fewer cells) will be partial -- this is the user-approved behavior. Do NOT wait for all 16 cells.
 
-2. **Pack status progressive rendering**
+2. **Pack status progressive rendering** -- RESOLVED
    - What we know: Status registers (alarm, protection, fault) arrive individually. Card must switch between clear and active states.
-   - What's unclear: Should the card start as "clear" and switch to "active" on first non-zero register, or should it remain in pending state until all status registers arrive?
-   - Recommendation: Start in pending state. Switch to clear/active after all status registers arrive (or on section_complete). This avoids a brief "clear" flash before an alarm arrives.
+   - Resolution: Start in pending state. Switch to clear/active after all status registers arrive (or on section_complete as fallback). This avoids a brief "clear" flash before an alarm arrives.
 
 ## Sources
 
