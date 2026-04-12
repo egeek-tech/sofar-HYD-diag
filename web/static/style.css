@@ -106,6 +106,19 @@
     --font-size-data-large: 16px;
     --line-height-data-large: 1.3;
 
+    /* Phase 10: Tooltip */
+    --tooltip-bg: #1a1a2e;
+    --tooltip-text: #f0f0f0;
+    --tooltip-font: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+    --tooltip-delay: 300ms;
+    --tooltip-radius: 4px;
+    --tooltip-padding: 8px 16px;
+    --tooltip-z-index: 100;
+
+    /* Phase 10: Refresh dimming */
+    --refresh-dim-opacity: 0.5;
+    --refresh-dim-transition: 150ms;
+
     /* Layout */
     --sidebar-width: 280px;
     --sidebar-collapsed: 48px;
@@ -585,6 +598,18 @@ body {
     color: var(--color-destructive, #d9534f);
     font-size: 12px;
     margin-left: 4px;
+}
+
+/* === Phase 10: Refresh Dimming (DISP-01, D-01, D-04, D-07) === */
+
+.content__body--refreshing .data-row-h__value {
+    opacity: var(--refresh-dim-opacity, 0.5);
+    transition: opacity var(--refresh-dim-transition, 150ms) ease;
+}
+
+.data-row-h__value--fresh {
+    opacity: 1 !important;
+    transition: opacity var(--refresh-dim-transition, 150ms) ease;
 }
 
 /* === Data Card (D-25, D-26) === */
@@ -1139,4 +1164,40 @@ body {
 @keyframes fadeOut {
     0%, 80% { opacity: 1; }
     100% { opacity: 0; }
+}
+
+/* === Phase 10: Parameter Tooltip (DISP-03, D-15 to D-19) === */
+
+.param-tooltip {
+    position: fixed;
+    background: var(--tooltip-bg, #1a1a2e);
+    color: var(--tooltip-text, #f0f0f0);
+    font-family: var(--tooltip-font);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    padding: 8px 16px;
+    border-radius: var(--tooltip-radius, 4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    z-index: var(--tooltip-z-index, 100);
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+.param-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--tooltip-bg, #1a1a2e);
+}
+
+.param-tooltip--below::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: var(--tooltip-bg, #1a1a2e);
 }
