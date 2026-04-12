@@ -47,7 +47,10 @@
   2. The backend performs no autonomous refresh cycles -- all reads are initiated by the browser
   3. After a read cycle completes, the browser waits for the configured delay before starting the next cycle (no fixed-interval timer)
   4. Stopping auto-refresh in the browser immediately stops all Modbus reads (no orphaned backend timer continues reading)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 08-01-PLAN.md -- Backend timer removal, context cancellation, read_cycle message, tests
+- [ ] 08-02-PLAN.md -- Browser-driven refresh state machine, cycle delay dropdown, manual Refresh button
 
 ### Phase 9: Connection & Read Resilience
 **Goal**: Users experience immediate disconnect response and transparent error recovery during reads
@@ -95,7 +98,7 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11
 | 5. Deep Battery Pack Diagnostics | v1.0 | 3/3 | Done | 2026-04-11 |
 | 6. Battery Pack Access Fix | v1.1 | 3/3 | Done | 2026-04-11 |
 | 7. Streaming Display and Configurable Timing | v1.1 | 3/3 | Done | 2026-04-11 |
-| 8. Refresh Architecture | v1.2 | 0/0 | Not started | - |
+| 8. Refresh Architecture | v1.2 | 0/2 | Planning | - |
 | 9. Connection & Read Resilience | v1.2 | 0/0 | Not started | - |
 | 10. Data Persistence & Tooltips | v1.2 | 0/0 | Not started | - |
 | 11. Battery Pack Polish | v1.2 | 0/0 | Not started | - |
