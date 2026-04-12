@@ -224,11 +224,16 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 					// Keep reading=true through the handoff to prevent
 					// duplicate reads from read_cycle during the window
 					retrigger = true
-					h.funcs <- func() {
+					// WR-03: use select with context to avoid goroutine leak on hub shutdown
+					select {
+					case h.funcs <- func() {
 						sec.Groups = newGroups
 						sec.Probes = flattenProbeGroups(newGroups)
 						h.logger.Info("battery section auto-detected channels", "channels", detected)
 						h.triggerSectionRead("battery")
+					}:
+					case <-readCtx.Done():
+						retrigger = false // context cancelled; let defer clear reading flag
 					}
 					return
 				}
