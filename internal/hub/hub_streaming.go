@@ -154,7 +154,15 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 	probes := sec.Probes
 
 	go func() {
-		defer sec.reading.Store(false)
+		// retrigger tracks whether a section re-read was dispatched.
+		// When true, the defer skips clearing sec.reading so it stays true
+		// through the handoff to the event loop's triggerSectionRead (WR-05).
+		retrigger := false
+		defer func() {
+			if !retrigger {
+				sec.reading.Store(false)
+			}
+		}()
 
 		// Read all probes individually, streaming each value
 		allResults := make([]broker.Result, len(probes))
@@ -200,6 +208,9 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 				currentChannels := len(groups) - 1
 				if detected != currentChannels {
 					newGroups := register.GenerateBatteryGroups(detected)
+					// Keep reading=true through the handoff to prevent
+					// duplicate reads from read_cycle during the window
+					retrigger = true
 					h.funcs <- func() {
 						sec.Groups = newGroups
 						sec.Probes = flattenProbeGroups(newGroups)
