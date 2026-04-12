@@ -176,6 +176,95 @@ func PackTemps58Probes() []Probe {
 	}
 }
 
+// PackProbeGroups returns pack drill-down probes organized into display groups
+// in the correct order per D-03: Info, Cell Voltages, Balance State, Temperatures, Pack Status.
+// Each group has a Type hint for frontend rendering dispatch.
+func PackProbeGroups() []ProbeGroup {
+	return []ProbeGroup{
+		// Group 1: Pack Info (RT block info items + Info block items)
+		{
+			Name: "Pack Info",
+			Probes: []Probe{
+				{Name: "Pack ID", Addr: 0x9044, Count: 1},
+				{Name: "Serial Number", Addr: 0x9047, Count: 10, IsASCII: true},
+				{Name: "Total Voltage", Addr: 0x9079, Count: 1, Unit: "V", Scale: 0.1},
+				{Name: "SOC", Addr: 0x907A, Count: 1, Unit: "%", Scale: 1},
+				{Name: "Current", Addr: 0x9071, Count: 1, Signed: true, Unit: "A", Scale: 0.1},
+				{Name: "Remaining Capacity", Addr: 0x9072, Count: 1, Unit: "Ah", Scale: 0.1},
+				{Name: "Full Charge Capacity", Addr: 0x9073, Count: 1, Unit: "Ah", Scale: 0.1},
+				{Name: "Cycle Count", Addr: 0x9074, Count: 1, Unit: "cycles", Scale: 1},
+				{Name: "Total Packs", Addr: 0x907B, Count: 1},
+				{Name: "Cell Count", Addr: 0x907C, Count: 1},
+				// Info block items (0x9104-0x910B)
+				{Name: "Balanced Bus Voltage", Addr: 0x9104, Count: 1, Unit: "V", Scale: 0.1},
+				{Name: "Balanced Bus Current", Addr: 0x9105, Count: 1, Signed: true, Unit: "A", Scale: 0.1},
+				{Name: "Manufacturer", Addr: 0x9106, Count: 4, IsASCII: true},
+				{Name: "SOH", Addr: 0x910A, Count: 1, Unit: "%", Scale: 0.1},
+				{Name: "Rated Capacity", Addr: 0x910B, Count: 1, Unit: "Ah", Scale: 0.1},
+			},
+		},
+		// Group 2: Cell Voltages (16 cells + Max/Min for summary computation per D-07)
+		{
+			Name: "Cell Voltages",
+			Type: "cell_grid",
+			Probes: func() []Probe {
+				probes := make([]Probe, 0, 18)
+				for i := 0; i < 16; i++ {
+					probes = append(probes, Probe{
+						Name:  fmt.Sprintf("Cell %d", i+1),
+						Addr:  uint16(0x9051 + i),
+						Count: 1,
+						Unit:  "V",
+						Scale: 0.001,
+					})
+				}
+				probes = append(probes,
+					Probe{Name: "Max Cell Voltage", Addr: 0x9069, Count: 1, Unit: "V", Scale: 0.001},
+					Probe{Name: "Min Cell Voltage", Addr: 0x906A, Count: 1, Unit: "V", Scale: 0.001},
+				)
+				return probes
+			}(),
+		},
+		// Group 3: Balance State (single probe at 0x9075)
+		{
+			Name: "Balance State",
+			Type: "balance",
+			Probes: []Probe{
+				{Name: "Balance State", Addr: 0x9075, Count: 1},
+			},
+		},
+		// Group 4: Temperatures (Temp 1-4 from RT, MOS Temp, Env Temp, Temp 5-8 from temps58 block)
+		{
+			Name: "Temperatures",
+			Probes: []Probe{
+				{Name: "Temp 1", Addr: 0x906B, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 2", Addr: 0x906C, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 3", Addr: 0x906D, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 4", Addr: 0x906E, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "MOS Temp", Addr: 0x906F, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Env Temp", Addr: 0x9070, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 5", Addr: 0x90BC, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 6", Addr: 0x90BD, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 7", Addr: 0x90BE, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+				{Name: "Temp 8", Addr: 0x90BF, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
+			},
+		},
+		// Group 5: Pack Status (alarm/protection/fault from RT + Info blocks)
+		{
+			Name: "Pack Status",
+			Type: "pack_status",
+			Probes: []Probe{
+				{Name: "Alarm Status", Addr: 0x9076, Count: 1},
+				{Name: "Protection Status", Addr: 0x9077, Count: 1},
+				{Name: "Fault Status", Addr: 0x9078, Count: 1},
+				{Name: "Alarm Status 2", Addr: 0x9124, Count: 1},
+				{Name: "Protection Status 2", Addr: 0x9125, Count: 1},
+				{Name: "Fault Status 2", Addr: 0x9126, Count: 1},
+			},
+		},
+	}
+}
+
 // === BMS Pack-level bitmap decode tables ===
 // Follow the FaultBit pattern from fault.go.
 

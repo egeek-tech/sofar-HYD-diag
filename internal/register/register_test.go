@@ -2,6 +2,7 @@ package register
 
 import (
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -1555,5 +1556,107 @@ func TestDecodeBMSBitmap(t *testing.T) {
 	result = DecodeBMSBitmap(0x0000, BMSAlarmBits, 0x9076)
 	if len(result) != 0 {
 		t.Errorf("DecodeBMSBitmap(0x0000) returned %d entries, want 0", len(result))
+	}
+}
+
+func TestPackProbeGroupOrder(t *testing.T) {
+	groups := PackProbeGroups()
+
+	// Exactly 5 groups
+	if len(groups) != 5 {
+		t.Fatalf("PackProbeGroups returned %d groups, want 5", len(groups))
+	}
+
+	// Group names in correct order (D-03)
+	wantNames := []string{"Pack Info", "Cell Voltages", "Balance State", "Temperatures", "Pack Status"}
+	for i, want := range wantNames {
+		if groups[i].Name != want {
+			t.Errorf("group[%d].Name = %q, want %q", i, groups[i].Name, want)
+		}
+	}
+
+	// Group types
+	wantTypes := []string{"", "cell_grid", "balance", "", "pack_status"}
+	for i, want := range wantTypes {
+		if groups[i].Type != want {
+			t.Errorf("group[%d].Type = %q, want %q", i, groups[i].Type, want)
+		}
+	}
+
+	// Cell Voltages group: 16 cell probes + Max Cell Voltage + Min Cell Voltage = 18 probes
+	cellGroup := groups[1]
+	if len(cellGroup.Probes) != 18 {
+		t.Fatalf("Cell Voltages group has %d probes, want 18", len(cellGroup.Probes))
+	}
+	for i := 0; i < 16; i++ {
+		wantName := fmt.Sprintf("Cell %d", i+1)
+		if cellGroup.Probes[i].Name != wantName {
+			t.Errorf("Cell Voltages probe[%d].Name = %q, want %q", i, cellGroup.Probes[i].Name, wantName)
+		}
+	}
+
+	// Balance State group: probe at 0x9075
+	balanceGroup := groups[2]
+	if len(balanceGroup.Probes) != 1 {
+		t.Fatalf("Balance State group has %d probes, want 1", len(balanceGroup.Probes))
+	}
+	if balanceGroup.Probes[0].Addr != 0x9075 {
+		t.Errorf("Balance State probe[0].Addr = 0x%04X, want 0x9075", balanceGroup.Probes[0].Addr)
+	}
+
+	// Temperatures group: Temp 1-4 (0x906B-0x906E), MOS Temp (0x906F), Env Temp (0x9070), Temp 5-8 (0x90BC-0x90BF) = 10 probes
+	tempGroup := groups[3]
+	if len(tempGroup.Probes) != 10 {
+		t.Fatalf("Temperatures group has %d probes, want 10", len(tempGroup.Probes))
+	}
+	wantTempAddrs := []uint16{0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF}
+	for i, wantAddr := range wantTempAddrs {
+		if tempGroup.Probes[i].Addr != wantAddr {
+			t.Errorf("Temperatures probe[%d].Addr = 0x%04X, want 0x%04X", i, tempGroup.Probes[i].Addr, wantAddr)
+		}
+	}
+
+	// Pack Status group: 6 probes at 0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126
+	statusGroup := groups[4]
+	if len(statusGroup.Probes) != 6 {
+		t.Fatalf("Pack Status group has %d probes, want 6", len(statusGroup.Probes))
+	}
+	wantStatusAddrs := []uint16{0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126}
+	for i, wantAddr := range wantStatusAddrs {
+		if statusGroup.Probes[i].Addr != wantAddr {
+			t.Errorf("Pack Status probe[%d].Addr = 0x%04X, want 0x%04X", i, statusGroup.Probes[i].Addr, wantAddr)
+		}
+	}
+
+	// Pack Info group: contains probes from both RT and Info blocks
+	infoGroup := groups[0]
+	wantInfoAddrs := map[uint16]bool{
+		0x9044: true, // Pack ID
+		0x9047: true, // Serial Number
+		0x9079: true, // Total Voltage
+		0x907A: true, // SOC
+		0x9071: true, // Current
+		0x9072: true, // Remaining Capacity
+		0x9073: true, // Full Charge Capacity
+		0x9074: true, // Cycle Count
+		0x907B: true, // Total Packs
+		0x907C: true, // Cell Count
+		0x9104: true, // Balanced Bus Voltage
+		0x9105: true, // Balanced Bus Current
+		0x9106: true, // Manufacturer
+		0x910A: true, // SOH
+		0x910B: true, // Rated Capacity
+	}
+	gotInfoAddrs := make(map[uint16]bool)
+	for _, p := range infoGroup.Probes {
+		gotInfoAddrs[p.Addr] = true
+	}
+	for addr := range wantInfoAddrs {
+		if !gotInfoAddrs[addr] {
+			t.Errorf("Pack Info group missing probe at addr 0x%04X", addr)
+		}
+	}
+	if len(infoGroup.Probes) != len(wantInfoAddrs) {
+		t.Errorf("Pack Info group has %d probes, want %d", len(infoGroup.Probes), len(wantInfoAddrs))
 	}
 }
