@@ -2063,3 +2063,34 @@ func TestPackDataMessageItemMeta(t *testing.T) {
 	}
 }
 
+func TestNewRegisterValueJSON(t *testing.T) {
+	msg := hub.NewRegisterValue("system", "Info", "Inverter SN", "SA00T", "", 0x0445, "534F464152")
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"register_addr":1093`) {
+		t.Errorf("JSON missing register_addr: %s", s)
+	}
+	if !strings.Contains(s, `"raw_value":"534F464152"`) {
+		t.Errorf("JSON missing raw_value: %s", s)
+	}
+}
+
+func TestNewRegisterValueComposedJSON(t *testing.T) {
+	msg := hub.NewRegisterValue("system", "Info", "System time", "2026-04-12 16:03:42", "", 0, "")
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"register_addr":0`) {
+		t.Errorf("JSON missing register_addr: %s", s)
+	}
+	// raw_value should be omitted (omitempty)
+	if strings.Contains(s, `"raw_value"`) {
+		t.Errorf("JSON should omit empty raw_value: %s", s)
+	}
+}
+

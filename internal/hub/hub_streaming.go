@@ -54,6 +54,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				var errStr string
 				var value string
 
+				var rawVal string
 				if err != nil {
 					errStr = err.Error()
 				} else {
@@ -82,6 +83,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 						}
 					}
 					value = FormatValue(p, data)
+					rawVal = FormatRawValue(p, data)
 				}
 
 				// WR-02: skip send if context cancelled after ReadRegisters returned
@@ -91,7 +93,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				// Send register_value immediately
 				h.results <- sectionResult{
 					section: sectionName,
-					msg:     NewRegisterValue(sectionName, g.Name, p.Name, value, errStr),
+					msg:     NewRegisterValue(sectionName, g.Name, p.Name, value, errStr, p.Addr, rawVal),
 				}
 			}
 
@@ -103,7 +105,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				)
 				h.results <- sectionResult{
 					section: sectionName,
-					msg:     NewRegisterValue(sectionName, g.Name, "System time", composed, ""),
+					msg:     NewRegisterValue(sectionName, g.Name, "System time", composed, "", 0, ""),
 				}
 			}
 		}
@@ -190,10 +192,12 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 
 				var errStr string
 				var value string
+				var rawVal string
 				if err != nil {
 					errStr = err.Error()
 				} else {
 					value = FormatValue(p, data)
+					rawVal = FormatRawValue(p, data)
 				}
 
 				// WR-02: skip send if context cancelled after ReadRegisters returned
@@ -202,7 +206,7 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 				}
 				h.results <- sectionResult{
 					section: "battery",
-					msg:     NewRegisterValue("battery", g.Name, p.Name, value, errStr),
+					msg:     NewRegisterValue("battery", g.Name, p.Name, value, errStr, p.Addr, rawVal),
 				}
 			}
 		}
@@ -288,7 +292,7 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 					}
 					h.results <- sectionResult{
 						section: "bms",
-						msg:     NewRegisterValue("bms", g.Name, p.Name, "", err.Error()),
+						msg:     NewRegisterValue("bms", g.Name, p.Name, "", err.Error(), p.Addr, ""),
 					}
 					continue
 				}
@@ -333,7 +337,7 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 						}
 						h.results <- sectionResult{
 							section: "bms",
-							msg:     NewRegisterValue("bms", g.Name, p.Name, value, ""),
+							msg:     NewRegisterValue("bms", g.Name, p.Name, value, "", p.Addr, FormatRawValue(p, data)),
 						}
 						continue // topology already streamed with custom format
 					}
@@ -346,7 +350,7 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 				// Stream register value (including composition source registers)
 				h.results <- sectionResult{
 					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), ""),
+					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), "", p.Addr, FormatRawValue(p, data)),
 				}
 			}
 
@@ -355,7 +359,7 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 				clockVal := uint32(clockHi)<<16 | uint32(clockLo)
 				h.results <- sectionResult{
 					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, "System Clock", register.DecodeBMSClock(clockVal), ""),
+					msg:     NewRegisterValue("bms", g.Name, "System Clock", register.DecodeBMSClock(clockVal), "", 0, ""),
 				}
 			}
 
@@ -363,7 +367,7 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 			if hasSWChar && hasSWMajor && hasSWNonStd && hasSWMinor && readCtx.Err() == nil {
 				h.results <- sectionResult{
 					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, "SW Version", fmt.Sprintf("%s%d.%d.%d", swChar, swMajor, swNonStd, swMinor), ""),
+					msg:     NewRegisterValue("bms", g.Name, "SW Version", fmt.Sprintf("%s%d.%d.%d", swChar, swMajor, swNonStd, swMinor), "", 0, ""),
 				}
 			}
 		}

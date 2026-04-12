@@ -196,12 +196,14 @@ func NewStateMessage(state string, errMsg string) OutboundMessage {
 
 // RegisterValueMessage carries a single register result during streaming reads.
 type RegisterValueMessage struct {
-	Type    string `json:"type"`
-	Section string `json:"section"`
-	Group   string `json:"group"`
-	Name    string `json:"name"`
-	Value   string `json:"value,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Type         string `json:"type"`
+	Section      string `json:"section"`
+	Group        string `json:"group"`
+	Name         string `json:"name"`
+	Value        string `json:"value,omitempty"`
+	Error        string `json:"error,omitempty"`
+	RegisterAddr uint16 `json:"register_addr"`
+	RawValue     string `json:"raw_value,omitempty"`
 }
 
 // SectionCompleteMessage signals that all registers in a section have been read.
@@ -228,14 +230,16 @@ type SectionSchemaMessage struct {
 }
 
 // NewRegisterValue creates a register_value message for a single probe result.
-func NewRegisterValue(section, group, name, value string, errStr string) RegisterValueMessage {
+func NewRegisterValue(section, group, name, value string, errStr string, addr uint16, rawValue string) RegisterValueMessage {
 	return RegisterValueMessage{
-		Type:    MsgTypeRegisterValue,
-		Section: section,
-		Group:   group,
-		Name:    name,
-		Value:   value,
-		Error:   errStr,
+		Type:         MsgTypeRegisterValue,
+		Section:      section,
+		Group:        group,
+		Name:         name,
+		Value:        value,
+		Error:        errStr,
+		RegisterAddr: addr,
+		RawValue:     rawValue,
 	}
 }
 
