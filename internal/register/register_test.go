@@ -1488,6 +1488,61 @@ func TestDecodeBalanceState(t *testing.T) {
 	}
 }
 
+func TestFormatRawValue(t *testing.T) {
+	tests := []struct {
+		name string
+		p    Probe
+		data []byte
+		want string
+	}{
+		{
+			name: "Uint16",
+			p:    Probe{Count: 1},
+			data: []byte{0x0F, 0x0C},
+			want: "3852",
+		},
+		{
+			name: "Uint32",
+			p:    Probe{U32: true, Count: 2},
+			data: []byte{0x00, 0x01, 0x00, 0x00},
+			want: "65536",
+		},
+		{
+			name: "ASCII",
+			p:    Probe{IsASCII: true},
+			data: []byte{0x53, 0x4F},
+			want: "534F",
+		},
+		{
+			name: "EmptyData",
+			p:    Probe{},
+			data: []byte{},
+			want: "",
+		},
+		{
+			name: "SingleByte",
+			p:    Probe{},
+			data: []byte{0x01},
+			want: "",
+		},
+		{
+			name: "Signed",
+			p:    Probe{Signed: true, Count: 1},
+			data: []byte{0xFF, 0xFE},
+			want: "65534",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatRawValue(tt.p, tt.data)
+			if got != tt.want {
+				t.Errorf("FormatRawValue(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDecodeBMSBitmap(t *testing.T) {
 	// Use BMSAlarmBits for testing bitmap decoding
 	// Bit 0 and bit 1 set at address 0x9076
