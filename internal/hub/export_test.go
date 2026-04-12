@@ -2,7 +2,6 @@ package hub
 
 import (
 	"log/slog"
-	"time"
 
 	"sofar-hyd-diag/internal/register"
 )
@@ -11,13 +10,6 @@ import (
 // Uses a default logger. Topology uses package-level constants.
 func NewTestHub(b BrokerInterface) *Hub {
 	return NewHub(b, slog.Default(), 2)
-}
-
-// NewTestHubWithInterval creates a Hub for testing with a custom refresh interval.
-func NewTestHubWithInterval(b BrokerInterface, interval time.Duration) *Hub {
-	h := NewHub(b, slog.Default(), 2)
-	h.SetRefreshOverride(interval)
-	return h
 }
 
 // NewTestHubWithPVChannels creates a Hub for testing with a specified PV channel count.
@@ -33,6 +25,11 @@ func NewTestClient(h *Hub, send chan []byte) *Client {
 		send:   send,
 		logger: slog.Default(),
 	}
+}
+
+// SendReadCycle is a test helper that sends a read_cycle command to the hub.
+func SendReadCycle(h *Hub, c *Client, section string) {
+	h.Command(c, InboundMessage{Type: MsgTypeReadCycle, Section: section})
 }
 
 // GetSectionProbes returns the probe slice for a named section.

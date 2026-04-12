@@ -514,18 +514,14 @@ func TestClientWritePump(t *testing.T) {
 	}
 }
 
-// === Section registry, timer management ===
+// === Section registry, read cycle management ===
 
 // setupConnectedHub creates a hub with a connected broker, registers a client,
 // drains initial messages, and returns everything needed for section tests.
-func setupConnectedHub(t *testing.T, mb *mockBroker, interval time.Duration) (*hub.Hub, *hub.Client, chan []byte, context.CancelFunc) {
+// The interval parameter is ignored (timers removed in Phase 08).
+func setupConnectedHub(t *testing.T, mb *mockBroker, _ time.Duration) (*hub.Hub, *hub.Client, chan []byte, context.CancelFunc) {
 	t.Helper()
-	var h *hub.Hub
-	if interval > 0 {
-		h = hub.NewTestHubWithInterval(mb, interval)
-	} else {
-		h = hub.NewTestHub(mb)
-	}
+	h := hub.NewTestHub(mb)
 	ctx, cancel := context.WithCancel(context.Background())
 	go h.Run(ctx)
 	time.Sleep(20 * time.Millisecond)
@@ -627,131 +623,120 @@ func TestSingleSectionPerClient(t *testing.T) {
 	}
 }
 
-func TestAutoRefreshTimer(t *testing.T) {
+func TestReadCycleMessage(t *testing.T) {
 	mb := newMockBroker()
-	h, c, send, cancel := setupConnectedHub(t, mb, 50*time.Millisecond)
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Reset batch count
+	// Subscribe to section (triggers immediate read per D-20)
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
+	drainClientMessages(send, 200*time.Millisecond)
+
+	// Reset batch count after subscribe read
 	mb.mu.Lock()
 	mb.batchCallCount = 0
 	mb.mu.Unlock()
 
-	// Subscribe to trigger immediate read + start timer
-	h.Command(c, hub.InboundMessage{
-		Type:    hub.MsgTypeSubscribe,
-		Section: "grid",
-	})
+	// Send read_cycle to trigger another read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
 
-	// Wait for immediate read + at least 2 timer ticks
-	time.Sleep(200 * time.Millisecond)
-
-	// Collect all messages -- streaming model sends section_complete at end of each cycle
-	msgs := drainClientMessages(send, 300*time.Millisecond)
-
+	msgs := drainClientMessages(send, 200*time.Millisecond)
 	completeCount := 0
 	for _, m := range msgs {
 		if m.Type == hub.MsgTypeSectionComplete && m.Section == "grid" {
 			completeCount++
 		}
 	}
-
-	if completeCount < 2 {
-		t.Errorf("expected at least 2 section_complete messages from auto-refresh, got %d", completeCount)
+	if completeCount < 1 {
+		t.Errorf("expected at least 1 section_complete from read_cycle, got %d", completeCount)
 	}
-
-	// ReadRegisters routes through ReadBatch in mock, so batch count should be > 1
-	if got := mb.getBatchCallCount(); got < 2 {
-		t.Errorf("expected at least 2 read calls, got %d", got)
+	if got := mb.getBatchCallCount(); got < 1 {
+		t.Errorf("expected at least 1 read call from read_cycle, got %d", got)
 	}
 }
 
-func TestSkipOverlappingTick(t *testing.T) {
+func TestSkipOverlappingReadCycle(t *testing.T) {
 	mb := newMockBroker()
-	// Set a long delay on ReadBatch to simulate slow read
 	mb.mu.Lock()
 	mb.batchDelay = 200 * time.Millisecond
 	mb.mu.Unlock()
 
-	h, c, send, cancel := setupConnectedHub(t, mb, 30*time.Millisecond)
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
+	// Subscribe triggers a slow read (200ms delay)
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	time.Sleep(50 * time.Millisecond)
+
+	// Reset count after initial read starts
 	mb.mu.Lock()
 	mb.batchCallCount = 0
 	mb.mu.Unlock()
 
-	// Subscribe (triggers immediate read which will block for 200ms)
-	h.Command(c, hub.InboundMessage{
-		Type:    hub.MsgTypeSubscribe,
-		Section: "grid",
-	})
+	// Send multiple read_cycle rapidly while read is in progress
+	for i := 0; i < 5; i++ {
+		h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
+		time.Sleep(10 * time.Millisecond)
+	}
 
-	// Wait enough for several timer ticks to fire while read is in progress
-	// The 200ms ReadBatch delay means ticks at 30ms, 60ms, 90ms... should be skipped
-	time.Sleep(300 * time.Millisecond)
-
-	// Drain messages
+	time.Sleep(400 * time.Millisecond)
 	drainClientMessages(send, 200*time.Millisecond)
 
-	// Should have only a small number of batch calls despite many timer ticks
-	// The first read blocks for 200ms, skipping ~6 ticks. Then one more read after.
+	// Most read_cycles should be skipped due to sec.reading guard
 	got := mb.getBatchCallCount()
-	if got > 4 {
-		t.Errorf("expected overlapping reads to be skipped, but got %d ReadBatch calls", got)
+	if got > 3 {
+		t.Errorf("expected overlapping read_cycles to be skipped, but got %d read calls", got)
 	}
 }
 
-func TestTimerPausesOnDisconnect(t *testing.T) {
+func TestReadsCancelledOnDisconnect(t *testing.T) {
 	mb := newMockBroker()
-	h, c, send, cancel := setupConnectedHub(t, mb, 50*time.Millisecond)
+	mb.mu.Lock()
+	mb.batchDelay = 300 * time.Millisecond
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Subscribe to start timer
-	h.Command(c, hub.InboundMessage{
-		Type:    hub.MsgTypeSubscribe,
-		Section: "grid",
-	})
-	time.Sleep(80 * time.Millisecond)
-	drainClientMessages(send, 100*time.Millisecond)
+	// Subscribe to start a slow read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	time.Sleep(50 * time.Millisecond)
 
-	// Record batch count before disconnect
-	countBefore := mb.getBatchCallCount()
-
-	// Simulate disconnect
+	// Disconnect while read is in progress
 	mb.mu.Lock()
 	mb.state = broker.StateDisconnected
 	mb.mu.Unlock()
 	mb.statesCh <- broker.StateEvent{State: broker.StateDisconnected}
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
-	// Drain disconnect state message
-	drainClientMessages(send, 50*time.Millisecond)
+	// Drain messages
+	drainClientMessages(send, 200*time.Millisecond)
 
-	// Reset count and wait for timer ticks (which should not trigger reads)
+	// After disconnect, sending read_cycle should not trigger reads
 	mb.mu.Lock()
 	mb.batchCallCount = 0
 	mb.mu.Unlock()
-	time.Sleep(150 * time.Millisecond)
 
-	// Should have zero new ReadBatch calls since timer is paused (D-28)
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
+
 	got := mb.getBatchCallCount()
-	if got != 0 {
-		t.Errorf("expected 0 ReadBatch calls while disconnected, got %d (before disconnect: %d)", got, countBefore)
+	if got > 0 {
+		t.Errorf("expected no reads after disconnect, got %d", got)
 	}
 }
 
-func TestTimerResumesOnReconnect(t *testing.T) {
+func TestReadsWorkAfterReconnect(t *testing.T) {
 	mb := newMockBroker()
-	h, c, send, cancel := setupConnectedHub(t, mb, 50*time.Millisecond)
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
 	// Subscribe
-	h.Command(c, hub.InboundMessage{
-		Type:    hub.MsgTypeSubscribe,
-		Section: "grid",
-	})
-	time.Sleep(80 * time.Millisecond)
-	drainClientMessages(send, 100*time.Millisecond)
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
+	drainClientMessages(send, 200*time.Millisecond)
 
 	// Disconnect
 	mb.mu.Lock()
@@ -759,22 +744,33 @@ func TestTimerResumesOnReconnect(t *testing.T) {
 	mb.mu.Unlock()
 	mb.statesCh <- broker.StateEvent{State: broker.StateDisconnected}
 	time.Sleep(50 * time.Millisecond)
-	drainClientMessages(send, 50*time.Millisecond)
-
-	// Reset count
-	mb.mu.Lock()
-	mb.batchCallCount = 0
-	mb.state = broker.StateConnected
-	mb.mu.Unlock()
+	drainClientMessages(send, 100*time.Millisecond)
 
 	// Reconnect
+	mb.mu.Lock()
+	mb.state = broker.StateConnected
+	mb.mu.Unlock()
 	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	drainClientMessages(send, 100*time.Millisecond)
 
-	// Should have new ReadBatch calls since timer resumed (D-28)
-	got := mb.getBatchCallCount()
-	if got < 1 {
-		t.Errorf("expected at least 1 ReadBatch call after reconnect, got %d", got)
+	// Reset and verify read_cycle works after reconnect
+	mb.mu.Lock()
+	mb.batchCallCount = 0
+	mb.mu.Unlock()
+
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
+
+	msgs := drainClientMessages(send, 200*time.Millisecond)
+	completeCount := 0
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeSectionComplete && m.Section == "grid" {
+			completeCount++
+		}
+	}
+	if completeCount < 1 {
+		t.Errorf("expected section_complete after reconnect read_cycle, got %d", completeCount)
 	}
 }
 
@@ -854,36 +850,70 @@ func TestManualRefresh(t *testing.T) {
 	}
 }
 
-func TestAutoRefreshToggleStopsTimer(t *testing.T) {
+func TestNoBackendTimer(t *testing.T) {
 	mb := newMockBroker()
-	h, c, send, cancel := setupConnectedHub(t, mb, 200*time.Millisecond)
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
 
-	// Subscribe to grid
-	h.Command(c, hub.InboundMessage{
-		Type:    hub.MsgTypeSubscribe,
-		Section: "grid",
-	})
-	time.Sleep(50 * time.Millisecond)
+	// Subscribe to section
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
 	drainClientMessages(send, 200*time.Millisecond)
 
-	// Toggle auto-refresh OFF
-	enabled := false
-	h.Command(c, hub.InboundMessage{
-		Type:    hub.MsgTypeAutoRefresh,
-		Section: "grid",
-		Enabled: &enabled,
-	})
-	time.Sleep(50 * time.Millisecond)
-	drainClientMessages(send, 100*time.Millisecond)
+	// Wait for 2 seconds and count section_complete messages
+	// With no timer, no additional reads should happen
+	mb.mu.Lock()
+	mb.batchCallCount = 0
+	mb.mu.Unlock()
 
-	// Wait for what would be 2 timer ticks (400ms)
-	time.Sleep(450 * time.Millisecond)
+	time.Sleep(2 * time.Second)
+	msgs := drainClientMessages(send, 200*time.Millisecond)
 
-	// Should NOT have received any auto-refresh data
-	msgs := drainClientMessages(send, 100*time.Millisecond)
-	if len(msgs) > 0 {
-		t.Errorf("expected no messages after disabling auto-refresh, got %d", len(msgs))
+	completeCount := 0
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeSectionComplete {
+			completeCount++
+		}
+	}
+	if completeCount > 0 {
+		t.Errorf("expected no autonomous reads (backend should have no timer), but got %d section_complete messages", completeCount)
+	}
+}
+
+func TestCancelReadOnSectionSwitch(t *testing.T) {
+	mb := newMockBroker()
+	// Use a moderate delay so grid read is in progress when we switch
+	mb.mu.Lock()
+	mb.batchDelay = 50 * time.Millisecond
+	mb.mu.Unlock()
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe to grid (starts slow read)
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	time.Sleep(100 * time.Millisecond)
+
+	// Switch to system section while grid read may still be in progress
+	// Reset delay so system read completes faster
+	mb.mu.Lock()
+	mb.batchDelay = 0
+	mb.mu.Unlock()
+
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "system"})
+
+	// System section has ~19 probes + 2 fault batch reads, give enough time
+	msgs := drainClientMessages(send, 5*time.Second)
+
+	// Should see section_complete for "system"
+	systemComplete := 0
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeSectionComplete && m.Section == "system" {
+			systemComplete++
+		}
+	}
+	if systemComplete < 1 {
+		t.Errorf("expected section_complete for system after switch, got %d", systemComplete)
 	}
 }
 
