@@ -106,18 +106,27 @@ type PackDataMessage struct {
 	Timestamp string      `json:"timestamp"`
 }
 
+// PackItemMeta carries per-item register metadata for tooltip display (Phase 10, D-15).
+type PackItemMeta struct {
+	RegisterAddr uint16 `json:"register_addr"`
+	RawValue     string `json:"raw_value,omitempty"`
+}
+
 // PackGroup represents a group within a pack data response.
 type PackGroup struct {
 	Name    string            `json:"name"`
 	Layout  string            `json:"layout,omitempty"`
 	Type    string            `json:"type,omitempty"`
 	Items   map[string]string `json:"items,omitempty"`
+	// Per-item register metadata for tooltips (Phase 10, D-15)
+	ItemMeta map[string]PackItemMeta `json:"item_meta,omitempty"`
 	// Cell grid specific (type="cell_grid")
-	Cells        []int `json:"cells,omitempty"`           // raw millivolt values for 16 cells (D-05)
-	MaxCell      int   `json:"max_cell,omitempty"`        // register 0x9069 value in mV
-	MinCell      int   `json:"min_cell,omitempty"`        // register 0x906A value in mV
-	MaxCellIndex int   `json:"max_cell_index,omitempty"`  // 1-based index of max cell
-	MinCellIndex int   `json:"min_cell_index,omitempty"`  // 1-based index of min cell
+	Cells        []int    `json:"cells,omitempty"`           // raw millivolt values for 16 cells (D-05)
+	CellAddrs    []uint16 `json:"cell_addrs,omitempty"`      // per-cell register addresses for tooltips (D-15)
+	MaxCell      int      `json:"max_cell,omitempty"`        // register 0x9069 value in mV
+	MinCell      int      `json:"min_cell,omitempty"`        // register 0x906A value in mV
+	MaxCellIndex int      `json:"max_cell_index,omitempty"`  // 1-based index of max cell
+	MinCellIndex int      `json:"min_cell_index,omitempty"`  // 1-based index of min cell
 	// Temperature specific
 	TempRaw []int `json:"temp_raw,omitempty"` // raw temp values (x10) for color coding
 	// Pack status specific (type="pack_status")

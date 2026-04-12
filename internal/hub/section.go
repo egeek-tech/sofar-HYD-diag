@@ -16,6 +16,9 @@ type Probe = register.Probe
 // FormatValue is an alias for register.FormatValue used in hub result formatting.
 var FormatValue = register.FormatValue
 
+// FormatRawValue is an alias for register.FormatRawValue used in hub pack metadata.
+var FormatRawValue = register.FormatRawValue
+
 // Section represents a data section with subscribers and browser-driven reads.
 // No backend timer — all reads are triggered by browser WebSocket messages (REFR-01).
 type Section struct {

@@ -845,8 +845,9 @@ func (h *Hub) buildPackDataMessage(
 
 	// Group 1: Pack Info (from info block)
 	packInfoGroup := PackGroup{
-		Name:  "Pack Info",
-		Items: make(map[string]string),
+		Name:     "Pack Info",
+		Items:    make(map[string]string),
+		ItemMeta: make(map[string]PackItemMeta),
 	}
 	if infoData != nil {
 		for _, p := range infoProbes {
@@ -857,7 +858,12 @@ func (h *Hub) buildPackDataMessage(
 			offset := int(p.Addr-0x9104) * 2
 			end := offset + int(p.Count)*2
 			if offset >= 0 && end <= len(infoData) {
-				packInfoGroup.Items[p.Name] = FormatValue(p, infoData[offset:end])
+				dataSlice := infoData[offset:end]
+				packInfoGroup.Items[p.Name] = FormatValue(p, dataSlice)
+				packInfoGroup.ItemMeta[p.Name] = PackItemMeta{
+					RegisterAddr: p.Addr,
+					RawValue:     FormatRawValue(p, dataSlice),
+				}
 			}
 		}
 	}
@@ -872,7 +878,12 @@ func (h *Hub) buildPackDataMessage(
 				offset := int(p.Addr-0x9044) * 2
 				end := offset + int(p.Count)*2
 				if offset >= 0 && end <= len(rtData) {
-					packInfoGroup.Items[p.Name] = FormatValue(p, rtData[offset:end])
+					dataSlice := rtData[offset:end]
+					packInfoGroup.Items[p.Name] = FormatValue(p, dataSlice)
+					packInfoGroup.ItemMeta[p.Name] = PackItemMeta{
+						RegisterAddr: p.Addr,
+						RawValue:     FormatRawValue(p, dataSlice),
+					}
 				}
 			}
 		}
@@ -892,6 +903,19 @@ func (h *Hub) buildPackDataMessage(
 		cellGroup.Cells = cells
 		cellGroup.MaxCell = int(extractU16(rtData, 0x9044, 0x9069))
 		cellGroup.MinCell = int(extractU16(rtData, 0x9044, 0x906A))
+
+		// Per-cell register addresses for tooltip display (D-15)
+		addrs := make([]uint16, TopoCellsPerPack)
+		for i := 0; i < TopoCellsPerPack; i++ {
+			addrs[i] = uint16(0x9051 + i)
+		}
+		cellGroup.CellAddrs = addrs
+
+		// ItemMeta for MaxCell and MinCell summary registers
+		cellGroup.ItemMeta = map[string]PackItemMeta{
+			"MaxCell": {RegisterAddr: 0x9069, RawValue: fmt.Sprintf("%d", cellGroup.MaxCell)},
+			"MinCell": {RegisterAddr: 0x906A, RawValue: fmt.Sprintf("%d", cellGroup.MinCell)},
+		}
 
 		// Compute max/min cell index by scanning the cell values
 		maxIdx, minIdx := 1, 1
@@ -913,8 +937,9 @@ func (h *Hub) buildPackDataMessage(
 
 	// Group 3: Temperatures
 	tempGroup := PackGroup{
-		Name:  "Temperatures",
-		Items: make(map[string]string),
+		Name:     "Temperatures",
+		Items:    make(map[string]string),
+		ItemMeta: make(map[string]PackItemMeta),
 	}
 	tempRaw := make([]int, 0)
 	if rtData != nil {
@@ -924,7 +949,12 @@ func (h *Hub) buildPackDataMessage(
 				offset := int(p.Addr-0x9044) * 2
 				end := offset + int(p.Count)*2
 				if offset >= 0 && end <= len(rtData) {
-					tempGroup.Items[p.Name] = FormatValue(p, rtData[offset:end])
+					dataSlice := rtData[offset:end]
+					tempGroup.Items[p.Name] = FormatValue(p, dataSlice)
+					tempGroup.ItemMeta[p.Name] = PackItemMeta{
+						RegisterAddr: p.Addr,
+						RawValue:     FormatRawValue(p, dataSlice),
+					}
 					tempRaw = append(tempRaw, int(extractS16(rtData, 0x9044, p.Addr)))
 				}
 			}
@@ -936,7 +966,12 @@ func (h *Hub) buildPackDataMessage(
 			offset := int(p.Addr-0x90BC) * 2
 			end := offset + int(p.Count)*2
 			if offset >= 0 && end <= len(temps58Data) {
-				tempGroup.Items[p.Name] = FormatValue(p, temps58Data[offset:end])
+				dataSlice := temps58Data[offset:end]
+				tempGroup.Items[p.Name] = FormatValue(p, dataSlice)
+				tempGroup.ItemMeta[p.Name] = PackItemMeta{
+					RegisterAddr: p.Addr,
+					RawValue:     FormatRawValue(p, dataSlice),
+				}
 				tempRaw = append(tempRaw, int(extractS16(temps58Data, 0x90BC, p.Addr)))
 			}
 		}
@@ -968,6 +1003,15 @@ func (h *Hub) buildPackDataMessage(
 	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Protection2), register.BMSProtection2Bits, 0x9125)...)
 	decoded = append(decoded, register.DecodeBMSBitmap(uint16(statusGroup.Fault2), register.BMSFault2Bits, 0x9126)...)
 	statusGroup.Decoded = decoded
+	// Per-register metadata for status bitmap tooltips (D-15)
+	statusGroup.ItemMeta = map[string]PackItemMeta{
+		"Alarm":       {RegisterAddr: 0x9076, RawValue: fmt.Sprintf("%d", statusGroup.Alarm)},
+		"Protection":  {RegisterAddr: 0x9077, RawValue: fmt.Sprintf("%d", statusGroup.Protection)},
+		"Fault":       {RegisterAddr: 0x9078, RawValue: fmt.Sprintf("%d", statusGroup.Fault)},
+		"Alarm2":      {RegisterAddr: 0x9124, RawValue: fmt.Sprintf("%d", statusGroup.Alarm2)},
+		"Protection2": {RegisterAddr: 0x9125, RawValue: fmt.Sprintf("%d", statusGroup.Protection2)},
+		"Fault2":      {RegisterAddr: 0x9126, RawValue: fmt.Sprintf("%d", statusGroup.Fault2)},
+	}
 	msg.Groups = append(msg.Groups, statusGroup)
 
 	// Group 5: Balance State (type="balance")
@@ -977,6 +1021,10 @@ func (h *Hub) buildPackDataMessage(
 	}
 	if rtData != nil {
 		balanceGroup.BalanceBitmap = int(extractU16(rtData, 0x9044, 0x9075))
+		// Per-register metadata for balance bitmap tooltip (D-15)
+		balanceGroup.ItemMeta = map[string]PackItemMeta{
+			"BalanceBitmap": {RegisterAddr: 0x9075, RawValue: fmt.Sprintf("%d", balanceGroup.BalanceBitmap)},
+		}
 	}
 	msg.Groups = append(msg.Groups, balanceGroup)
 

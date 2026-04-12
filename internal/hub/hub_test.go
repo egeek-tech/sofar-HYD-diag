@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -2015,6 +2016,50 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 	// Tower 2 offline: no packs available
 	if bitmapGroup.Bitmap.Online[1] != 0x0000 {
 		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x0000 (tower 2 offline)", bitmapGroup.Bitmap.Online[1])
+	}
+}
+
+// TestPackDataMessageItemMeta verifies that PackItemMeta and CellAddrs appear in JSON.
+func TestPackDataMessageItemMeta(t *testing.T) {
+	msg := hub.PackDataMessage{
+		Type:    "pack_data",
+		Section: "bms",
+		Input:   1, Tower: 1, Pack: 1,
+		Groups: []hub.PackGroup{
+			{
+				Name:  "Pack Info",
+				Items: map[string]string{"SOC": "85%"},
+				ItemMeta: map[string]hub.PackItemMeta{
+					"SOC": {RegisterAddr: 0x906C, RawValue: "85"},
+				},
+			},
+			{
+				Name:      "Cell Voltages",
+				Type:      "cell_grid",
+				Cells:     []int{3280, 3281},
+				CellAddrs: []uint16{0x9051, 0x9052},
+			},
+		},
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	// Verify ItemMeta appears in JSON
+	if !strings.Contains(s, `"item_meta"`) {
+		t.Errorf("JSON missing item_meta: %s", s)
+	}
+	if !strings.Contains(s, `"register_addr":`) {
+		t.Errorf("JSON missing register_addr in item_meta: %s", s)
+	}
+	// Verify CellAddrs appears
+	if !strings.Contains(s, `"cell_addrs"`) {
+		t.Errorf("JSON missing cell_addrs: %s", s)
+	}
+	// Verify 0x906C = 36972 decimal appears
+	if !strings.Contains(s, `36972`) {
+		t.Errorf("JSON missing register_addr value 36972 for SOC: %s", s)
 	}
 }
 

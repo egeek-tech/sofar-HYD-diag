@@ -71,6 +71,24 @@ func FormatValue(p Probe, data []byte) string {
 	return fmt.Sprintf("%d (0x%04X)", val, val)
 }
 
+// FormatRawValue extracts the raw numeric representation of register data
+// before scaling or formatting. Returns a decimal string for numeric probes
+// or hex string for ASCII probes. Returns empty string for insufficient data.
+func FormatRawValue(p Probe, data []byte) string {
+	if len(data) < 2 {
+		return ""
+	}
+	if p.IsASCII {
+		return fmt.Sprintf("%X", data)
+	}
+	if p.U32 && len(data) >= 4 {
+		val := uint32(binary.BigEndian.Uint16(data[:2]))<<16 | uint32(binary.BigEndian.Uint16(data[2:4]))
+		return fmt.Sprintf("%d", val)
+	}
+	val := binary.BigEndian.Uint16(data[:2])
+	return fmt.Sprintf("%d", val)
+}
+
 // ComposeSystemTime takes the 6 time register values and returns a formatted datetime string.
 // The year value is offset by 2000 (e.g., 26 -> 2026).
 func ComposeSystemTime(year, month, day, hour, min, sec uint16) string {
