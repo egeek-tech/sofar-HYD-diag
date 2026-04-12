@@ -39,7 +39,7 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - ✓ PV Input section (configurable 2-16 channels) — v1.0
 - ✓ Battery pack drill-down: hierarchical navigation, cell voltages, temps, faults — v1.0
 - ✓ Lazy loading — parameters load only when navigating to a section — v1.0
-- ✓ WebSocket-based auto-refresh with toggle button — v1.0
+- ✓ Browser-driven auto-refresh with configurable cycle delay, no backend timer — Validated in Phase 8 (replaced v1.0 timer-based auto-refresh)
 - ✓ Visual feedback: green/red background flash — v1.0
 - ✓ Structured backend logging — v1.0
 - ✓ Desktop-optimized layout — v1.0
@@ -128,4 +128,4 @@ Two milestones complete (v1.0 MVP + v1.1 UX Polish & Battery Pack Fix).
 - Read delay shows burst on section switch due to enforceInterReadDelay timing
 
 ---
-*Last updated: 2026-04-12 after v1.2 milestone start*
+*Last updated: 2026-04-12 after Phase 8 complete — browser-driven refresh architecture*
