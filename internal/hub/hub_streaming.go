@@ -84,6 +84,10 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 					value = FormatValue(p, data)
 				}
 
+				// WR-02: skip send if context cancelled after ReadRegisters returned
+				if readCtx.Err() != nil {
+					return
+				}
 				// Send register_value immediately
 				h.results <- sectionResult{
 					section: sectionName,
@@ -92,7 +96,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 			}
 
 			// After all probes in this group: send composed system time if collected
-			if timeCount == 6 {
+			if timeCount == 6 && readCtx.Err() == nil {
 				composed := register.ComposeSystemTime(
 					timeVals[0], timeVals[1], timeVals[2],
 					timeVals[3], timeVals[4], timeVals[5],
@@ -102,6 +106,11 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 					msg:     NewRegisterValue(sectionName, g.Name, "System time", composed, ""),
 				}
 			}
+		}
+
+		// WR-02: bail out if context cancelled before fault/completion phase
+		if readCtx.Err() != nil {
+			return
 		}
 
 		// Read and decode faults for system section (streamed as a batch at the end)
@@ -187,6 +196,10 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 					value = FormatValue(p, data)
 				}
 
+				// WR-02: skip send if context cancelled after ReadRegisters returned
+				if readCtx.Err() != nil {
+					return
+				}
 				h.results <- sectionResult{
 					section: "battery",
 					msg:     NewRegisterValue("battery", g.Name, p.Name, value, errStr),
@@ -264,6 +277,10 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 				probeIdx++
 
 				if err != nil {
+					// WR-02: skip send if context cancelled
+					if readCtx.Err() != nil {
+						return
+					}
 					h.results <- sectionResult{
 						section: "bms",
 						msg:     NewRegisterValue("bms", g.Name, p.Name, "", err.Error()),
@@ -306,6 +323,9 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 						val := binary.BigEndian.Uint16(data[:2])
 						pStr, pPack := register.DecodeTopology(val)
 						value := fmt.Sprintf("%d strings x %d packs (0x%04X)", pStr, pPack, val)
+						if readCtx.Err() != nil {
+							return
+						}
 						h.results <- sectionResult{
 							section: "bms",
 							msg:     NewRegisterValue("bms", g.Name, p.Name, value, ""),
@@ -314,6 +334,10 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 					}
 				}
 
+				// WR-02: skip send if context cancelled after ReadRegisters returned
+				if readCtx.Err() != nil {
+					return
+				}
 				// Stream register value (including composition source registers)
 				h.results <- sectionResult{
 					section: "bms",
@@ -322,7 +346,7 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 			}
 
 			// After group: send composed BMS clock
-			if hasClockHi && hasClockLo {
+			if hasClockHi && hasClockLo && readCtx.Err() == nil {
 				clockVal := uint32(clockHi)<<16 | uint32(clockLo)
 				h.results <- sectionResult{
 					section: "bms",
@@ -331,12 +355,17 @@ func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
 			}
 
 			// After group: send composed SW version
-			if hasSWChar && hasSWMajor && hasSWNonStd && hasSWMinor {
+			if hasSWChar && hasSWMajor && hasSWNonStd && hasSWMinor && readCtx.Err() == nil {
 				h.results <- sectionResult{
 					section: "bms",
 					msg:     NewRegisterValue("bms", g.Name, "SW Version", fmt.Sprintf("%s%d.%d.%d", swChar, swMajor, swNonStd, swMinor), ""),
 				}
 			}
+		}
+
+		// WR-02: bail out if context cancelled before post-processing
+		if readCtx.Err() != nil {
+			return
 		}
 
 		// Step 2: Detect topology from 0x900D
