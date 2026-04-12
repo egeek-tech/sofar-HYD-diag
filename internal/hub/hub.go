@@ -381,46 +381,7 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 	h.streamStandardRead(sectionName, sec, readCtx)
 }
 
-// buildGroupedResult builds a standard grouped OutboundMessage from probe groups and results.
-// Used by battery and stats sections that have no special composition logic.
-func (h *Hub) buildGroupedResult(section string, groups []register.ProbeGroup, probes []register.Probe, results []broker.Result) OutboundMessage {
-	var hasError bool
-	var errMsg string
 
-	for _, r := range results {
-		if r.Err != nil {
-			hasError = true
-			errMsg = r.Err.Error()
-		}
-	}
-
-	groupDataSlice := make([]GroupData, 0, len(groups))
-	probeIdx := 0
-	for _, g := range groups {
-		gd := GroupData{
-			Name:   g.Name,
-			Layout: g.Layout,
-			Items:  make(map[string]string),
-		}
-		for _, p := range g.Probes {
-			if probeIdx >= len(results) {
-				break
-			}
-			r := results[probeIdx]
-			probeIdx++
-			if r.Err != nil {
-				continue
-			}
-			gd.Items[p.Name] = FormatValue(p, r.Data)
-		}
-		groupDataSlice = append(groupDataSlice, gd)
-	}
-
-	if hasError {
-		return NewSectionError(section, errMsg)
-	}
-	return NewGroupedSectionData(section, groupDataSlice, nil)
-}
 
 // buildBMSGroupData builds GroupData for BMS info groups with special handling for
 // BMS system clock composition (0x9004+0x9005 -> DecodeBMSClock) and SW version composition.
