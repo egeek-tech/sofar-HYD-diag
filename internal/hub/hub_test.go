@@ -1650,26 +1650,58 @@ func TestHandleSelectPack(t *testing.T) {
 		t.Errorf("expected WriteRegister call with addr=0x9020, got calls: %+v", writes)
 	}
 
-	// Verify ReadBatch was called 3 times (RT, Info, Temps58)
-	if got := mb.getBatchCallCount(); got < 3 {
-		t.Errorf("expected at least 3 ReadBatch calls, got %d", got)
+	// Phase 11: streamPackRead uses ReadRegisters per probe instead of ReadBatch.
+	// Verify multiple read calls were made (one per pack probe).
+	if got := mb.getBatchCallCount(); got < 10 {
+		t.Errorf("expected at least 10 ReadRegisters calls (pack probes), got %d", got)
 	}
 }
 
 func TestPackDataMessageShape(t *testing.T) {
+	// Phase 11: Pack data is now sent as streaming messages (section_schema + register_value + section_complete)
+	// instead of a single pack_data batch message.
 	mb := newMockBroker()
 
-	// Set up per-call batch results
-	mb.mu.Lock()
-	mb.batchResultQueue = [][]broker.Result{
-		{{Data: makePackRTData(), Err: nil}},
-		{{Data: makePackInfoData(), Err: nil}},
-		{{Data: makePackTemps58Data(), Err: nil}},
+	// Set up per-address register results for streaming reads
+	mb.registerResults = make(map[uint16]broker.Result)
+	defaultData := make([]byte, 2)
+	binary.BigEndian.PutUint16(defaultData, 100)
+	// Pack Info probes
+	for _, addr := range []uint16{0x9044, 0x9079, 0x907A, 0x9071, 0x9072, 0x9073, 0x9074, 0x907B, 0x907C, 0x9104, 0x9105, 0x910A, 0x910B} {
+		mb.registerResults[addr] = broker.Result{Data: append([]byte{}, defaultData...)}
 	}
-	mb.mu.Unlock()
+	snData := make([]byte, 20)
+	copy(snData, []byte("TEST1234567890123456"))
+	mb.registerResults[0x9047] = broker.Result{Data: snData}
+	mfgData := make([]byte, 8)
+	copy(mfgData, []byte("TESTMFG"))
+	mb.registerResults[0x9106] = broker.Result{Data: mfgData}
+	// Cell voltages: Cell 1 = 3200mV, incrementing
+	for i := 0; i < 16; i++ {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 3200+uint16(i))
+		mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: data}
+	}
+	// Max/Min cell voltage
+	maxCellData := make([]byte, 2)
+	binary.BigEndian.PutUint16(maxCellData, 3215)
+	mb.registerResults[0x9069] = broker.Result{Data: maxCellData}
+	minCellData := make([]byte, 2)
+	binary.BigEndian.PutUint16(minCellData, 3200)
+	mb.registerResults[0x906A] = broker.Result{Data: minCellData}
+	// Balance, temps, status
+	for _, addr := range []uint16{0x9075, 0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF, 0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126} {
+		mb.registerResults[addr] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
+
+	// Subscribe to BMS section first (streaming messages broadcast to subscribers)
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "bms"})
+	time.Sleep(100 * time.Millisecond)
+	// Drain BMS overview schema + register values + section_complete from initial subscribe
+	drainRawMessages(send, 3*time.Second)
 
 	h.Command(c, hub.InboundMessage{
 		Type:    hub.MsgTypeSelectPack,
@@ -1679,78 +1711,81 @@ func TestPackDataMessageShape(t *testing.T) {
 		Pack:    1,
 	})
 
-	msgs := collectPackDataMessages(t, send, 1, 3*time.Second)
-	msg := msgs[0]
+	// Collect streaming messages
+	rawMsgs := collectRawMessages(t, send, 5*time.Second)
 
-	if msg.Type != hub.MsgTypePackData {
-		t.Fatalf("expected type %q, got %q", hub.MsgTypePackData, msg.Type)
-	}
-	if msg.Section != "bms" {
-		t.Errorf("expected section 'bms', got %q", msg.Section)
-	}
-	if msg.Input != 1 {
-		t.Errorf("expected input=1, got %d", msg.Input)
-	}
-	if msg.Tower != 1 {
-		t.Errorf("expected tower=1, got %d", msg.Tower)
-	}
-	if msg.Pack != 1 {
-		t.Errorf("expected pack=1, got %d", msg.Pack)
+	// Verify message flow: section_schema, register_values, section_complete
+	var schemaMsg *hub.SectionSchemaMessage
+	var regValueCount int
+	var hasComplete bool
+	var hasPackData bool
+	for _, raw := range rawMsgs {
+		var generic map[string]interface{}
+		if err := json.Unmarshal(raw, &generic); err != nil {
+			continue
+		}
+		switch generic["type"] {
+		case "section_schema":
+			var sm hub.SectionSchemaMessage
+			json.Unmarshal(raw, &sm)
+			schemaMsg = &sm
+		case "register_value":
+			regValueCount++
+		case "section_complete":
+			hasComplete = true
+		case "pack_data":
+			hasPackData = true
+		}
 	}
 
-	// Should have 5 groups
-	if len(msg.Groups) != 5 {
-		t.Fatalf("expected 5 groups, got %d: %+v", len(msg.Groups), msg.Groups)
+	if hasPackData {
+		t.Error("received pack_data message (should use streaming)")
 	}
 
-	// Verify group names and types
+	// Verify schema
+	if schemaMsg == nil {
+		t.Fatal("no section_schema message received")
+	}
+	if schemaMsg.Section != "bms" {
+		t.Errorf("schema section = %q, want 'bms'", schemaMsg.Section)
+	}
+	if schemaMsg.PackContext == nil {
+		t.Fatal("schema missing pack_context")
+	}
+	if schemaMsg.PackContext.Input != 1 || schemaMsg.PackContext.Tower != 1 || schemaMsg.PackContext.Pack != 1 {
+		t.Errorf("pack_context = %+v, want input=1,tower=1,pack=1", schemaMsg.PackContext)
+	}
+
+	// Should have 5 groups in D-03 order
+	if len(schemaMsg.Groups) != 5 {
+		t.Fatalf("expected 5 schema groups, got %d", len(schemaMsg.Groups))
+	}
 	expectedGroups := []struct {
 		name  string
 		gtype string
 	}{
 		{"Pack Info", ""},
 		{"Cell Voltages", "cell_grid"},
+		{"Balance State", "balance"},
 		{"Temperatures", ""},
 		{"Pack Status", "pack_status"},
-		{"Balance State", "balance"},
 	}
 	for i, eg := range expectedGroups {
-		if msg.Groups[i].Name != eg.name {
-			t.Errorf("group[%d] name = %q, want %q", i, msg.Groups[i].Name, eg.name)
+		if schemaMsg.Groups[i].Name != eg.name {
+			t.Errorf("group[%d] name = %q, want %q", i, schemaMsg.Groups[i].Name, eg.name)
 		}
-		if msg.Groups[i].Type != eg.gtype {
-			t.Errorf("group[%d] type = %q, want %q", i, msg.Groups[i].Type, eg.gtype)
+		if schemaMsg.Groups[i].Type != eg.gtype {
+			t.Errorf("group[%d] type = %q, want %q", i, schemaMsg.Groups[i].Type, eg.gtype)
 		}
 	}
 
-	// Verify cell grid has 16 cells with correct values (D-05)
-	cellGroup := msg.Groups[1]
-	if len(cellGroup.Cells) != 16 {
-		t.Fatalf("expected 16 cells, got %d", len(cellGroup.Cells))
-	}
-	// Cell 1 should be 3200mV, Cell 16 should be 3215mV
-	if cellGroup.Cells[0] != 3200 {
-		t.Errorf("cell[0] = %d, want 3200", cellGroup.Cells[0])
-	}
-	if cellGroup.Cells[15] != 3215 {
-		t.Errorf("cell[15] = %d, want 3215", cellGroup.Cells[15])
-	}
-	if cellGroup.MaxCell != 3215 {
-		t.Errorf("MaxCell = %d, want 3215", cellGroup.MaxCell)
-	}
-	if cellGroup.MinCell != 3200 {
-		t.Errorf("MinCell = %d, want 3200", cellGroup.MinCell)
+	// Verify we got register_value messages for pack probes
+	if regValueCount == 0 {
+		t.Error("no register_value messages received")
 	}
 
-	// Verify temperatures group has TempRaw
-	tempGroup := msg.Groups[2]
-	if len(tempGroup.TempRaw) == 0 {
-		t.Error("expected non-empty TempRaw in Temperatures group")
-	}
-
-	// Verify timestamp is set
-	if msg.Timestamp == "" {
-		t.Error("expected non-empty timestamp")
+	if !hasComplete {
+		t.Error("no section_complete message received")
 	}
 }
 
@@ -2091,6 +2126,386 @@ func TestNewRegisterValueComposedJSON(t *testing.T) {
 	// raw_value should be omitted (omitempty)
 	if strings.Contains(s, `"raw_value"`) {
 		t.Errorf("JSON should omit empty raw_value: %s", s)
+	}
+}
+
+// === Phase 11 Plan 01: Pack streaming tests ===
+
+func TestPackSchemaContext(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	groups := register.PackProbeGroups()
+	schema := h.BuildPackSchema(1, 2, 3, groups)
+
+	// Verify section
+	if schema.Section != "bms" {
+		t.Errorf("schema.Section = %q, want %q", schema.Section, "bms")
+	}
+
+	// Verify 5 groups
+	if len(schema.Groups) != 5 {
+		t.Fatalf("schema has %d groups, want 5", len(schema.Groups))
+	}
+
+	// Verify JSON contains pack_context
+	data, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"pack_context"`) {
+		t.Errorf("JSON missing pack_context: %s", s)
+	}
+	if !strings.Contains(s, `"input":1`) {
+		t.Errorf("JSON missing input:1: %s", s)
+	}
+	if !strings.Contains(s, `"tower":2`) {
+		t.Errorf("JSON missing tower:2: %s", s)
+	}
+	if !strings.Contains(s, `"pack":3`) {
+		t.Errorf("JSON missing pack:3: %s", s)
+	}
+
+	// Verify Cell Voltages group has cell_count > 0
+	if !strings.Contains(s, `"cell_count"`) {
+		t.Errorf("JSON missing cell_count: %s", s)
+	}
+}
+
+func TestPackSchemaGroupOrder(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	groups := register.PackProbeGroups()
+	schema := h.BuildPackSchema(1, 1, 1, groups)
+
+	wantNames := []string{"Pack Info", "Cell Voltages", "Balance State", "Temperatures", "Pack Status"}
+	if len(schema.Groups) != len(wantNames) {
+		t.Fatalf("got %d groups, want %d", len(schema.Groups), len(wantNames))
+	}
+	for i, want := range wantNames {
+		if schema.Groups[i].Name != want {
+			t.Errorf("group[%d].Name = %q, want %q", i, schema.Groups[i].Name, want)
+		}
+	}
+}
+
+// collectRawMessages collects raw JSON messages from a client's send channel.
+func collectRawMessages(t *testing.T, send chan []byte, timeout time.Duration) []json.RawMessage {
+	t.Helper()
+	var msgs []json.RawMessage
+	deadline := time.After(timeout)
+	for {
+		select {
+		case raw, ok := <-send:
+			if !ok {
+				return msgs
+			}
+			msgs = append(msgs, json.RawMessage(raw))
+		case <-deadline:
+			return msgs
+		}
+	}
+}
+
+func TestPackStreamingMessages(t *testing.T) {
+	mb := newMockBroker()
+	// Set up register results for all pack addresses
+	mb.registerResults = make(map[uint16]broker.Result)
+	// Pack Info probes
+	for _, addr := range []uint16{0x9044, 0x9079, 0x907A, 0x9071, 0x9072, 0x9073, 0x9074, 0x907B, 0x907C, 0x9104, 0x9105, 0x910A, 0x910B} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 100)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+	// Serial Number (ASCII, 10 registers = 20 bytes)
+	snData := make([]byte, 20)
+	copy(snData, []byte("TEST1234567890123456"))
+	mb.registerResults[0x9047] = broker.Result{Data: snData}
+	// Manufacturer (ASCII, 4 registers = 8 bytes)
+	mfgData := make([]byte, 8)
+	copy(mfgData, []byte("TESTMFG"))
+	mb.registerResults[0x9106] = broker.Result{Data: mfgData}
+	// Cell voltages
+	for i := 0; i < 16; i++ {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 3300+uint16(i))
+		mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: data}
+	}
+	// Max/Min cell voltage
+	for _, addr := range []uint16{0x9069, 0x906A} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 3310)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+	// Balance state
+	data := make([]byte, 2)
+	binary.BigEndian.PutUint16(data, 0)
+	mb.registerResults[0x9075] = broker.Result{Data: data}
+	// Temperatures
+	for _, addr := range []uint16{0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 250)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+	// Status registers
+	for _, addr := range []uint16{0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 0)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	send := make(chan []byte, 256)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to BMS section
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "bms"})
+	time.Sleep(50 * time.Millisecond)
+
+	// Simulate connected state
+	mb.mu.Lock()
+	mb.state = broker.StateConnected
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	mb.mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+
+	// Drain any initial messages (state, schema, bms overview read)
+	drainRawMessages(send, 2*time.Second)
+
+	// Send select_pack command
+	h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
+
+	// Collect messages
+	rawMsgs := collectRawMessages(t, send, 5*time.Second)
+
+	if len(rawMsgs) == 0 {
+		t.Fatal("received no messages after select_pack")
+	}
+
+	// Parse messages and verify types
+	var hasSchema, hasRegValue, hasComplete bool
+	var hasPackData bool
+	for _, raw := range rawMsgs {
+		var generic map[string]interface{}
+		if err := json.Unmarshal(raw, &generic); err != nil {
+			continue
+		}
+		msgType, _ := generic["type"].(string)
+		switch msgType {
+		case "section_schema":
+			hasSchema = true
+			// Verify pack_context is present
+			if _, ok := generic["pack_context"]; !ok {
+				t.Error("section_schema missing pack_context")
+			}
+		case "register_value":
+			hasRegValue = true
+		case "section_complete":
+			hasComplete = true
+		case "pack_data":
+			hasPackData = true
+		}
+	}
+
+	if !hasSchema {
+		t.Error("no section_schema message received")
+	}
+	if !hasRegValue {
+		t.Error("no register_value messages received")
+	}
+	if !hasComplete {
+		t.Error("no section_complete message received")
+	}
+	if hasPackData {
+		t.Error("received pack_data message (should not be sent by streaming path)")
+	}
+}
+
+func TestPackSkipUnsupported(t *testing.T) {
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+	// Set up most registers to succeed
+	defaultData := make([]byte, 2)
+	binary.BigEndian.PutUint16(defaultData, 100)
+	// Pack Info probes
+	for _, addr := range []uint16{0x9044, 0x9079, 0x907A, 0x9071, 0x9072, 0x9073, 0x9074, 0x907B, 0x907C, 0x9105, 0x910A, 0x910B} {
+		mb.registerResults[addr] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
+	// Serial Number (ASCII)
+	snData := make([]byte, 20)
+	copy(snData, []byte("TEST"))
+	mb.registerResults[0x9047] = broker.Result{Data: snData}
+	// Manufacturer (ASCII)
+	mfgData := make([]byte, 8)
+	copy(mfgData, []byte("MFG"))
+	mb.registerResults[0x9106] = broker.Result{Data: mfgData}
+	// Cell voltages
+	for i := 0; i < 16; i++ {
+		mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
+	for _, addr := range []uint16{0x9069, 0x906A, 0x9075, 0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF, 0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126} {
+		mb.registerResults[addr] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
+	// Make 0x9104 return timeout error
+	mb.registerResults[0x9104] = broker.Result{Err: fmt.Errorf("timeout waiting for response")}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	send := make(chan []byte, 256)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe and connect
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "bms"})
+	time.Sleep(50 * time.Millisecond)
+	mb.mu.Lock()
+	mb.state = broker.StateConnected
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	mb.mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	drainRawMessages(send, 2*time.Second)
+
+	// First select_pack: 0x9104 should produce an error register_value
+	h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
+	firstMsgs := collectRawMessages(t, send, 5*time.Second)
+
+	// Count register_value messages mentioning 0x9104
+	count9104First := 0
+	for _, raw := range firstMsgs {
+		var generic map[string]interface{}
+		if err := json.Unmarshal(raw, &generic); err != nil {
+			continue
+		}
+		if generic["type"] == "register_value" {
+			if addr, ok := generic["register_addr"].(float64); ok && uint16(addr) == 0x9104 {
+				count9104First++
+			}
+		}
+	}
+	if count9104First != 1 {
+		t.Errorf("first read: got %d register_value for 0x9104, want 1", count9104First)
+	}
+
+	// Verify skip list has 0x9104
+	skipRegs := h.GetPackSkipRegisters()
+	if !skipRegs[0x9104] {
+		t.Error("0x9104 not in skip list after timeout")
+	}
+
+	// Second read_cycle for BMS (same pack): 0x9104 should be skipped
+	h.Command(client, hub.InboundMessage{Type: "read_cycle", Section: "bms"})
+	secondMsgs := collectRawMessages(t, send, 5*time.Second)
+
+	count9104Second := 0
+	for _, raw := range secondMsgs {
+		var generic map[string]interface{}
+		if err := json.Unmarshal(raw, &generic); err != nil {
+			continue
+		}
+		if generic["type"] == "register_value" {
+			if addr, ok := generic["register_addr"].(float64); ok && uint16(addr) == 0x9104 {
+				count9104Second++
+			}
+		}
+	}
+	if count9104Second != 0 {
+		t.Errorf("second read: got %d register_value for 0x9104, want 0 (should be skipped)", count9104Second)
+	}
+}
+
+func TestPackSkipResetOnSwitch(t *testing.T) {
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+	defaultData := make([]byte, 2)
+	binary.BigEndian.PutUint16(defaultData, 100)
+	// Set up all registers
+	for _, addr := range []uint16{0x9044, 0x9079, 0x907A, 0x9071, 0x9072, 0x9073, 0x9074, 0x907B, 0x907C, 0x9105, 0x910A, 0x910B} {
+		mb.registerResults[addr] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
+	snData := make([]byte, 20)
+	copy(snData, []byte("TEST"))
+	mb.registerResults[0x9047] = broker.Result{Data: snData}
+	mfgData := make([]byte, 8)
+	copy(mfgData, []byte("MFG"))
+	mb.registerResults[0x9106] = broker.Result{Data: mfgData}
+	for i := 0; i < 16; i++ {
+		mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
+	for _, addr := range []uint16{0x9069, 0x906A, 0x9075, 0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF, 0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126} {
+		mb.registerResults[addr] = broker.Result{Data: append([]byte{}, defaultData...)}
+	}
+	// 0x9104 starts as timeout
+	mb.registerResults[0x9104] = broker.Result{Err: fmt.Errorf("timeout waiting for response")}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	send := make(chan []byte, 256)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "bms"})
+	time.Sleep(50 * time.Millisecond)
+	mb.mu.Lock()
+	mb.state = broker.StateConnected
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	mb.mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	drainRawMessages(send, 2*time.Second)
+
+	// First select_pack (pack 1) -- should add 0x9104 to skip
+	h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
+	collectRawMessages(t, send, 5*time.Second)
+
+	// Verify skip list has 0x9104
+	skipRegs := h.GetPackSkipRegisters()
+	if !skipRegs[0x9104] {
+		t.Fatal("0x9104 not in skip list after first pack read")
+	}
+
+	// Now fix 0x9104 so it succeeds, and select a different pack
+	mb.mu.Lock()
+	mb.registerResults[0x9104] = broker.Result{Data: append([]byte{}, defaultData...)}
+	mb.mu.Unlock()
+
+	// Select different pack (pack 2) -- should clear skip list (D-05)
+	h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 2})
+	thirdMsgs := collectRawMessages(t, send, 5*time.Second)
+
+	// Verify skip list is cleared
+	skipRegs = h.GetPackSkipRegisters()
+	if skipRegs[0x9104] {
+		t.Error("0x9104 still in skip list after pack switch (should have been cleared)")
+	}
+
+	// Verify 0x9104 was read again (produces register_value)
+	count9104 := 0
+	for _, raw := range thirdMsgs {
+		var generic map[string]interface{}
+		if err := json.Unmarshal(raw, &generic); err != nil {
+			continue
+		}
+		if generic["type"] == "register_value" {
+			if addr, ok := generic["register_addr"].(float64); ok && uint16(addr) == 0x9104 {
+				count9104++
+			}
+		}
+	}
+	if count9104 != 1 {
+		t.Errorf("after pack switch: got %d register_value for 0x9104, want 1 (should be read again)", count9104)
 	}
 }
 

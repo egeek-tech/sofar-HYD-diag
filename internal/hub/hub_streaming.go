@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+	"time"
 
 	"sofar-hyd-diag/internal/broker"
 	"sofar-hyd-diag/internal/register"
@@ -247,6 +248,133 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 		h.results <- sectionResult{
 			section: "battery",
 			msg:     NewSectionComplete("battery"),
+		}
+	}()
+}
+
+// === Phase 11: Pack drill-down streaming ===
+
+// buildPackSchema builds a SectionSchemaMessage for a pack drill-down with PackContext.
+// The schema includes group metadata (types, cell counts) so the frontend can
+// pre-render the correct skeleton layout before values stream in.
+func (h *Hub) buildPackSchema(input, tower, pack int, groups []register.ProbeGroup) SectionSchemaMessage {
+	var schemaGroups []SchemaGroup
+	for _, g := range groups {
+		sg := SchemaGroup{
+			Name:   g.Name,
+			Layout: g.Layout,
+			Type:   g.Type,
+		}
+		if g.Type == "cell_grid" {
+			// Count only actual cell probes (exclude MaxCell/MinCell summary probes)
+			cellCount := 0
+			for _, p := range g.Probes {
+				if strings.HasPrefix(p.Name, "Cell ") {
+					cellCount++
+				}
+			}
+			sg.CellCount = cellCount
+		}
+		for _, p := range g.Probes {
+			sg.Registers = append(sg.Registers, p.Name)
+		}
+		schemaGroups = append(schemaGroups, sg)
+	}
+	return SectionSchemaMessage{
+		Type:        MsgTypeSectionSchema,
+		Section:     "bms",
+		Groups:      schemaGroups,
+		PackContext: &PackSchemaContext{Input: input, Tower: tower, Pack: pack},
+	}
+}
+
+// streamPackRead reads pack registers one-by-one, streaming register_value messages
+// for each probe, then sends section_complete. Follows the same pattern as streamBMSRead.
+// Implements D-01 (streaming), D-04 (skip unsupported), D-05 (skip cleared in handleSelectPack).
+func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx context.Context) {
+	groups := register.PackProbeGroups()
+	towersPerInput := TopoTowers
+	queryWord := register.EncodePackQuery(input, tower, pack, towersPerInput)
+	settleMs := h.packSettleMs
+	skipRegs := h.packSkipRegisters // capture reference for goroutine
+
+	go func() {
+		// Get BMS section to clear reading flag on completion
+		bmsSec := h.sections["bms"]
+		if bmsSec == nil {
+			return
+		}
+		defer bmsSec.reading.Store(false)
+
+		// Step 1: Write 0x9020 to select pack
+		err := h.broker.WriteRegister(readCtx, 0x9020, queryWord)
+		if err != nil {
+			h.logger.Warn("pack select write failed, retrying", "error", err)
+			time.Sleep(time.Duration(settleMs*2) * time.Millisecond)
+			err = h.broker.WriteRegister(readCtx, 0x9020, queryWord)
+			if err != nil {
+				h.logger.Error("pack select write failed after retry", "error", err)
+				h.sendPackError(client, input, tower, pack, "timeout writing pack selection after retry")
+				return
+			}
+		}
+
+		// Step 2: Wait for settle time
+		time.Sleep(time.Duration(settleMs) * time.Millisecond)
+
+		if readCtx.Err() != nil {
+			return
+		}
+
+		// Step 3: Send pack schema
+		schema := h.buildPackSchema(input, tower, pack, groups)
+		h.results <- sectionResult{section: "bms", msg: schema}
+
+		// Step 4: Read each probe individually, streaming register_value messages
+		for _, g := range groups {
+			for _, p := range g.Probes {
+				if readCtx.Err() != nil {
+					return
+				}
+				if skipRegs[p.Addr] {
+					continue
+				}
+
+				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
+				if err != nil {
+					// D-04: Track timeout/illegal address errors for skip
+					errStr := err.Error()
+					if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "0x02") || strings.Contains(errStr, "illegal") {
+						skipRegs[p.Addr] = true
+					}
+					if readCtx.Err() != nil {
+						return
+					}
+					h.results <- sectionResult{
+						section: "bms",
+						msg:     NewRegisterValue("bms", g.Name, p.Name, "", errStr, p.Addr, ""),
+					}
+					continue
+				}
+
+				if readCtx.Err() != nil {
+					return
+				}
+				h.results <- sectionResult{
+					section: "bms",
+					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), "", p.Addr, FormatRawValue(p, data)),
+				}
+			}
+		}
+
+		if readCtx.Err() != nil {
+			return
+		}
+
+		// Step 5: Send section_complete
+		h.results <- sectionResult{
+			section: "bms",
+			msg:     NewSectionComplete("bms"),
 		}
 	}()
 }

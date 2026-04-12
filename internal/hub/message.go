@@ -219,14 +219,23 @@ type SchemaGroup struct {
 	Layout    string   `json:"layout,omitempty"`
 	Type      string   `json:"type,omitempty"`
 	Registers []string `json:"registers"`
+	CellCount int      `json:"cell_count,omitempty"` // Phase 11: cell count for cell_grid groups
+}
+
+// PackSchemaContext identifies a pack drill-down schema (distinguishes from BMS overview).
+type PackSchemaContext struct {
+	Input int `json:"input"`
+	Tower int `json:"tower"`
+	Pack  int `json:"pack"`
 }
 
 // SectionSchemaMessage sends the section layout to the client on subscribe,
 // so the frontend can pre-render placeholder slots before values stream in.
 type SectionSchemaMessage struct {
-	Type    string        `json:"type"`
-	Section string        `json:"section"`
-	Groups  []SchemaGroup `json:"groups"`
+	Type        string             `json:"type"`
+	Section     string             `json:"section"`
+	Groups      []SchemaGroup      `json:"groups"`
+	PackContext *PackSchemaContext  `json:"pack_context,omitempty"` // Phase 11: pack drill-down context
 }
 
 // NewRegisterValue creates a register_value message for a single probe result.

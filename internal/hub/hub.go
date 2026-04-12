@@ -56,6 +56,7 @@ type Hub struct {
 	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
 	readDelayMs        int           // configurable inter-read delay in milliseconds (D-04, default 500)
 	packSettleMs       int           // configurable pack settle time in milliseconds (D-04, default 1000)
+	packSkipRegisters  map[uint16]bool // per-register skip tracking for current pack (Phase 11, D-04)
 }
 
 // packSelection tracks the currently selected pack for auto-refresh re-triggering.
@@ -87,6 +88,7 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 	}
 	h.readDelayMs = 500
 	h.packSettleMs = 1000
+	h.packSkipRegisters = make(map[uint16]bool)
 	return h
 }
 
@@ -346,9 +348,13 @@ func (h *Hub) handleReadCycle(c *Client, msg InboundMessage) {
 		h.logger.Debug("skipping overlapping read_cycle", "section", msg.Section)
 		return
 	}
-	// If BMS with selected pack, trigger pack read instead
+	// If BMS with selected pack, trigger pack streaming read instead
 	if msg.Section == "bms" && h.selectedPack != nil {
-		h.triggerPackRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client)
+		sec.cancelRead()
+		readCtx, cancel := context.WithCancel(h.ctx)
+		sec.readCancel = cancel
+		sec.reading.Store(true)
+		h.streamPackRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client, readCtx)
 		return
 	}
 	h.triggerSectionRead(msg.Section)
@@ -736,9 +742,24 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 	// Store selection for auto-refresh
 	h.selectedPack = &packSelection{input: input, tower: tower, pack: pack, client: cmd.Client}
 
-	h.triggerPackRead(input, tower, pack, cmd.Client)
+	// D-05: Reset unsupported register list on pack switch
+	h.packSkipRegisters = make(map[uint16]bool)
+
+	// Set up BMS section read context for pack streaming
+	sec, ok := h.sections["bms"]
+	if !ok {
+		return
+	}
+	sec.cancelRead()
+	readCtx, cancel := context.WithCancel(h.ctx)
+	sec.readCancel = cancel
+	sec.reading.Store(true)
+
+	h.streamPackRead(input, tower, pack, cmd.Client, readCtx)
 }
 
+// DEPRECATED: replaced by streamPackRead in Phase 11. Kept for backward compatibility
+// during transition; will be removed in a future cleanup task.
 // triggerPackRead performs the write-settle-read cycle for pack data retrieval.
 // Writes 0x9020 to select the pack, waits for settle, then reads 3 register blocks.
 func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
@@ -813,6 +834,7 @@ func (h *Hub) triggerPackRead(input, tower, pack int, client *Client) {
 	}()
 }
 
+// DEPRECATED: replaced by buildPackSchema + streamPackRead in Phase 11.
 // buildPackDataMessage assembles a PackDataMessage from the 3 register read results.
 func (h *Hub) buildPackDataMessage(
 	input, tower, pack int,

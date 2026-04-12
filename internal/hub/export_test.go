@@ -77,3 +77,21 @@ func (h *Hub) GetTimingConfig() (readDelayMs, packSettleMs int) {
 	})
 	return
 }
+
+// BuildPackSchema exposes buildPackSchema for testing.
+func (h *Hub) BuildPackSchema(input, tower, pack int, groups []register.ProbeGroup) SectionSchemaMessage {
+	return h.buildPackSchema(input, tower, pack, groups)
+}
+
+// GetPackSkipRegisters returns a copy of the pack skip registers map.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetPackSkipRegisters() map[uint16]bool {
+	var result map[uint16]bool
+	h.RunFunc(func() {
+		result = make(map[uint16]bool, len(h.packSkipRegisters))
+		for k, v := range h.packSkipRegisters {
+			result[k] = v
+		}
+	})
+	return result
+}
