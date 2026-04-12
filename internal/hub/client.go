@@ -3,6 +3,7 @@ package hub
 import (
 	"encoding/json"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -21,7 +22,8 @@ type Client struct {
 	hub     *Hub
 	conn    *websocket.Conn
 	send    chan []byte
-	section string // currently subscribed section (one at a time per D-18)
+	section string      // currently subscribed section (one at a time per D-18)
+	closed  atomic.Bool // set by removeClient/shutdown; checked before sending to avoid panic on closed channel (CR-01)
 	logger  *slog.Logger
 }
 

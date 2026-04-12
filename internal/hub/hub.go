@@ -592,6 +592,7 @@ func (h *Hub) removeClient(c *Client) {
 		h.unsubscribeClient(c, c.section)
 	}
 	delete(h.clients, c)
+	c.closed.Store(true) // CR-01: signal goroutines before closing channel
 	close(c.send)
 	h.logger.Debug("client removed", "clients", len(h.clients))
 }
@@ -599,6 +600,7 @@ func (h *Hub) removeClient(c *Client) {
 // shutdown closes all client connections and clears maps.
 func (h *Hub) shutdown() {
 	for c := range h.clients {
+		c.closed.Store(true) // CR-01: signal goroutines before closing channel
 		close(c.send)
 		delete(h.clients, c)
 	}
@@ -996,7 +998,11 @@ func extractS16(data []byte, baseAddr, targetAddr uint16) int16 {
 }
 
 // sendPackError sends a pack_error message to a specific client.
+// Checks client.closed to avoid panic on closed channel (CR-01).
 func (h *Hub) sendPackError(client *Client, input, tower, pack int, errMsg string) {
+	if client.closed.Load() {
+		return
+	}
 	msg := PackErrorMessage{
 		Type:    MsgTypePackError,
 		Section: "bms",
@@ -1017,7 +1023,11 @@ func (h *Hub) sendPackError(client *Client, input, tower, pack int, errMsg strin
 }
 
 // sendPackDataToClient sends a PackDataMessage to a specific client.
+// Checks client.closed to avoid panic on closed channel (CR-01).
 func (h *Hub) sendPackDataToClient(client *Client, msg PackDataMessage) {
+	if client.closed.Load() {
+		return
+	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		h.logger.Error("marshal pack data message", "error", err)
