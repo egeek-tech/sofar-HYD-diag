@@ -4,14 +4,14 @@ milestone: v1.2
 milestone_name: Reliability & UX Refinements
 status: planning
 stopped_at: Roadmap created — ready to plan Phase 8
-last_updated: "2026-04-12"
+last_updated: "2026-04-12T11:45:20.234Z"
 last_activity: 2026-04-12
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-12)
 
 ## Current Position
 
-Phase: 8 of 11 (Refresh Architecture) — first phase of v1.2
-Plan: —
+Phase: 9 of 11 (connection & read resilience)
+Plan: Not started
 Status: Ready to plan
-Last activity: 2026-04-12 — Roadmap created for v1.2
+Last activity: 2026-04-12
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 0 (v1.2)
+- Total plans completed: 2 (v1.2)
 - Average duration: -
 - Total execution time: 0 hours
 

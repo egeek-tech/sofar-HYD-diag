@@ -49,8 +49,8 @@
   4. Stopping auto-refresh in the browser immediately stops all Modbus reads (no orphaned backend timer continues reading)
 **Plans:** 2 plans
 Plans:
-- [ ] 08-01-PLAN.md -- Backend timer removal, context cancellation, read_cycle message, tests
-- [ ] 08-02-PLAN.md -- Browser-driven refresh state machine, cycle delay dropdown, manual Refresh button
+- [x] 08-01-PLAN.md -- Backend timer removal, context cancellation, read_cycle message, tests
+- [x] 08-02-PLAN.md -- Browser-driven refresh state machine, cycle delay dropdown, manual Refresh button
 
 ### Phase 9: Connection & Read Resilience
 **Goal**: Users experience immediate disconnect response and transparent error recovery during reads
