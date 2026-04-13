@@ -193,6 +193,13 @@ func (h *Hub) Run(ctx context.Context) {
 			}
 			h.handleStateEvent(evt)
 		case res := <-h.results:
+			// D-09: Mark read-once sections as cached when section_complete arrives
+			if _, ok := res.msg.(SectionCompleteMessage); ok {
+				if sec, ok := h.sections[res.section]; ok && sec.readOnce && !sec.hasReadOnce {
+					sec.hasReadOnce = true
+					h.logger.Debug("read-once section cached", "section", res.section)
+				}
+			}
 			h.broadcastResultToSection(res.section, res.msg)
 		case fn := <-h.funcs:
 			fn()
@@ -228,6 +235,10 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 	case MsgTypeUnsubscribe:
 		h.unsubscribeClient(cmd.Client, msg.Section)
 	case MsgTypeRefresh:
+		// D-09: Reset read-once cache on explicit refresh
+		if sec, ok := h.sections[msg.Section]; ok && sec.readOnce {
+			sec.hasReadOnce = false
+		}
 		h.triggerSectionRead(msg.Section)
 	case MsgTypeReadCycle:
 		h.handleReadCycle(cmd.Client, msg)
@@ -347,6 +358,11 @@ func (h *Hub) handleReadCycle(c *Client, msg InboundMessage) {
 	// Skip if already reading (same logic as old handleTimerTick D-24)
 	if sec.reading.Load() {
 		h.logger.Debug("skipping overlapping read_cycle", "section", msg.Section)
+		return
+	}
+	// D-09: Skip re-read for cached read-once sections
+	if sec.readOnce && sec.hasReadOnce {
+		h.logger.Debug("skipping read_cycle for cached read-once section", "section", msg.Section)
 		return
 	}
 	// If BMS with selected pack, trigger pack streaming read instead
@@ -620,11 +636,17 @@ func (h *Hub) shutdown() {
 // registerBuiltinSections registers core monitoring sections on hub startup.
 func (h *Hub) registerBuiltinSections() {
 	h.RegisterGroupedSection("system", append(register.SystemGroups, register.StatisticsGroups()...))
+	h.RegisterGroupedSection("configuration", register.ConfigurationGroups) // D-07: after system, D-09: read-once
 	h.RegisterGroupedSection("grid", register.GridGroups)
 	h.RegisterGroupedSection("eps", register.EPSGroups)
 	h.RegisterGroupedSection("pv", register.GeneratePVGroups(h.defaultPVChannels))
 	h.RegisterGroupedSection("battery", register.GenerateBatteryGroups(2)) // default 2 channels, auto-detect on read
 	h.registerBMSSection()
+
+	// D-09: Configuration section uses read-once caching (static device settings)
+	if sec, ok := h.sections["configuration"]; ok {
+		sec.readOnce = true
+	}
 }
 
 // registerBMSSection creates the BMS section. BMS has a custom read cycle
