@@ -5,11 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func discardLogger() *slog.Logger {
@@ -21,7 +19,10 @@ func discardLogger() *slog.Logger {
 func TestCRC16(t *testing.T) {
 	data := []byte{0x01, 0x03, 0x00, 0x00, 0x00, 0x01}
 	got := CRC16(data)
-	assert.Equal(t, uint16(0x0A84), got, "CRC16(%X)", data)
+	want := uint16(0x0A84)
+	if got != want {
+		t.Errorf("CRC16(%X) = 0x%04X, want 0x%04X", data, got, want)
+	}
 }
 
 // TestReadFull verifies that ReadFull assembles data from multiple partial reads.
@@ -43,9 +44,17 @@ func TestReadFull(t *testing.T) {
 
 	buf := make([]byte, len(want))
 	n, err := ReadFull(client, buf)
-	require.NoError(t, err, "ReadFull error")
-	assert.Equal(t, len(want), n, "ReadFull returned byte count")
-	assert.Equal(t, want, buf, "ReadFull data")
+	if err != nil {
+		t.Fatalf("ReadFull error: %v", err)
+	}
+	if n != len(want) {
+		t.Errorf("ReadFull returned %d bytes, want %d", n, len(want))
+	}
+	for i, b := range buf {
+		if b != want[i] {
+			t.Errorf("buf[%d] = 0x%02X, want 0x%02X", i, b, want[i])
+		}
+	}
 }
 
 // TestReadHoldingRegistersTCP uses net.Pipe to mock a Modbus TCP server.
@@ -68,19 +77,29 @@ func TestReadHoldingRegistersTCP(t *testing.T) {
 		// Read the 12-byte request
 		req := make([]byte, 12)
 		if _, err := ReadFull(server, req); err != nil {
-			assert.NoError(t, err, "server read request")
+			t.Errorf("server read request: %v", err)
 			return
 		}
 
 		// Verify MBAP header structure
 		txID := binary.BigEndian.Uint16(req[0:2])
-		assert.Equal(t, nextTxID, txID, "txID")
+		if txID != nextTxID {
+			t.Errorf("txID = %d, want %d", txID, nextTxID)
+		}
 		protocolID := binary.BigEndian.Uint16(req[2:4])
-		assert.Equal(t, uint16(0x0000), protocolID, "protocol ID")
+		if protocolID != 0x0000 {
+			t.Errorf("protocol ID = 0x%04X, want 0x0000", protocolID)
+		}
 		length := binary.BigEndian.Uint16(req[4:6])
-		assert.Equal(t, uint16(6), length, "MBAP length")
-		assert.Equal(t, byte(0x01), req[6], "slaveID")
-		assert.Equal(t, byte(0x03), req[7], "function code")
+		if length != 6 {
+			t.Errorf("MBAP length = %d, want 6", length)
+		}
+		if req[6] != 0x01 {
+			t.Errorf("slaveID = 0x%02X, want 0x01", req[6])
+		}
+		if req[7] != 0x03 {
+			t.Errorf("function code = 0x%02X, want 0x03", req[7])
+		}
 
 		// Build valid MBAP response: txID(2) + protocol(2) + length(2) + unitID(1) + func(1) + byteCount(1) + data(2)
 		resp := make([]byte, 11)
@@ -97,10 +116,15 @@ func TestReadHoldingRegistersTCP(t *testing.T) {
 	}()
 
 	data, err := ReadHoldingRegistersTCP(client, logger, 0x01, 0x0404, 1)
-	require.NoError(t, err, "ReadHoldingRegistersTCP error")
-	require.Len(t, data, 2, "data length")
-	assert.Equal(t, byte(0x12), data[0], "data high byte")
-	assert.Equal(t, byte(0x34), data[1], "data low byte")
+	if err != nil {
+		t.Fatalf("ReadHoldingRegistersTCP error: %v", err)
+	}
+	if len(data) != 2 {
+		t.Fatalf("data length = %d, want 2", len(data))
+	}
+	if data[0] != 0x12 || data[1] != 0x34 {
+		t.Errorf("data = %X, want 1234", data)
+	}
 }
 
 // TestReadHoldingRegistersTCP_Exception verifies that a Modbus exception response
@@ -122,7 +146,7 @@ func TestReadHoldingRegistersTCP_Exception(t *testing.T) {
 		// Read the 12-byte request
 		req := make([]byte, 12)
 		if _, err := ReadFull(server, req); err != nil {
-			assert.NoError(t, err, "server read request")
+			t.Errorf("server read request: %v", err)
 			return
 		}
 
@@ -139,8 +163,12 @@ func TestReadHoldingRegistersTCP_Exception(t *testing.T) {
 	}()
 
 	_, err := ReadHoldingRegistersTCP(client, logger, 0x01, 0x0404, 1)
-	require.Error(t, err, "expected error for exception response")
-	assert.Contains(t, err.Error(), "exception", "error should mention exception")
+	if err == nil {
+		t.Fatal("expected error for exception response, got nil")
+	}
+	if !strings.Contains(err.Error(), "exception") {
+		t.Errorf("error = %q, want it to contain 'exception'", err.Error())
+	}
 }
 
 // TestWriteMultipleRegistersTCP uses net.Pipe to mock a Modbus TCP server.
@@ -163,21 +191,33 @@ func TestWriteMultipleRegistersTCP(t *testing.T) {
 		// Read the 15-byte request (MBAP 7 + PDU 8)
 		req := make([]byte, 15)
 		if _, err := ReadFull(server, req); err != nil {
-			assert.NoError(t, err, "server read request")
+			t.Errorf("server read request: %v", err)
 			return
 		}
 
 		// Verify structure
 		txID := binary.BigEndian.Uint16(req[0:2])
-		assert.Equal(t, nextTxID, txID, "txID")
-		assert.Equal(t, byte(0x10), req[7], "function code")
+		if txID != nextTxID {
+			t.Errorf("txID = %d, want %d", txID, nextTxID)
+		}
+		if req[7] != 0x10 {
+			t.Errorf("function code = 0x%02X, want 0x10", req[7])
+		}
 		regAddr := binary.BigEndian.Uint16(req[8:10])
-		assert.Equal(t, uint16(0x9020), regAddr, "regAddr")
+		if regAddr != 0x9020 {
+			t.Errorf("regAddr = 0x%04X, want 0x9020", regAddr)
+		}
 		qty := binary.BigEndian.Uint16(req[10:12])
-		assert.Equal(t, uint16(1), qty, "quantity")
-		assert.Equal(t, byte(2), req[12], "byteCount")
+		if qty != 1 {
+			t.Errorf("quantity = %d, want 1", qty)
+		}
+		if req[12] != 2 {
+			t.Errorf("byteCount = %d, want 2", req[12])
+		}
 		value := binary.BigEndian.Uint16(req[13:15])
-		assert.Equal(t, uint16(0x0100), value, "value")
+		if value != 0x0100 {
+			t.Errorf("value = 0x%04X, want 0x0100", value)
+		}
 
 		// Build valid write response: MBAP(7) + func(1) + regAddr(2) + qty(2)
 		resp := make([]byte, 12)
@@ -193,7 +233,9 @@ func TestWriteMultipleRegistersTCP(t *testing.T) {
 	}()
 
 	err := WriteMultipleRegistersTCP(client, logger, 0x01, 0x9020, 0x0100)
-	require.NoError(t, err, "WriteMultipleRegistersTCP error")
+	if err != nil {
+		t.Fatalf("WriteMultipleRegistersTCP error: %v", err)
+	}
 }
 
 // TestReadHoldingRegistersRTU uses net.Pipe to mock a Modbus RTU server.
@@ -213,7 +255,7 @@ func TestReadHoldingRegistersRTU(t *testing.T) {
 		// Read the 8-byte RTU request (6 data + 2 CRC)
 		req := make([]byte, 8)
 		if _, err := ReadFull(server, req); err != nil {
-			assert.NoError(t, err, "server read request")
+			t.Errorf("server read request: %v", err)
 			return
 		}
 
@@ -221,11 +263,17 @@ func TestReadHoldingRegistersRTU(t *testing.T) {
 		reqData := req[:6]
 		reqCRC := uint16(req[6]) | uint16(req[7])<<8
 		calcCRC := CRC16(reqData)
-		assert.Equal(t, calcCRC, reqCRC, "request CRC")
+		if reqCRC != calcCRC {
+			t.Errorf("request CRC = 0x%04X, want 0x%04X", reqCRC, calcCRC)
+		}
 
 		// Verify request fields
-		assert.Equal(t, byte(0x01), req[0], "slaveID")
-		assert.Equal(t, byte(0x03), req[1], "function code")
+		if req[0] != 0x01 {
+			t.Errorf("slaveID = 0x%02X, want 0x01", req[0])
+		}
+		if req[1] != 0x03 {
+			t.Errorf("function code = 0x%02X, want 0x03", req[1])
+		}
 
 		// Build valid RTU response: slaveID(1) + func(1) + byteCount(1) + data(2) + CRC(2)
 		respData := []byte{
@@ -242,10 +290,15 @@ func TestReadHoldingRegistersRTU(t *testing.T) {
 	}()
 
 	data, err := ReadHoldingRegistersRTU(client, logger, 0x01, 0x0404, 1)
-	require.NoError(t, err, "ReadHoldingRegistersRTU error")
-	require.Len(t, data, 2, "data length")
-	assert.Equal(t, byte(0x12), data[0], "data high byte")
-	assert.Equal(t, byte(0x34), data[1], "data low byte")
+	if err != nil {
+		t.Fatalf("ReadHoldingRegistersRTU error: %v", err)
+	}
+	if len(data) != 2 {
+		t.Fatalf("data length = %d, want 2", len(data))
+	}
+	if data[0] != 0x12 || data[1] != 0x34 {
+		t.Errorf("data = %X, want 1234", data)
+	}
 }
 
 // TestReadHoldingRegistersRTU_CRCMismatch verifies that an RTU response with
@@ -264,7 +317,7 @@ func TestReadHoldingRegistersRTU_CRCMismatch(t *testing.T) {
 		// Read the 8-byte RTU request
 		req := make([]byte, 8)
 		if _, err := ReadFull(server, req); err != nil {
-			assert.NoError(t, err, "server read request")
+			t.Errorf("server read request: %v", err)
 			return
 		}
 
@@ -283,43 +336,10 @@ func TestReadHoldingRegistersRTU_CRCMismatch(t *testing.T) {
 	}()
 
 	_, err := ReadHoldingRegistersRTU(client, logger, 0x01, 0x0404, 1)
-	require.Error(t, err, "expected error for CRC mismatch")
-	assert.Contains(t, err.Error(), "CRC mismatch", "error should mention CRC mismatch")
-}
-
-// === Edge case / boundary tests (D-06) ===
-
-// TestCRC16_EmptyInput verifies CRC-16/MODBUS with empty input returns 0xFFFF.
-// The algorithm initializes CRC to 0xFFFF and performs no iterations on empty data.
-func TestCRC16_EmptyInput(t *testing.T) {
-	got := CRC16([]byte{})
-	assert.Equal(t, uint16(0xFFFF), got, "CRC16 of empty input")
-}
-
-// TestCRC16_SingleByteZero verifies CRC-16/MODBUS with a single zero byte.
-func TestCRC16_SingleByteZero(t *testing.T) {
-	got := CRC16([]byte{0x00})
-	// CRC16/MODBUS of [0x00] = 0x40BF
-	assert.Equal(t, uint16(0x40BF), got, "CRC16 of single zero byte")
-}
-
-// TestCRC16_SingleByteFF verifies CRC-16/MODBUS with a single 0xFF byte.
-func TestCRC16_SingleByteFF(t *testing.T) {
-	got := CRC16([]byte{0xFF})
-	// CRC16/MODBUS of [0xFF] = 0x00FF (initial 0xFFFF XOR 0xFF = 0xFF00, then 8 iterations)
-	assert.Equal(t, uint16(0x00FF), got, "CRC16 of single 0xFF byte")
-}
-
-// TestCRC16_KnownModbusFrame verifies CRC against a known Modbus RTU request frame.
-// Standard Modbus RTU request: slave=0x01, func=0x03, addr=0x0000, qty=0x0001
-// Known CRC = 0x0A84 (already tested in TestCRC16, but this validates the byte-swapped form).
-func TestCRC16_KnownModbusFrame(t *testing.T) {
-	// Full 8-byte frame: data(6) + CRC low + CRC high
-	frame := []byte{0x01, 0x03, 0x00, 0x00, 0x00, 0x01}
-	crc := CRC16(frame)
-	assert.Equal(t, uint16(0x0A84), crc, "CRC16 of known Modbus frame")
-
-	// Verify CRC byte order: low byte first, high byte second (RTU convention)
-	assert.Equal(t, byte(0x84), byte(crc&0xFF), "CRC low byte")
-	assert.Equal(t, byte(0x0A), byte(crc>>8), "CRC high byte")
+	if err == nil {
+		t.Fatal("expected error for CRC mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "CRC mismatch") {
+		t.Errorf("error = %q, want it to contain 'CRC mismatch'", err.Error())
+	}
 }

@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"sofar-hyd-diag/internal/broker"
 	"sofar-hyd-diag/internal/modbus"
@@ -129,12 +127,17 @@ func TestBackoff(t *testing.T) {
 
 	for i, want := range expected {
 		got := b.Next()
-		assert.Equal(t, want, got, "Next() call %d", i+1)
+		if got != want {
+			t.Errorf("Next() call %d = %v, want %v", i+1, got, want)
+		}
 	}
 
 	b.Reset()
 	got := b.Next()
-	assert.Equal(t, 100*time.Millisecond, got, "After Reset(), Next()")
+	want := 100 * time.Millisecond
+	if got != want {
+		t.Errorf("After Reset(), Next() = %v, want %v", got, want)
+	}
 }
 
 func TestBrokerDormantStart(t *testing.T) {
@@ -151,18 +154,26 @@ func TestBrokerDormantStart(t *testing.T) {
 
 	// Broker must be in StateDormant, not StateConnecting
 	state := b.CurrentState()
-	require.Equal(t, broker.StateDormant, state, "expected StateDormant")
+	if state != broker.StateDormant {
+		t.Fatalf("expected StateDormant, got %v", state)
+	}
 
 	// Attempting a read while dormant should return an error mentioning "dormant"
 	_, err := b.ReadRegisters(ctx, 0x0404, 1)
-	require.Error(t, err, "expected error reading from dormant broker")
-	assert.Contains(t, err.Error(), "dormant", "error should mention dormant")
+	if err == nil {
+		t.Fatal("expected error reading from dormant broker, got nil")
+	}
+	if !strings.Contains(err.Error(), "dormant") {
+		t.Fatalf("expected error containing 'dormant', got: %v", err)
+	}
 }
 
 func TestBrokerReconfigure(t *testing.T) {
 	// Start mock server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 
 	addr := listener.Addr().String()
@@ -178,25 +189,37 @@ func TestBrokerReconfigure(t *testing.T) {
 
 	// Should start dormant
 	time.Sleep(50 * time.Millisecond)
-	require.Equal(t, broker.StateDormant, b.CurrentState(), "expected StateDormant before Reconfigure")
+	if s := b.CurrentState(); s != broker.StateDormant {
+		t.Fatalf("expected StateDormant before Reconfigure, got %v", s)
+	}
 
 	// Reconfigure to connect to mock server
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Should now be connected
-	require.Equal(t, broker.StateConnected, b.CurrentState(), "expected StateConnected after Reconfigure")
+	if s := b.CurrentState(); s != broker.StateConnected {
+		t.Fatalf("expected StateConnected after Reconfigure, got %v", s)
+	}
 
 	// Read should succeed
 	data, err := b.ReadRegisters(ctx, 0x0404, 1)
-	require.NoError(t, err, "read after Reconfigure failed")
+	if err != nil {
+		t.Fatalf("read after Reconfigure failed: %v", err)
+	}
 	val := binary.BigEndian.Uint16(data)
-	assert.Equal(t, uint16(0xCAFE), val, "register value")
+	if val != 0xCAFE {
+		t.Errorf("expected 0xCAFE, got 0x%04X", val)
+	}
 }
 
 func TestBrokerDisconnect(t *testing.T) {
 	// Start mock server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 
 	addr := listener.Addr().String()
@@ -212,27 +235,39 @@ func TestBrokerDisconnect(t *testing.T) {
 	defer b.Close()
 
 	// Connect via Reconfigure
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
-	require.Equal(t, broker.StateConnected, b.CurrentState(), "expected StateConnected")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+	if s := b.CurrentState(); s != broker.StateConnected {
+		t.Fatalf("expected StateConnected, got %v", s)
+	}
 
 	// Disconnect
-	require.NoError(t, b.Disconnect(ctx), "Disconnect failed")
+	if err := b.Disconnect(ctx); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
 
 	// Should be StateDisconnected, not reconnecting
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, broker.StateDisconnected, b.CurrentState(), "expected StateDisconnected after Disconnect")
+	if s := b.CurrentState(); s != broker.StateDisconnected {
+		t.Fatalf("expected StateDisconnected after Disconnect, got %v", s)
+	}
 }
 
 func TestBrokerReconfigureWhileConnected(t *testing.T) {
 	// Start two mock servers
 	listener1, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener1")
+	if err != nil {
+		t.Fatalf("failed to create listener1: %v", err)
+	}
 	defer listener1.Close()
 	addr1 := listener1.Addr().String()
 	go mockModbusServer(t, listener1, 1, 0x1111)
 
 	listener2, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener2")
+	if err != nil {
+		t.Fatalf("failed to create listener2: %v", err)
+	}
 	defer listener2.Close()
 	addr2 := listener2.Addr().String()
 	go mockModbusServer(t, listener2, 1, 0x2222)
@@ -246,26 +281,40 @@ func TestBrokerReconfigureWhileConnected(t *testing.T) {
 	defer b.Close()
 
 	// Connect to first server
-	require.NoError(t, b.Reconfigure(ctx, addr1, 1), "first Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr1, 1); err != nil {
+		t.Fatalf("first Reconfigure failed: %v", err)
+	}
 
 	// Read from first server
 	data, err := b.ReadRegisters(ctx, 0x0404, 1)
-	require.NoError(t, err, "first read failed")
-	assert.Equal(t, uint16(0x1111), binary.BigEndian.Uint16(data), "first read value")
+	if err != nil {
+		t.Fatalf("first read failed: %v", err)
+	}
+	if val := binary.BigEndian.Uint16(data); val != 0x1111 {
+		t.Errorf("first read: expected 0x1111, got 0x%04X", val)
+	}
 
 	// Reconfigure to second server
-	require.NoError(t, b.Reconfigure(ctx, addr2, 1), "second Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr2, 1); err != nil {
+		t.Fatalf("second Reconfigure failed: %v", err)
+	}
 
 	// Read from second server
 	data, err = b.ReadRegisters(ctx, 0x0404, 1)
-	require.NoError(t, err, "second read failed")
-	assert.Equal(t, uint16(0x2222), binary.BigEndian.Uint16(data), "second read value")
+	if err != nil {
+		t.Fatalf("second read failed: %v", err)
+	}
+	if val := binary.BigEndian.Uint16(data); val != 0x2222 {
+		t.Errorf("second read: expected 0x2222, got 0x%04X", val)
+	}
 }
 
 func TestBrokerSerialization(t *testing.T) {
 	// Start a mock TCP server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 
 	addr := listener.Addr().String()
@@ -283,7 +332,9 @@ func TestBrokerSerialization(t *testing.T) {
 	go b.Run(ctx)
 
 	// Reconfigure to connect (broker starts dormant now)
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Fire 3 concurrent reads
 	var wg sync.WaitGroup
@@ -312,14 +363,18 @@ func TestBrokerSerialization(t *testing.T) {
 	wg.Wait()
 
 	for i, err := range results {
-		assert.NoError(t, err, "concurrent read %d", i)
+		if err != nil {
+			t.Errorf("concurrent read %d failed: %v", i, err)
+		}
 	}
 }
 
 func TestBrokerReconnect(t *testing.T) {
 	// Start first mock server
 	listener1, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	addr := listener1.Addr().String()
 
 	// Serve 1 request then close
@@ -346,27 +401,41 @@ func TestBrokerReconnect(t *testing.T) {
 	}()
 
 	// Reconfigure to connect (broker starts dormant now)
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// First read should succeed
 	data, err := b.ReadRegisters(ctx, 0x0404, 1)
-	require.NoError(t, err, "first read failed")
-	assert.Equal(t, uint16(0xAAAA), binary.BigEndian.Uint16(data), "first read value")
+	if err != nil {
+		t.Fatalf("first read failed: %v", err)
+	}
+	val := binary.BigEndian.Uint16(data)
+	if val != 0xAAAA {
+		t.Errorf("first read: expected 0xAAAA, got 0x%04X", val)
+	}
 
 	// Close first listener so next operation triggers reconnect
 	listener1.Close()
 
 	// Start a new listener on the same address for the reconnect
 	listener2, err := net.Listen("tcp", addr)
-	require.NoError(t, err, "failed to create second listener")
+	if err != nil {
+		t.Fatalf("failed to create second listener: %v", err)
+	}
 	defer listener2.Close()
 
 	go mockModbusServer(t, listener2, 1, 0xBBBB)
 
 	// Second read should trigger reconnect and succeed
 	data, err = b.ReadRegisters(ctx, 0x0404, 1)
-	require.NoError(t, err, "second read (after reconnect) failed")
-	assert.Equal(t, uint16(0xBBBB), binary.BigEndian.Uint16(data), "second read value")
+	if err != nil {
+		t.Fatalf("second read (after reconnect) failed: %v", err)
+	}
+	val = binary.BigEndian.Uint16(data)
+	if val != 0xBBBB {
+		t.Errorf("second read: expected 0xBBBB, got 0x%04X", val)
+	}
 
 	// Verify we saw reconnecting state event
 	time.Sleep(100 * time.Millisecond)
@@ -384,7 +453,9 @@ func TestBrokerReconnect(t *testing.T) {
 		}
 	}
 
-	assert.True(t, hasConnected, "expected StateConnected event")
+	if !hasConnected {
+		t.Error("expected StateConnected event, got none")
+	}
 	// Note: hasReconnecting may or may not be true depending on timing
 	// The important thing is that the reconnect succeeded
 	_ = hasReconnecting
@@ -404,7 +475,9 @@ func TestBrokerContextCancellation(t *testing.T) {
 
 	// ReadRegisters should return context error
 	_, err := b.ReadRegisters(ctx, 0x0404, 1)
-	require.Error(t, err, "expected error from cancelled context")
+	if err == nil {
+		t.Fatal("expected error from cancelled context, got nil")
+	}
 	if err != context.Canceled {
 		t.Logf("got error: %v (acceptable, context was cancelled)", err)
 	}
@@ -413,7 +486,9 @@ func TestBrokerContextCancellation(t *testing.T) {
 func TestBrokerReadBatch(t *testing.T) {
 	// Start mock server that handles 3 requests
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 
 	addr := listener.Addr().String()
@@ -430,7 +505,9 @@ func TestBrokerReadBatch(t *testing.T) {
 	go b.Run(ctx)
 
 	// Reconfigure to connect (broker starts dormant now)
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	reads := []broker.ReadRequest{
 		{Addr: 0x0404, Count: 1},
@@ -444,15 +521,25 @@ func TestBrokerReadBatch(t *testing.T) {
 
 	// Verify all 3 results succeeded
 	for i, r := range results {
-		require.NoError(t, r.Err, "batch read %d", i)
-		require.Len(t, r.Data, 2, "batch read %d data length", i)
+		if r.Err != nil {
+			t.Errorf("batch read %d failed: %v", i, r.Err)
+			continue
+		}
+		if len(r.Data) != 2 {
+			t.Errorf("batch read %d: expected 2 bytes, got %d", i, len(r.Data))
+			continue
+		}
 		val := binary.BigEndian.Uint16(r.Data)
-		assert.Equal(t, uint16(0x5678), val, "batch read %d value", i)
+		if val != 0x5678 {
+			t.Errorf("batch read %d: expected 0x5678, got 0x%04X", i, val)
+		}
 	}
 
 	// 3 reads with 500ms inter-read delay = at least 1000ms between first and last
 	// (2 gaps: read1 -> 500ms -> read2 -> 500ms -> read3)
-	assert.GreaterOrEqual(t, elapsed, 1000*time.Millisecond, "batch read completed too fast for inter-read delays")
+	if elapsed < 1000*time.Millisecond {
+		t.Errorf("batch read completed too fast: %v (expected >= 1000ms for inter-read delays)", elapsed)
+	}
 }
 
 // slowMockServer accepts a connection and holds it open for the given
@@ -472,7 +559,9 @@ func slowMockServer(t *testing.T, listener net.Listener, holdDuration time.Durat
 func TestBrokerAbortRead(t *testing.T) {
 	// Start a slow mock server that holds the connection for 10s
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 	addr := listener.Addr().String()
 	go slowMockServer(t, listener, 10*time.Second)
@@ -486,7 +575,9 @@ func TestBrokerAbortRead(t *testing.T) {
 	defer b.Close()
 
 	// Connect to the slow server
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Start a read in background -- this will block on the slow server
 	readDone := make(chan error, 1)
@@ -500,21 +591,29 @@ func TestBrokerAbortRead(t *testing.T) {
 
 	// Disconnect should abort the blocking read and complete quickly
 	start := time.Now()
-	require.NoError(t, b.Disconnect(ctx), "Disconnect failed")
+	if err := b.Disconnect(ctx); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
 	elapsed := time.Since(start)
 
 	// Disconnect must complete within 2 seconds (D-02 requires <1s, allow margin)
-	assert.Less(t, elapsed, 2*time.Second, "Disconnect took too long")
+	if elapsed > 2*time.Second {
+		t.Errorf("Disconnect took %v, expected < 2s", elapsed)
+	}
 
 	// Broker should be disconnected
-	assert.Equal(t, broker.StateDisconnected, b.CurrentState(), "expected StateDisconnected")
+	if s := b.CurrentState(); s != broker.StateDisconnected {
+		t.Errorf("expected StateDisconnected, got %v", s)
+	}
 
 	// The blocked read should also have returned (with an error)
 	select {
 	case err := <-readDone:
-		assert.Error(t, err, "expected read to fail after abort")
+		if err == nil {
+			t.Error("expected read to fail after abort, got nil error")
+		}
 	case <-time.After(3 * time.Second):
-		assert.Fail(t, "read goroutine did not return within 3s after disconnect")
+		t.Error("read goroutine did not return within 3s after disconnect")
 	}
 }
 
@@ -531,9 +630,13 @@ func TestBrokerAbortReadNoConn(t *testing.T) {
 	// abortRead on dormant broker (no conn) should not panic.
 	// We call Disconnect which internally calls abortRead.
 	err := b.Disconnect(ctx)
-	require.NoError(t, err, "Disconnect on dormant broker failed")
+	if err != nil {
+		t.Fatalf("Disconnect on dormant broker failed: %v", err)
+	}
 
-	assert.Equal(t, broker.StateDisconnected, b.CurrentState(), "expected StateDisconnected")
+	if s := b.CurrentState(); s != broker.StateDisconnected {
+		t.Errorf("expected StateDisconnected, got %v", s)
+	}
 }
 
 // buildExceptionResponse constructs a Modbus TCP exception response.
@@ -554,7 +657,9 @@ func buildExceptionResponse(txID uint16, slaveID byte, funcCode byte, exceptionC
 func TestBrokerRetryThreeAttempts(t *testing.T) {
 	// Server that closes connection immediately (simulates connection error for reads)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 	addr := listener.Addr().String()
 
@@ -581,11 +686,15 @@ func TestBrokerRetryThreeAttempts(t *testing.T) {
 	defer b.Close()
 
 	// Connect
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Read should fail after 3 attempts
 	_, err = b.ReadRegisters(ctx, 0x0404, 1)
-	require.Error(t, err, "expected error after 3 failed attempts")
+	if err == nil {
+		t.Fatal("expected error after 3 failed attempts, got nil")
+	}
 
 	t.Logf("read failed as expected after retries: %v", err)
 }
@@ -593,7 +702,9 @@ func TestBrokerRetryThreeAttempts(t *testing.T) {
 func TestBrokerNoRetryIllegalAddress(t *testing.T) {
 	// Server that returns Modbus exception 0x02 (illegal data address)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 	addr := listener.Addr().String()
 
@@ -634,25 +745,37 @@ func TestBrokerNoRetryIllegalAddress(t *testing.T) {
 	go b.Run(ctx)
 	defer b.Close()
 
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Read should fail immediately without retry (illegal address)
 	_, err = b.ReadRegisters(ctx, 0x0404, 1)
-	require.Error(t, err, "expected error for illegal address")
-	assert.Contains(t, err.Error(), "err=0x02", "expected illegal address error")
+	if err == nil {
+		t.Fatal("expected error for illegal address, got nil")
+	}
+	if !strings.Contains(err.Error(), "err=0x02") {
+		t.Fatalf("expected illegal address error, got: %v", err)
+	}
 
 	// Only 1 request should have been made (no retries)
 	count := atomic.LoadInt32(&requestCount)
-	assert.Equal(t, int32(1), count, "expected 1 request (no retry)")
+	if count != 1 {
+		t.Errorf("expected 1 request (no retry), got %d", count)
+	}
 
 	// Broker should still be connected (handleError not called for non-retryable errors)
-	assert.Equal(t, broker.StateConnected, b.CurrentState(), "expected StateConnected (connection not closed for non-retryable)")
+	if s := b.CurrentState(); s != broker.StateConnected {
+		t.Errorf("expected StateConnected (connection not closed for non-retryable), got %v", s)
+	}
 }
 
 func TestBrokerRetrySuccess(t *testing.T) {
 	// Server: first read gets connection closed, reconnect + second read succeeds
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "failed to create listener")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
 	defer listener.Close()
 	addr := listener.Addr().String()
 
@@ -700,12 +823,18 @@ func TestBrokerRetrySuccess(t *testing.T) {
 	go b.Run(ctx)
 	defer b.Close()
 
-	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
 
 	// Read should succeed on retry (first attempt fails, second succeeds)
 	data, err := b.ReadRegisters(ctx, 0x0404, 1)
-	require.NoError(t, err, "expected successful retry")
+	if err != nil {
+		t.Fatalf("expected successful retry, got error: %v", err)
+	}
 
 	val := binary.BigEndian.Uint16(data)
-	assert.Equal(t, uint16(0xBEEF), val, "register value after retry")
+	if val != 0xBEEF {
+		t.Errorf("expected 0xBEEF, got 0x%04X", val)
+	}
 }

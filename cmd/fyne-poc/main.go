@@ -142,7 +142,7 @@ func main() {
 
 	sections := container.NewVBox()
 
-	for _, group := range register.SystemGroups() {
+	for _, group := range register.SystemGroups {
 		// Group header
 		header := widget.NewLabel(group.Name)
 		header.TextStyle = fyne.TextStyle{Bold: true}
@@ -214,7 +214,7 @@ func main() {
 
 		go func() {
 			for {
-				for _, group := range register.SystemGroups() {
+				for _, group := range register.SystemGroups {
 					for _, probe := range group.Probes {
 						// Check for cancellation between each read
 						select {

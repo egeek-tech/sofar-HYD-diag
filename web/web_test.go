@@ -13,8 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"sofar-hyd-diag/internal/broker"
 	"sofar-hyd-diag/internal/hub"
 	"sofar-hyd-diag/web"
@@ -47,14 +45,24 @@ func TestStatusEndpoint(t *testing.T) {
 
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "expected 200")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
 
 	var resp web.StatusResponse
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp), "failed to decode JSON")
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
 
-	assert.Equal(t, "dormant", resp.ConnectionState, "connection_state")
-	assert.Equal(t, "127.0.0.1:1", resp.InverterAddr, "inverter_addr")
-	assert.NotEmpty(t, resp.Uptime, "expected non-empty uptime")
+	if resp.ConnectionState != "dormant" {
+		t.Errorf("expected connection_state 'dormant', got %q", resp.ConnectionState)
+	}
+	if resp.InverterAddr != "127.0.0.1:1" {
+		t.Errorf("expected inverter_addr '127.0.0.1:1', got %q", resp.InverterAddr)
+	}
+	if resp.Uptime == "" {
+		t.Error("expected non-empty uptime")
+	}
 }
 
 func TestDefaultsEndpoint(t *testing.T) {
@@ -64,17 +72,31 @@ func TestDefaultsEndpoint(t *testing.T) {
 
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "expected 200")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
 
 	ct := w.Header().Get("Content-Type")
-	assert.Contains(t, ct, "application/json", "Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
 
 	var resp web.DefaultsConfig
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp), "failed to decode JSON")
-	assert.Equal(t, "10.5.99.29", resp.Host, "host")
-	assert.Equal(t, 4192, resp.Port, "port")
-	assert.Equal(t, 1, resp.SlaveID, "slave_id")
-	assert.Equal(t, 2, resp.PVChannels, "pv_channels")
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+	if resp.Host != "10.5.99.29" {
+		t.Errorf("expected host '10.5.99.29', got %q", resp.Host)
+	}
+	if resp.Port != 4192 {
+		t.Errorf("expected port 4192, got %d", resp.Port)
+	}
+	if resp.SlaveID != 1 {
+		t.Errorf("expected slave_id 1, got %d", resp.SlaveID)
+	}
+	if resp.PVChannels != 2 {
+		t.Errorf("expected pv_channels 2, got %d", resp.PVChannels)
+	}
 }
 
 func TestWSUpgrade(t *testing.T) {
@@ -94,16 +116,24 @@ func TestWSUpgrade(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	require.NoError(t, err, "ws dial failed")
+	if err != nil {
+		t.Fatalf("ws dial failed: %v", err)
+	}
 	defer conn.Close()
 
-	assert.Equal(t, 101, resp.StatusCode, "expected 101 Switching Protocols")
+	if resp.StatusCode != 101 {
+		t.Errorf("expected 101, got %d", resp.StatusCode)
+	}
 
 	// Should receive initial connection_state message
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn.ReadMessage()
-	require.NoError(t, err, "read initial message failed")
-	assert.Contains(t, string(msg), "connection_state", "expected connection_state message")
+	if err != nil {
+		t.Fatalf("read initial message failed: %v", err)
+	}
+	if !strings.Contains(string(msg), "connection_state") {
+		t.Errorf("expected connection_state message, got: %s", msg)
+	}
 }
 
 func TestWSUpgradeWithoutHeaders(t *testing.T) {
@@ -114,7 +144,9 @@ func TestWSUpgradeWithoutHeaders(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	// Without upgrade headers, the WS upgrader should reject with 400
-	assert.Equal(t, http.StatusBadRequest, w.Code, "expected 400")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
 }
 
 func TestStaticFileServing(t *testing.T) {
@@ -124,10 +156,14 @@ func TestStaticFileServing(t *testing.T) {
 
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "expected 200")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
 
 	body := w.Body.String()
-	assert.Contains(t, body, "<title>Sofar HYD Diagnostic Tool</title>", "expected index.html title")
+	if !strings.Contains(body, "<title>Sofar HYD Diagnostic Tool</title>") {
+		t.Error("expected index.html to contain the title")
+	}
 }
 
 func TestStaticCSS(t *testing.T) {
@@ -137,10 +173,14 @@ func TestStaticCSS(t *testing.T) {
 
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "expected 200")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
 
 	body := w.Body.String()
-	assert.Contains(t, body, "font-family", "expected style.css to contain font-family")
+	if !strings.Contains(body, "font-family") {
+		t.Error("expected style.css to contain font-family")
+	}
 }
 
 func TestStaticJS(t *testing.T) {
@@ -150,5 +190,7 @@ func TestStaticJS(t *testing.T) {
 
 	r.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, "expected 200")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
 }
