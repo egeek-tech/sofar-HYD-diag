@@ -1559,29 +1559,6 @@ func makePackTemps58Data() []byte {
 	return data
 }
 
-// collectPackDataMessages reads raw JSON from the send channel and attempts to unmarshal
-// as PackDataMessage. Returns all successfully parsed pack_data messages.
-func collectPackDataMessages(t *testing.T, send chan []byte, count int, timeout time.Duration) []hub.PackDataMessage {
-	t.Helper()
-	var msgs []hub.PackDataMessage
-	deadline := time.After(timeout)
-	for len(msgs) < count {
-		select {
-		case raw, ok := <-send:
-			if !ok {
-				t.Fatalf("send channel closed after %d pack messages, wanted %d", len(msgs), count)
-			}
-			var msg hub.PackDataMessage
-			if err := json.Unmarshal(raw, &msg); err == nil && msg.Type == hub.MsgTypePackData {
-				msgs = append(msgs, msg)
-			}
-		case <-deadline:
-			t.Fatalf("timeout after %v: got %d pack_data messages, wanted %d", timeout, len(msgs), count)
-		}
-	}
-	return msgs
-}
-
 // collectPackErrorMessages reads raw JSON from the send channel and attempts to unmarshal
 // as PackErrorMessage. Returns all successfully parsed pack_error messages.
 func collectPackErrorMessages(t *testing.T, send chan []byte, count int, timeout time.Duration) []hub.PackErrorMessage {
