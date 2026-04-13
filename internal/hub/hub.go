@@ -29,8 +29,9 @@ type sectionResult struct {
 }
 
 // === Battery Topology Constants (Phase 06, D-02) ===
-// Hardcoded to match actual hardware: 2 towers, 10 packs/tower, 16 cells/pack.
+// Hardcoded to match actual hardware: 1 input, 2 towers, 10 packs/tower, 16 cells/pack.
 const (
+	TopoInputs        = 1  // single battery input supported
 	TopoTowers        = 2  // 2 towers (groups/strings)
 	TopoPacksPerTower = 10 // 10 packs per tower
 	TopoCellsPerPack  = 16 // 16 cells per battery pack
@@ -720,10 +721,7 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 	pack := msg.Pack
 
 	// Validate and clamp to topology bounds (T-05-02, T-06-01)
-	if input < 1 {
-		input = 1
-	}
-	if input > 1 {
+	if input < 1 || input > TopoInputs {
 		input = 1
 	}
 	if tower < 1 {
