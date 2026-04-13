@@ -1750,7 +1750,10 @@ function computeTempSummary() {
         if (vals[name] === undefined) continue;
         var raw = vals[name]; // x10 integer
         var tempC = raw / 10.0;
-        if (tempC === 0.0) continue; // exclude zero readings (sensor not connected)
+        // Sofar BMS returns raw 0 for disconnected/absent temperature sensors.
+        // 0.0C is excluded intentionally; real operating temps are non-zero.
+        // See also: internal/register/battery.go pack temp probes.
+        if (tempC === 0.0) continue;
         if (tempC < min) min = tempC;
         if (tempC > max) max = tempC;
         count++;
