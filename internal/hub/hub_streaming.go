@@ -312,7 +312,11 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 		err := h.broker.WriteRegister(readCtx, 0x9020, queryWord)
 		if err != nil {
 			h.logger.Warn("pack select write failed, retrying", "error", err)
-			time.Sleep(time.Duration(settleMs*2) * time.Millisecond)
+			select {
+			case <-time.After(time.Duration(settleMs*2) * time.Millisecond):
+			case <-readCtx.Done():
+				return
+			}
 			err = h.broker.WriteRegister(readCtx, 0x9020, queryWord)
 			if err != nil {
 				h.logger.Error("pack select write failed after retry", "error", err)
@@ -321,10 +325,10 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 			}
 		}
 
-		// Step 2: Wait for settle time
-		time.Sleep(time.Duration(settleMs) * time.Millisecond)
-
-		if readCtx.Err() != nil {
+		// Step 2: Wait for settle time (context-aware)
+		select {
+		case <-time.After(time.Duration(settleMs) * time.Millisecond):
+		case <-readCtx.Done():
 			return
 		}
 
