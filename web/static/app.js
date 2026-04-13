@@ -1047,7 +1047,17 @@ function showTooltip(el) {
 
     var lines = [];
     // D-19: Omit Register line if addr is 0x0000 (composed values)
-    if (addr && addr !== '0x0000') lines.push('Register: ' + addr);
+    if (addr && addr !== '0x0000') {
+        if (raw && raw.indexOf(' | ') !== -1) {
+            // D-08: Register range tooltip for composed values (e.g., System time)
+            var parts = raw.split(' | ');
+            lines.push('Registers: ' + parts[0]);
+            lines.push('Raw: ' + parts[1]);
+            raw = null; // consumed, prevent duplicate Raw line below
+        } else {
+            lines.push('Register: ' + addr);
+        }
+    }
     if (raw) lines.push('Raw: ' + raw);
     if (time) lines.push('Last read: ' + time);
 
