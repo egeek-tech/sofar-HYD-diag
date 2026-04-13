@@ -1730,3 +1730,130 @@ func TestConfigEnumMaps(t *testing.T) {
 		}
 	}
 }
+
+// === Configuration Groups Tests ===
+
+func TestConfigurationGroups(t *testing.T) {
+	groups := ConfigurationGroups
+
+	// Must be non-nil with >= 15 groups
+	if groups == nil {
+		t.Fatal("ConfigurationGroups is nil")
+	}
+	if len(groups) < 15 {
+		t.Errorf("ConfigurationGroups has %d groups, want >= 15", len(groups))
+	}
+
+	// First group should be "System Config"
+	if groups[0].Name != "System Config" {
+		t.Errorf("First group name = %q, want %q", groups[0].Name, "System Config")
+	}
+	// First probe should be in 0x1000 range
+	if len(groups[0].Probes) > 0 && groups[0].Probes[0].Addr < 0x1000 {
+		t.Errorf("First group first probe addr = 0x%04X, want >= 0x1000", groups[0].Probes[0].Addr)
+	}
+
+	// Find specific groups by name
+	groupMap := make(map[string]*ProbeGroup)
+	for i := range groups {
+		groupMap[groups[i].Name] = &groups[i]
+	}
+
+	// "Battery Config" group with probe at 0x1046 referencing BatteryProtocolEnum
+	battConfig, ok := groupMap["Battery Config"]
+	if !ok {
+		t.Error("Missing 'Battery Config' group")
+	} else {
+		found := false
+		for _, p := range battConfig.Probes {
+			if p.Addr == 0x1046 {
+				found = true
+				if p.Enum == nil {
+					t.Error("Battery Config probe at 0x1046 has nil Enum")
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("Battery Config missing probe at 0x1046")
+		}
+	}
+
+	// "Energy Storage Mode" group with probe at 0x1110
+	esMode, ok := groupMap["Energy Storage Mode"]
+	if !ok {
+		t.Error("Missing 'Energy Storage Mode' group")
+	} else {
+		found := false
+		for _, p := range esMode.Probes {
+			if p.Addr == 0x1110 {
+				found = true
+				if p.Enum == nil {
+					t.Error("Energy Storage Mode probe at 0x1110 has nil Enum")
+				}
+				break
+			}
+		}
+		if !found {
+			t.Error("Energy Storage Mode missing probe at 0x1110")
+		}
+	}
+
+	// No duplicate addresses across all groups
+	addrSet := make(map[uint16]string)
+	totalProbes := 0
+	for _, g := range groups {
+		for _, p := range g.Probes {
+			totalProbes++
+			if prev, exists := addrSet[p.Addr]; exists {
+				t.Errorf("Duplicate address 0x%04X in group %q (first seen in %q)", p.Addr, g.Name, prev)
+			}
+			addrSet[p.Addr] = g.Name
+		}
+	}
+
+	// All probes have Count >= 1
+	for _, g := range groups {
+		for _, p := range g.Probes {
+			if p.Count < 1 {
+				t.Errorf("Probe %q in group %q has Count %d, want >= 1", p.Name, g.Name, p.Count)
+			}
+		}
+	}
+
+	// All U32 probes have Count == 2
+	for _, g := range groups {
+		for _, p := range g.Probes {
+			if p.U32 && p.Count != 2 {
+				t.Errorf("U32 probe %q in group %q has Count %d, want 2", p.Name, g.Name, p.Count)
+			}
+		}
+	}
+
+	// Total probe count >= 150
+	if totalProbes < 150 {
+		t.Errorf("Total probe count = %d, want >= 150", totalProbes)
+	}
+
+	// 6 EMS Time Period groups exist
+	emsCount := 0
+	for _, g := range groups {
+		if strings.Contains(g.Name, "EMS Time Period") && !strings.Contains(g.Name, "Enable") {
+			emsCount++
+		}
+	}
+	if emsCount != 6 {
+		t.Errorf("EMS Time Period group count = %d, want 6", emsCount)
+	}
+
+	// At least 5 safety groups exist ("Safety:" prefix)
+	safetyCount := 0
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "Safety:") {
+			safetyCount++
+		}
+	}
+	if safetyCount < 5 {
+		t.Errorf("Safety group count = %d, want >= 5", safetyCount)
+	}
+}
