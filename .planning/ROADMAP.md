@@ -98,7 +98,11 @@ Plans:
   2. Clicking Configuration streams device config registers organized into logical groups (System, Battery, Function, Safety, Reactive Power, etc.)
   3. All configuration values are read-only with no write controls exposed
   4. Configuration registers display with proper units, scaling, and enum decoding matching the V1.38 protocol spec
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 15-01-PLAN.md -- Define configuration register groups and enum maps from V1.38 protocol spec
+- [ ] 15-02-PLAN.md -- Hub integration with read-once caching and section registration
+- [ ] 15-03-PLAN.md -- Frontend sidebar button, error suppression, group hiding, and visual verification
 **UI hint**: yes
 
 ### Phase 16: Frontend Polish
@@ -145,6 +149,6 @@ Note: Phases 15, 16, and 17 depend only on Phase 12, not on each other. They are
 | 12. Dead Code Cleanup & Test Infrastructure | v1.3 | 2/2 | Complete    | 2026-04-13 |
 | 13. Statistics-to-System Merge | v1.3 | 1/1 | Complete    | 2026-04-13 |
 | 14. System Time Fix | v1.3 | 1/1 | Complete    | 2026-04-13 |
-| 15. Configuration Section | v1.3 | 0/0 | Not started | - |
+| 15. Configuration Section | v1.3 | 0/3 | Planned     | - |
 | 16. Frontend Polish | v1.3 | 0/0 | Not started | - |
 | 17. XLSX Register Discovery | v1.3 | 0/0 | Not started | - |
