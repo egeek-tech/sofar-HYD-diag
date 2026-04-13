@@ -92,7 +92,7 @@ func FormatRawValue(p Probe, data []byte) string {
 // ComposeSystemTime takes the 6 time register values and returns a formatted datetime string.
 // The year value is offset by 2000 (e.g., 26 -> 2026).
 func ComposeSystemTime(year, month, day, hour, min, sec uint16) string {
-	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d", year+2000, month, day, hour, min, sec)
+	return fmt.Sprintf("%02d:%02d:%02d %02d-%02d-%04d", hour, min, sec, day, month, year+2000)
 }
 
 // DecodeBMSClock unpacks a 32-bit BMS system clock value into a formatted datetime string.

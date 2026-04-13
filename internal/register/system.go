@@ -15,12 +15,7 @@ var SystemGroups = []ProbeGroup{
 	}},
 	{Name: "Status", Probes: []Probe{
 		{Name: "Running state", Addr: 0x0404, Count: 1, Enum: RunningStateEnum},
-		{Name: "System time (Year)", Addr: 0x042C, Count: 1},
-		{Name: "System time (Month)", Addr: 0x042D, Count: 1},
-		{Name: "System time (Day)", Addr: 0x042E, Count: 1},
-		{Name: "System time (Hour)", Addr: 0x042F, Count: 1},
-		{Name: "System time (Min)", Addr: 0x0430, Count: 1},
-		{Name: "System time (Sec)", Addr: 0x0431, Count: 1},
+		{Name: "System time", Addr: 0x042C, Count: 0}, // Synthetic: schema-only, not read as probe
 	}},
 	{Name: "Temperatures", Probes: []Probe{
 		{Name: "Ambient temp 1", Addr: 0x0418, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
