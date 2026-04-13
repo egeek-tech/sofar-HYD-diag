@@ -41,11 +41,10 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 
 		// Stream each probe individually using ReadRegisters
 		for _, g := range groups {
-			// Collect system time register values for composition (system section only)
-			var timeVals [6]uint16
-			timeCount := 0
-
 			for _, p := range g.Probes {
+				if p.Count == 0 {
+					continue // synthetic probe: schema placeholder only (D-07)
+				}
 				if readCtx.Err() != nil {
 					return
 				}
@@ -59,30 +58,6 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				if err != nil {
 					errStr = err.Error()
 				} else {
-					// Collect system time components for composition
-					if strings.HasPrefix(p.Name, "System time (") && len(data) >= 2 {
-						val := binary.BigEndian.Uint16(data[:2])
-						switch p.Name {
-						case "System time (Year)":
-							timeVals[0] = val
-							timeCount++
-						case "System time (Month)":
-							timeVals[1] = val
-							timeCount++
-						case "System time (Day)":
-							timeVals[2] = val
-							timeCount++
-						case "System time (Hour)":
-							timeVals[3] = val
-							timeCount++
-						case "System time (Min)":
-							timeVals[4] = val
-							timeCount++
-						case "System time (Sec)":
-							timeVals[5] = val
-							timeCount++
-						}
-					}
 					value = FormatValue(p, data)
 					rawVal = FormatRawValue(p, data)
 				}
@@ -98,16 +73,26 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				}
 			}
 
-			// After all probes in this group: send composed system time if collected
-			if timeCount == 6 && readCtx.Err() == nil {
-				composed := register.ComposeSystemTime(
-					timeVals[0], timeVals[1], timeVals[2],
-					timeVals[3], timeVals[4], timeVals[5],
-				)
-				h.results <- sectionResult{
-					section: sectionName,
-					msg:     NewRegisterValue(sectionName, g.Name, "System time", composed, "", 0, ""),
+			// D-04, D-05: Batch read time registers after Status group probes
+			if g.Name == "Status" && readCtx.Err() == nil {
+				data, err := h.broker.ReadRegisters(readCtx, 0x042C, 6)
+				if err == nil && len(data) >= 12 {
+					var vals [6]uint16
+					for i := 0; i < 6; i++ {
+						vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
+					}
+					composed := register.ComposeSystemTime(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+					rawStr := fmt.Sprintf("0x042C-0x0431 | %d, %d, %d, %d, %d, %d",
+						vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+					// D-06: Only send on success; on failure skeleton em-dash persists
+					if readCtx.Err() == nil {
+						h.results <- sectionResult{
+							section: sectionName,
+							msg:     NewRegisterValue(sectionName, g.Name, "System time", composed, "", 0x042C, rawStr),
+						}
+					}
 				}
+				// D-06: On error, silently skip — skeleton dash persists until next successful cycle
 			}
 		}
 

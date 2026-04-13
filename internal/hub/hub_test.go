@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"sofar-hyd-diag/internal/broker"
 	"sofar-hyd-diag/internal/hub"
 	"sofar-hyd-diag/internal/register"
@@ -2114,19 +2116,12 @@ func TestNewRegisterValueJSON(t *testing.T) {
 }
 
 func TestNewRegisterValueComposedJSON(t *testing.T) {
-	msg := hub.NewRegisterValue("system", "Info", "System time", "2026-04-12 16:03:42", "", 0, "")
+	msg := hub.NewRegisterValue("system", "Status", "System time", "16:03:42 12-04-2026", "", 0x042C, "0x042C-0x0431 | 26, 4, 12, 16, 3, 42")
 	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	s := string(data)
-	if !strings.Contains(s, `"register_addr":0`) {
-		t.Errorf("JSON missing register_addr: %s", s)
-	}
-	// raw_value should be omitted (omitempty)
-	if strings.Contains(s, `"raw_value"`) {
-		t.Errorf("JSON should omit empty raw_value: %s", s)
-	}
+	assert.Contains(t, s, `"register_addr":1068`, "JSON should contain register_addr 0x042C (1068 decimal)")
+	assert.Contains(t, s, `"raw_value":"0x042C-0x0431 | 26, 4, 12, 16, 3, 42"`, "JSON should contain pipe-delimited raw_value")
 }
 
 // === Phase 11 Plan 01: Pack streaming tests ===
