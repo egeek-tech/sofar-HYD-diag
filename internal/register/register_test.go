@@ -748,6 +748,19 @@ func TestFormatValueU32NoScale(t *testing.T) {
 	}
 }
 
+func TestFormatValueU32Signed(t *testing.T) {
+	p := Probe{Name: "Signed32", U32: true, Signed: true, Scale: 0.01, Unit: "W"}
+	// Encode -100 as uint32: 0xFFFFFF9C
+	data := make([]byte, 4)
+	binary.BigEndian.PutUint16(data[:2], 0xFFFF)
+	binary.BigEndian.PutUint16(data[2:4], 0xFF9C)
+	got := FormatValue(p, data)
+	want := "-1.00 W"
+	if got != want {
+		t.Errorf("FormatValue U32 signed = %q, want %q", got, want)
+	}
+}
+
 func TestFormatValueU32ShortData(t *testing.T) {
 	p := Probe{Name: "Short", U32: true}
 	data := []byte{0x00, 0x01} // only 2 bytes, need 4

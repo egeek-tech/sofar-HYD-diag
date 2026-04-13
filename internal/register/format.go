@@ -24,15 +24,26 @@ func FormatValue(p Probe, data []byte) string {
 		if len(data) < 4 {
 			return "<no data>"
 		}
-		val := uint32(binary.BigEndian.Uint16(data[:2]))<<16 | uint32(binary.BigEndian.Uint16(data[2:4]))
+		raw := uint32(binary.BigEndian.Uint16(data[:2]))<<16 | uint32(binary.BigEndian.Uint16(data[2:4]))
+		if p.Signed {
+			sval := int32(raw)
+			if p.Scale > 0 {
+				scaled := float64(sval) * p.Scale
+				if p.Unit != "" {
+					return fmt.Sprintf("%.2f %s", scaled, p.Unit)
+				}
+				return fmt.Sprintf("%.3f", scaled)
+			}
+			return fmt.Sprintf("%d (0x%08X)", sval, raw)
+		}
 		if p.Scale > 0 {
-			scaled := float64(val) * p.Scale
+			scaled := float64(raw) * p.Scale
 			if p.Unit != "" {
 				return fmt.Sprintf("%.2f %s", scaled, p.Unit)
 			}
 			return fmt.Sprintf("%.3f", scaled)
 		}
-		return fmt.Sprintf("%d (0x%08X)", val, val)
+		return fmt.Sprintf("%d (0x%08X)", raw, raw)
 	}
 
 	if len(data) < 2 {
