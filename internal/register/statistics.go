@@ -1,6 +1,6 @@
 package register
 
-// StatisticsGroups returns 4 ProbeGroup definitions for electricity statistics.
+// StatisticsGroups returns 2 ProbeGroup definitions for electricity statistics.
 // Each group has 6 U32 metrics: generation, consumption, bought, sold, battery charge, battery discharge.
 // The register layout interleaves daily/total pairs and monthly/yearly pairs at stride 4.
 // From Sofar Modbus-G3 V1.38 section 5.1.9.
@@ -24,8 +24,7 @@ func StatisticsGroups() []ProbeGroup {
 	defs := []groupDef{
 		{name: "Today", base: 0x0684, scale: 0.01, stride: 4},
 		{name: "Total", base: 0x0686, scale: 0.1, stride: 4},
-		{name: "This Month", base: 0x069C, scale: 0.1, stride: 4},
-		{name: "This Year", base: 0x069E, scale: 0.1, stride: 4},
+		// "This Month" (0x069C) and "This Year" (0x069E) removed -- inverter returns all zeros (D-03)
 	}
 
 	groups := make([]ProbeGroup, 0, len(defs))

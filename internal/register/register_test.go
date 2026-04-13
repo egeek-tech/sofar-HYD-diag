@@ -191,22 +191,23 @@ func TestRunningStateEnum(t *testing.T) {
 }
 
 func TestSystemGroups(t *testing.T) {
-	require.Len(t, SystemGroups, 5)
+	groups := SystemGroups()
+	require.Len(t, groups, 7)
 
-	expectedNames := []string{"Identity", "Firmware", "Status", "Temperatures", "Protection"}
+	expectedNames := []string{"Identity", "Firmware", "Status", "Temperatures", "Protection", "Today", "Total"}
 	for i, want := range expectedNames {
-		assert.Equal(t, want, SystemGroups[i].Name)
+		assert.Equal(t, want, groups[i].Name)
 	}
 
 	// Identity: Inverter SN at 0x0445, Count 10, IsASCII
-	identity := SystemGroups[0]
+	identity := groups[0]
 	require.GreaterOrEqual(t, len(identity.Probes), 1)
 	assert.Equal(t, uint16(0x0445), identity.Probes[0].Addr)
 	assert.Equal(t, uint16(10), identity.Probes[0].Count)
 	assert.True(t, identity.Probes[0].IsASCII, "Identity SN IsASCII should be true")
 
 	// Firmware: 5 probes
-	firmware := SystemGroups[1]
+	firmware := groups[1]
 	require.Len(t, firmware.Probes, 5)
 	fwExpected := []struct {
 		name  string
@@ -226,13 +227,13 @@ func TestSystemGroups(t *testing.T) {
 	}
 
 	// Status: Running state with Enum at 0x0404, plus 6 time registers
-	status := SystemGroups[2]
+	status := groups[2]
 	assert.Equal(t, uint16(0x0404), status.Probes[0].Addr)
-	assert.NotNil(t, status.Probes[0].Enum , "Status running state Enum should not be nil")
+	assert.NotNil(t, status.Probes[0].Enum, "Status running state Enum should not be nil")
 	assert.Len(t, status.Probes, 7)
 
 	// Temperatures: 4 probes, all S16
-	temps := SystemGroups[3]
+	temps := groups[3]
 	require.Len(t, temps.Probes, 4)
 	tempExpected := []struct {
 		name string
@@ -250,10 +251,23 @@ func TestSystemGroups(t *testing.T) {
 	}
 
 	// Protection: Insulation impedance (0x042B) and Fan speed (0x043E)
-	protection := SystemGroups[4]
+	protection := groups[4]
 	require.Len(t, protection.Probes, 2)
 	assert.Equal(t, uint16(0x042B), protection.Probes[0].Addr)
 	assert.Equal(t, uint16(0x043E), protection.Probes[1].Addr)
+
+	// Today and Total groups appended from StatisticsGroups (D-01)
+	today := groups[5]
+	assert.Equal(t, "Today", today.Name)
+	assert.Equal(t, "column", today.Layout)
+	assert.Len(t, today.Probes, 6)
+	assert.Equal(t, uint16(0x0684), today.Probes[0].Addr)
+
+	total := groups[6]
+	assert.Equal(t, "Total", total.Name)
+	assert.Equal(t, "column", total.Layout)
+	assert.Len(t, total.Probes, 6)
+	assert.Equal(t, uint16(0x0686), total.Probes[0].Addr)
 }
 
 func TestGridGroups(t *testing.T) {
@@ -706,9 +720,9 @@ func TestBMSProtectionProbes(t *testing.T) {
 
 func TestStatisticsGroups(t *testing.T) {
 	groups := StatisticsGroups()
-	require.Len(t, groups, 4)
+	require.Len(t, groups, 2)
 
-	expectedNames := []string{"Today", "Total", "This Month", "This Year"}
+	expectedNames := []string{"Today", "Total"}
 	for i, want := range expectedNames {
 		assert.Equal(t, want, groups[i].Name)
 	}
@@ -728,11 +742,9 @@ func TestStatisticsGroups(t *testing.T) {
 		assert.Equal(t, 0.01, p.Scale)
 	}
 
-	// Total, Month, Year scale = 0.1
-	for i := 1; i < 4; i++ {
-		for _, p := range groups[i].Probes {
-			assert.Equal(t, 0.1, p.Scale)
-		}
+	// Total scale = 0.1
+	for _, p := range groups[1].Probes {
+		assert.Equal(t, 0.1, p.Scale)
 	}
 }
 
@@ -743,10 +755,6 @@ func TestStatisticsAddresses(t *testing.T) {
 	assert.Equal(t, uint16(0x0684), groups[0].Probes[0].Addr)
 	// Total starts at 0x0686
 	assert.Equal(t, uint16(0x0686), groups[1].Probes[0].Addr)
-	// This Month starts at 0x069C
-	assert.Equal(t, uint16(0x069C), groups[2].Probes[0].Addr)
-	// This Year starts at 0x069E
-	assert.Equal(t, uint16(0x069E), groups[3].Probes[0].Addr)
 
 	// Stride 4 between metrics within each group
 	// Today: gen=0x0684, consumption=0x0688, bought=0x068C, sold=0x0690, bat_charge=0x0694, bat_discharge=0x0698

@@ -1,8 +1,10 @@
 package register
 
-// SystemGroups contains system information register definitions organized into ProbeGroups.
-// Covers sections 5.1.1 and 5.1.2 of the Sofar Modbus-G3 V1.38 protocol.
-var SystemGroups = []ProbeGroup{
+// SystemGroups returns system information register definitions organized into ProbeGroups,
+// including daily and total electricity statistics appended after Protection.
+// Covers sections 5.1.1, 5.1.2, and 5.1.9 of the Sofar Modbus-G3 V1.38 protocol.
+func SystemGroups() []ProbeGroup {
+	base := []ProbeGroup{
 	{Name: "Identity", Probes: []Probe{
 		{Name: "Inverter SN", Addr: 0x0445, Count: 10, IsASCII: true},
 	}},
@@ -32,6 +34,8 @@ var SystemGroups = []ProbeGroup{
 		{Name: "Insulation impedance", Addr: 0x042B, Count: 1, Unit: "k\u03a9", Scale: 1},
 		{Name: "Fan speed", Addr: 0x043E, Count: 1, Unit: "r/min", Scale: 1},
 	}},
+	}
+	return append(base, StatisticsGroups()...)
 }
 
 // GridGroups contains grid-connected output register definitions organized into ProbeGroups.
