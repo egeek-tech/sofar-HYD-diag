@@ -44,7 +44,7 @@
 
 - [x] **Phase 12: Dead Code Cleanup & Test Infrastructure** - Remove deprecated code and establish testify for new development (completed 2026-04-13)
 - [x] **Phase 13: Statistics-to-System Merge** - Consolidate statistics into System section with additional daily metrics (completed 2026-04-13)
-- [ ] **Phase 14: System Time Fix** - Display system time as a single concatenated row
+- [x] **Phase 14: System Time Fix** - Display system time as a single concatenated row (completed 2026-04-13)
 - [ ] **Phase 15: Configuration Section** - New read-only section displaying device configuration registers
 - [ ] **Phase 16: Frontend Polish** - Fix pack drill-down tooltips and hide disconnected temperature sensors
 - [ ] **Phase 17: XLSX Register Discovery** - Offline tool to parse XLSX register map and integrate newly discovered registers
@@ -85,9 +85,9 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. System time appears as a single concatenated row (e.g., "10:59:34 13-04-2026") in the System section
   2. The separate year/month/day/hour/minute/second register rows no longer appear individually
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 14-01-PLAN.md -- Consolidate 6 time registers into single composed row with batch read and range tooltip
+- [x] 14-01-PLAN.md -- Consolidate 6 time registers into single composed row with batch read and range tooltip
 
 ### Phase 15: Configuration Section
 **Goal**: Users can view all device configuration parameters in a new read-only Configuration section
@@ -144,7 +144,7 @@ Note: Phases 15, 16, and 17 depend only on Phase 12, not on each other. They are
 | 11. Battery Pack Polish | v1.2 | 2/2 | Done | 2026-04-13 |
 | 12. Dead Code Cleanup & Test Infrastructure | v1.3 | 2/2 | Complete    | 2026-04-13 |
 | 13. Statistics-to-System Merge | v1.3 | 1/1 | Complete    | 2026-04-13 |
-| 14. System Time Fix | v1.3 | 0/1 | Planned     | - |
+| 14. System Time Fix | v1.3 | 1/1 | Complete    | 2026-04-13 |
 | 15. Configuration Section | v1.3 | 0/0 | Not started | - |
 | 16. Frontend Polish | v1.3 | 0/0 | Not started | - |
 | 17. XLSX Register Discovery | v1.3 | 0/0 | Not started | - |
