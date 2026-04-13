@@ -1659,3 +1659,74 @@ func TestPackProbeGroupOrder(t *testing.T) {
 		t.Errorf("Pack Info group has %d probes, want %d", len(infoGroup.Probes), len(wantInfoAddrs))
 	}
 }
+
+// === Configuration Enum Maps Tests ===
+
+func TestConfigEnumMaps(t *testing.T) {
+	// All enum maps must be non-nil and have at least 2 entries
+	allEnums := map[string]map[uint16]string{
+		"BaudRateEnum":              BaudRateEnum,
+		"PVInputModeEnum":           PVInputModeEnum,
+		"AntiBackFlowEnum":          AntiBackFlowEnum,
+		"EPSControlEnum":            EPSControlEnum,
+		"LanguageEnum":              LanguageEnum,
+		"ProhibitEnableEnum":        ProhibitEnableEnum,
+		"BatteryProtocolEnum":       BatteryProtocolEnum,
+		"CellTypeEnum":              CellTypeEnum,
+		"BatteryUsageEnum":          BatteryUsageEnum,
+		"EnergyStorageModeEnum":     EnergyStorageModeEnum,
+		"DRMSEnum":                  DRMSEnum,
+		"ParallelModeEnum":          ParallelModeEnum,
+		"GridDetectionEnum":         GridDetectionEnum,
+		"DryContactEnum":            DryContactEnum,
+		"SafetyCountryEnum":         SafetyCountryEnum,
+		"RemoteOnOffEnum":           RemoteOnOffEnum,
+		"PowerControlEnum":          PowerControlEnum,
+		"EMSTimePeriodModeEnum":     EMSTimePeriodModeEnum,
+		"ChargeDischargeControlEnum": ChargeDischargeControlEnum,
+		"ChargingSourceEnum":        ChargingSourceEnum,
+		"ProtectionEnableEnum":      ProtectionEnableEnum,
+		"ReactiveControlModeEnum":   ReactiveControlModeEnum,
+		"EnableStatusEnum":          EnableStatusEnum,
+		"InputChannelTypeEnum":      InputChannelTypeEnum,
+	}
+
+	for name, enum := range allEnums {
+		if enum == nil {
+			t.Errorf("%s is nil", name)
+			continue
+		}
+		if len(enum) < 2 {
+			t.Errorf("%s has %d entries, want >= 2", name, len(enum))
+		}
+	}
+
+	// Spot-check specific key-value pairs
+	spotChecks := []struct {
+		name string
+		enum map[uint16]string
+		key  uint16
+		want string
+	}{
+		{"BaudRateEnum", BaudRateEnum, 1, "9600 bps"},
+		{"BaudRateEnum", BaudRateEnum, 5, "115200 bps"},
+		{"CellTypeEnum", CellTypeEnum, 1, "Lithium iron phosphate"},
+		{"BatteryProtocolEnum", BatteryProtocolEnum, 0, "Sofar BMS/DEFAULT"},
+		{"EnergyStorageModeEnum", EnergyStorageModeEnum, 0, "Self-generation"},
+		{"EnergyStorageModeEnum", EnergyStorageModeEnum, 5, "Off-grid"},
+		{"LanguageEnum", LanguageEnum, 1, "English"},
+		{"ProhibitEnableEnum", ProhibitEnableEnum, 0, "Disabled"},
+		{"ProhibitEnableEnum", ProhibitEnableEnum, 1, "Enabled"},
+	}
+
+	for _, sc := range spotChecks {
+		got, ok := sc.enum[sc.key]
+		if !ok {
+			t.Errorf("%s[%d] not found", sc.name, sc.key)
+			continue
+		}
+		if got != sc.want {
+			t.Errorf("%s[%d] = %q, want %q", sc.name, sc.key, got, sc.want)
+		}
+	}
+}
