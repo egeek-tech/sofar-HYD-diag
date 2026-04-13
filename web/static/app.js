@@ -386,8 +386,7 @@ function navigateToSection(section) {
         eps: 'EPS',
         pv: 'PV',
         battery: 'Battery',
-        bms: 'BMS',
-        stats: 'Statistics'
+        bms: 'BMS'
     };
     var title = sectionTitles[section] || section.charAt(0).toUpperCase() + section.slice(1);
     $('#content-title').textContent = title;

@@ -950,7 +950,7 @@ func TestStatusSectionRemoved(t *testing.T) {
 func TestSystemSectionGroupedData(t *testing.T) {
 	mb := newMockBroker()
 	// Build mock results: 19 probe results + 2 fault batch results = 21
-	results := makeMockResultsForSection(register.SystemGroups, true)
+	results := makeMockResultsForSection(register.SystemGroups(), true)
 	mb.mu.Lock()
 	mb.batchResults = results
 	mb.mu.Unlock()
@@ -983,7 +983,7 @@ func TestSystemSectionGroupedData(t *testing.T) {
 func TestSystemSectionFaults(t *testing.T) {
 	mb := newMockBroker()
 	// Build mock results with all-zero fault data -> empty faults array
-	results := makeMockResultsForSection(register.SystemGroups, true)
+	results := makeMockResultsForSection(register.SystemGroups(), true)
 	mb.mu.Lock()
 	mb.batchResults = results
 	mb.mu.Unlock()
@@ -1073,7 +1073,7 @@ func TestSystemSectionTimeComposition(t *testing.T) {
 	mb := newMockBroker()
 
 	// Build mock results for system section
-	results := makeMockResultsForSection(register.SystemGroups, true)
+	results := makeMockResultsForSection(register.SystemGroups(), true)
 
 	// Set time register values: 2026-03-16 14:30:45
 	results[7] = broker.Result{Data: uint16Bytes(26), Err: nil}  // Year (offset from 2000)

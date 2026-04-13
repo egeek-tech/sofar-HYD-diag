@@ -387,7 +387,7 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 		return
 	}
 
-	// Standard streaming read path for system, grid, eps, pv, stats
+	// Standard streaming read path for system, grid, eps, pv
 	h.streamStandardRead(sectionName, sec, readCtx)
 }
 
@@ -618,13 +618,12 @@ func (h *Hub) shutdown() {
 
 // registerBuiltinSections registers core monitoring sections on hub startup.
 func (h *Hub) registerBuiltinSections() {
-	h.RegisterGroupedSection("system", register.SystemGroups)
+	h.RegisterGroupedSection("system", register.SystemGroups())
 	h.RegisterGroupedSection("grid", register.GridGroups)
 	h.RegisterGroupedSection("eps", register.EPSGroups)
 	h.RegisterGroupedSection("pv", register.GeneratePVGroups(h.defaultPVChannels))
 	h.RegisterGroupedSection("battery", register.GenerateBatteryGroups(2)) // default 2 channels, auto-detect on read
 	h.registerBMSSection()
-	h.RegisterGroupedSection("stats", register.StatisticsGroups())
 }
 
 // registerBMSSection creates the BMS section. BMS has a custom read cycle
