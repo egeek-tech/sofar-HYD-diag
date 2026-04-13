@@ -84,6 +84,13 @@ function applyRefreshDimming() {
     }
     // Apply container-level dim
     body.classList.add('content__body--refreshing');
+
+    // Reset pack streaming counters for new cycle (Phase 11)
+    if (packViewState.mode === 'pack_detail') {
+        resetPackCellState();
+        resetPackTempState();
+        resetPackStatusState();
+    }
 }
 
 // === Pack Detail View State (Phase 5) ===
@@ -1802,6 +1809,53 @@ function updatePackStatusValue(msg) {
     });
 }
 
+// BMS bitmap decode tables (mirrors backend register.BMSAlarmBits etc.)
+var BMS_BITMAP_TABLES = {
+    alarm: [
+        {bit: 0, desc: 'Cell OV alarm'}, {bit: 1, desc: 'Cell UV alarm'},
+        {bit: 2, desc: 'Pack OV alarm'}, {bit: 3, desc: 'Pack UV alarm'},
+        {bit: 4, desc: 'Charge over-temperature alarm'}, {bit: 5, desc: 'Charge under-temperature alarm'},
+        {bit: 6, desc: 'Discharge over-temperature alarm'}, {bit: 7, desc: 'Discharge under-temperature alarm'},
+        {bit: 8, desc: 'Charge overcurrent alarm'}, {bit: 9, desc: 'Discharge overcurrent alarm'}
+    ],
+    protection: [
+        {bit: 0, desc: 'Cell OV protection'}, {bit: 1, desc: 'Cell UV protection'},
+        {bit: 2, desc: 'Pack OV protection'}, {bit: 3, desc: 'Pack UV protection'},
+        {bit: 4, desc: 'Charge over-temperature protection'}, {bit: 5, desc: 'Charge under-temperature protection'},
+        {bit: 6, desc: 'Discharge over-temperature protection'}, {bit: 7, desc: 'Discharge under-temperature protection'},
+        {bit: 8, desc: 'Charge overcurrent protection'}, {bit: 9, desc: 'Discharge overcurrent protection'},
+        {bit: 10, desc: 'Short circuit protection'}, {bit: 11, desc: 'IC fault protection'},
+        {bit: 12, desc: 'MOS over-temperature protection'}
+    ],
+    fault: [
+        {bit: 0, desc: 'Cell voltage diff too large'}, {bit: 1, desc: 'Temperature diff too large'},
+        {bit: 2, desc: 'Charging lockout (cell OV)'}, {bit: 3, desc: 'Discharging lockout (cell UV)'}
+    ],
+    alarm2: [
+        {bit: 0, desc: 'Cell OV alarm 2'}, {bit: 1, desc: 'Cell UV alarm 2'},
+        {bit: 2, desc: 'Pack OV alarm 2'}, {bit: 3, desc: 'Pack UV alarm 2'}
+    ],
+    protection2: [
+        {bit: 0, desc: 'Cell OV protection 2'}, {bit: 1, desc: 'Cell UV protection 2'},
+        {bit: 2, desc: 'Pack OV protection 2'}, {bit: 3, desc: 'Pack UV protection 2'}
+    ],
+    fault2: [
+        {bit: 0, desc: 'Cell voltage diff too large 2'}, {bit: 1, desc: 'Temperature diff too large 2'},
+        {bit: 2, desc: 'Charging lockout (cell OV) 2'}, {bit: 3, desc: 'Discharging lockout (cell UV) 2'}
+    ]
+};
+
+function decodeBMSBits(value, type) {
+    var table = BMS_BITMAP_TABLES[type] || [];
+    var decoded = [];
+    for (var i = 0; i < table.length; i++) {
+        if (value & (1 << table[i].bit)) {
+            decoded.push(table[i].desc);
+        }
+    }
+    return decoded;
+}
+
 function renderPackStatusFromState(card) {
     var regs = packStatusState.registers;
     var alarm = regs['Alarm Status'] || 0;
@@ -1836,22 +1890,44 @@ function renderPackStatusFromState(card) {
         heading.textContent = '\u26A0 Pack Status';
         card.appendChild(heading);
 
+        // Decode bitmaps using BMS bitmap tables
+        var decoded = [];
+        decoded = decoded.concat(decodeBMSBits(alarm, 'alarm'));
+        decoded = decoded.concat(decodeBMSBits(protection, 'protection'));
+        decoded = decoded.concat(decodeBMSBits(fault, 'fault'));
+        decoded = decoded.concat(decodeBMSBits(alarm2, 'alarm2'));
+        decoded = decoded.concat(decodeBMSBits(protection2, 'protection2'));
+        decoded = decoded.concat(decodeBMSBits(fault2, 'fault2'));
+
         var list = document.createElement('div');
         list.className = 'fault-card__list';
 
-        var hexItems = [];
-        if (alarm !== 0) hexItems.push('Alarm: 0x' + alarm.toString(16).toUpperCase().padStart(4, '0'));
-        if (protection !== 0) hexItems.push('Protection: 0x' + protection.toString(16).toUpperCase().padStart(4, '0'));
-        if (fault !== 0) hexItems.push('Fault: 0x' + fault.toString(16).toUpperCase().padStart(4, '0'));
-        if (alarm2 !== 0) hexItems.push('Alarm 2: 0x' + alarm2.toString(16).toUpperCase().padStart(4, '0'));
-        if (protection2 !== 0) hexItems.push('Protection 2: 0x' + protection2.toString(16).toUpperCase().padStart(4, '0'));
-        if (fault2 !== 0) hexItems.push('Fault 2: 0x' + fault2.toString(16).toUpperCase().padStart(4, '0'));
-
-        for (var h = 0; h < hexItems.length; h++) {
-            var item = document.createElement('div');
-            item.className = 'fault-card__item';
-            item.textContent = '\u2022 ' + hexItems[h];
-            list.appendChild(item);
+        if (decoded.length > 0) {
+            for (var i = 0; i < decoded.length; i++) {
+                var item = document.createElement('div');
+                item.className = 'fault-card__item';
+                var text = decoded[i].toLowerCase();
+                if (text.indexOf('protection') !== -1 || text.indexOf('fault') !== -1) {
+                    item.style.color = '#c62828';
+                }
+                item.textContent = '\u2022 ' + decoded[i];
+                list.appendChild(item);
+            }
+        } else {
+            // Hex fallback when no bits match known tables
+            var hexItems = [];
+            if (alarm !== 0) hexItems.push('Alarm: 0x' + alarm.toString(16).toUpperCase().padStart(4, '0'));
+            if (protection !== 0) hexItems.push('Protection: 0x' + protection.toString(16).toUpperCase().padStart(4, '0'));
+            if (fault !== 0) hexItems.push('Fault: 0x' + fault.toString(16).toUpperCase().padStart(4, '0'));
+            if (alarm2 !== 0) hexItems.push('Alarm 2: 0x' + alarm2.toString(16).toUpperCase().padStart(4, '0'));
+            if (protection2 !== 0) hexItems.push('Protection 2: 0x' + protection2.toString(16).toUpperCase().padStart(4, '0'));
+            if (fault2 !== 0) hexItems.push('Fault 2: 0x' + fault2.toString(16).toUpperCase().padStart(4, '0'));
+            for (var h = 0; h < hexItems.length; h++) {
+                var hexItem = document.createElement('div');
+                hexItem.className = 'fault-card__item';
+                hexItem.textContent = '\u2022 ' + hexItems[h];
+                list.appendChild(hexItem);
+            }
         }
         card.appendChild(list);
     }
