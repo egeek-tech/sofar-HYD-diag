@@ -298,12 +298,14 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 	settleMs := h.packSettleMs
 	skipRegs := h.packSkipRegisters // capture reference for goroutine
 
+	// Capture BMS section on hub goroutine before launching reader goroutine
+	// to avoid data race on h.sections map (CR-01).
+	bmsSec := h.sections["bms"]
+	if bmsSec == nil {
+		return
+	}
+
 	go func() {
-		// Get BMS section to clear reading flag on completion
-		bmsSec := h.sections["bms"]
-		if bmsSec == nil {
-			return
-		}
 		defer bmsSec.reading.Store(false)
 
 		// Step 1: Write 0x9020 to select pack
