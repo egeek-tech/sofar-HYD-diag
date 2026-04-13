@@ -963,11 +963,11 @@ func TestBMSProtectionProbes(t *testing.T) {
 
 func TestStatisticsGroups(t *testing.T) {
 	groups := StatisticsGroups()
-	if len(groups) != 4 {
-		t.Fatalf("StatisticsGroups len = %d, want 4", len(groups))
+	if len(groups) != 2 {
+		t.Fatalf("StatisticsGroups len = %d, want 2", len(groups))
 	}
 
-	expectedNames := []string{"Today", "Total", "This Month", "This Year"}
+	expectedNames := []string{"Today", "Total"}
 	for i, want := range expectedNames {
 		if groups[i].Name != want {
 			t.Errorf("StatisticsGroups[%d].Name = %q, want %q", i, groups[i].Name, want)
@@ -1000,12 +1000,10 @@ func TestStatisticsGroups(t *testing.T) {
 		}
 	}
 
-	// Total, Month, Year scale = 0.1
-	for i := 1; i < 4; i++ {
-		for j, p := range groups[i].Probes {
-			if p.Scale != 0.1 {
-				t.Errorf("%s.Probes[%d].Scale = %f, want 0.1", groups[i].Name, j, p.Scale)
-			}
+	// Total scale = 0.1
+	for j, p := range groups[1].Probes {
+		if p.Scale != 0.1 {
+			t.Errorf("Total.Probes[%d].Scale = %f, want 0.1", j, p.Scale)
 		}
 	}
 }
@@ -1020,14 +1018,6 @@ func TestStatisticsAddresses(t *testing.T) {
 	// Total starts at 0x0686
 	if groups[1].Probes[0].Addr != 0x0686 {
 		t.Errorf("Total gen addr = 0x%04X, want 0x0686", groups[1].Probes[0].Addr)
-	}
-	// This Month starts at 0x069C
-	if groups[2].Probes[0].Addr != 0x069C {
-		t.Errorf("Month gen addr = 0x%04X, want 0x069C", groups[2].Probes[0].Addr)
-	}
-	// This Year starts at 0x069E
-	if groups[3].Probes[0].Addr != 0x069E {
-		t.Errorf("Year gen addr = 0x%04X, want 0x069E", groups[3].Probes[0].Addr)
 	}
 
 	// Stride 4 between metrics within each group
