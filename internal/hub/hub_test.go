@@ -2352,3 +2352,90 @@ func TestPackSkipResetOnSwitch(t *testing.T) {
 	}
 }
 
+// === Edge case tests for hub message handling (D-06) ===
+
+// TestSubscribeEmptySectionName verifies that subscribing to an empty section name
+// results in a section_error message (not a panic or silent failure).
+func TestSubscribeEmptySectionName(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe with empty section name
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "",
+	})
+
+	// Should receive a section_error for the empty section
+	msgs := drainClientMessages(send, 500*time.Millisecond)
+	foundError := false
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeSectionErr {
+			foundError = true
+		}
+	}
+	assert.True(t, foundError, "expected section_error for empty section name")
+}
+
+// TestReadCycleWithoutSubscribe verifies that sending a read_cycle for a section
+// the client is not subscribed to does not trigger reads or cause errors.
+func TestReadCycleWithoutSubscribe(t *testing.T) {
+	mb := newMockBroker()
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Reset batch count
+	mb.mu.Lock()
+	mb.batchCallCount = 0
+	mb.mu.Unlock()
+
+	// Send read_cycle without subscribing first
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeReadCycle,
+		Section: "grid",
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	// Should not trigger any reads
+	got := mb.getBatchCallCount()
+	assert.Equal(t, 0, got, "read_cycle without subscription should not trigger reads")
+
+	// Drain any messages (should be empty or minimal)
+	msgs := drainClientMessages(send, 200*time.Millisecond)
+	for _, m := range msgs {
+		// Should not see section_complete for an unsubscribed section
+		if m.Type == hub.MsgTypeSectionComplete && m.Section == "grid" {
+			assert.Fail(t, "unexpected section_complete for unsubscribed section")
+		}
+	}
+}
+
+// TestConnectCommandZeroPort verifies that a connect command with port=0
+// still triggers a Reconfigure call (the broker handles validation).
+func TestConnectCommandZeroPort(t *testing.T) {
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	send := make(chan []byte, 256)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+	drainClientMessages(send, 50*time.Millisecond)
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConnect,
+		Host:    "10.0.0.1",
+		Port:    0,
+		SlaveID: 1,
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	calls := mb.getReconfigureCalls()
+	require.Len(t, calls, 1, "expected 1 Reconfigure call even with port=0")
+	assert.Equal(t, "10.0.0.1:0", calls[0].Addr, "address should include port=0")
+}

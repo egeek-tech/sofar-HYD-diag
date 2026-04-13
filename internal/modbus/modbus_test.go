@@ -286,3 +286,40 @@ func TestReadHoldingRegistersRTU_CRCMismatch(t *testing.T) {
 	require.Error(t, err, "expected error for CRC mismatch")
 	assert.Contains(t, err.Error(), "CRC mismatch", "error should mention CRC mismatch")
 }
+
+// === Edge case / boundary tests (D-06) ===
+
+// TestCRC16_EmptyInput verifies CRC-16/MODBUS with empty input returns 0xFFFF.
+// The algorithm initializes CRC to 0xFFFF and performs no iterations on empty data.
+func TestCRC16_EmptyInput(t *testing.T) {
+	got := CRC16([]byte{})
+	assert.Equal(t, uint16(0xFFFF), got, "CRC16 of empty input")
+}
+
+// TestCRC16_SingleByteZero verifies CRC-16/MODBUS with a single zero byte.
+func TestCRC16_SingleByteZero(t *testing.T) {
+	got := CRC16([]byte{0x00})
+	// CRC16/MODBUS of [0x00] = 0x40BF
+	assert.Equal(t, uint16(0x40BF), got, "CRC16 of single zero byte")
+}
+
+// TestCRC16_SingleByteFF verifies CRC-16/MODBUS with a single 0xFF byte.
+func TestCRC16_SingleByteFF(t *testing.T) {
+	got := CRC16([]byte{0xFF})
+	// CRC16/MODBUS of [0xFF] = 0x00FF (initial 0xFFFF XOR 0xFF = 0xFF00, then 8 iterations)
+	assert.Equal(t, uint16(0x00FF), got, "CRC16 of single 0xFF byte")
+}
+
+// TestCRC16_KnownModbusFrame verifies CRC against a known Modbus RTU request frame.
+// Standard Modbus RTU request: slave=0x01, func=0x03, addr=0x0000, qty=0x0001
+// Known CRC = 0x0A84 (already tested in TestCRC16, but this validates the byte-swapped form).
+func TestCRC16_KnownModbusFrame(t *testing.T) {
+	// Full 8-byte frame: data(6) + CRC low + CRC high
+	frame := []byte{0x01, 0x03, 0x00, 0x00, 0x00, 0x01}
+	crc := CRC16(frame)
+	assert.Equal(t, uint16(0x0A84), crc, "CRC16 of known Modbus frame")
+
+	// Verify CRC byte order: low byte first, high byte second (RTU convention)
+	assert.Equal(t, byte(0x84), byte(crc&0xFF), "CRC low byte")
+	assert.Equal(t, byte(0x0A), byte(crc>>8), "CRC high byte")
+}

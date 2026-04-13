@@ -67,6 +67,91 @@ func TestFormatValueSignedNoUnit(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+// === Edge case tests for FormatValue (D-06) ===
+
+func TestFormatValueEdgeCases(t *testing.T) {
+	t.Run("ZeroLengthData", func(t *testing.T) {
+		p := Probe{Name: "Empty", Scale: 0.1, Unit: "V"}
+		got := FormatValue(p, []byte{})
+		assert.Equal(t, "<no data>", got, "zero-length data should return <no data>")
+	})
+
+	t.Run("MaxUint16Unsigned", func(t *testing.T) {
+		p := Probe{Name: "MaxU16", Scale: 1, Unit: ""}
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 0xFFFF)
+		got := FormatValue(p, data)
+		assert.Equal(t, "65535.000", got, "max uint16 with scale=1, no unit uses 3 decimal places")
+	})
+
+	t.Run("MaxNegativeInt16Signed", func(t *testing.T) {
+		p := Probe{Name: "MinS16", Signed: true, Scale: 1, Unit: "W"}
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 0x8000) // -32768
+		got := FormatValue(p, data)
+		assert.Equal(t, "-32768.00 W", got, "max negative int16 with scale=1")
+	})
+
+	t.Run("U32ShortData", func(t *testing.T) {
+		p := Probe{Name: "ShortU32", U32: true, Count: 2}
+		got := FormatValue(p, []byte{0x01, 0x02}) // only 2 bytes for U32
+		assert.Equal(t, "<no data>", got, "U32 with only 2 bytes should return <no data>")
+	})
+
+	t.Run("ScaleZeroUnsigned", func(t *testing.T) {
+		// Scale=0 means no scaling -- should fall through to hex format
+		p := Probe{Name: "NoScale", Scale: 0, Unit: ""}
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 42)
+		got := FormatValue(p, data)
+		assert.Equal(t, "42 (0x002A)", got, "scale=0 should format as raw hex")
+	})
+
+	t.Run("ScaleZeroSigned", func(t *testing.T) {
+		// Scale=0 with signed means no scaling -- should format as plain integer
+		p := Probe{Name: "NoScaleSigned", Scale: 0, Signed: true}
+		data := make([]byte, 2)
+		neg1 := int16(-1)
+		binary.BigEndian.PutUint16(data, uint16(neg1))
+		got := FormatValue(p, data)
+		assert.Equal(t, "-1", got, "signed scale=0 should format as plain integer")
+	})
+
+	t.Run("NilData", func(t *testing.T) {
+		p := Probe{Name: "Nil"}
+		got := FormatValue(p, nil)
+		assert.Equal(t, "<no data>", got, "nil data should return <no data>")
+	})
+}
+
+func TestFormatRawValueEdgeCases(t *testing.T) {
+	t.Run("EmptyData", func(t *testing.T) {
+		p := Probe{Name: "Empty"}
+		got := FormatRawValue(p, []byte{})
+		assert.Equal(t, "", got, "empty data should return empty string")
+	})
+
+	t.Run("SingleByte", func(t *testing.T) {
+		p := Probe{Name: "Short"}
+		got := FormatRawValue(p, []byte{0x01})
+		assert.Equal(t, "", got, "single byte should return empty string")
+	})
+
+	t.Run("U32ShortData", func(t *testing.T) {
+		p := Probe{Name: "ShortU32", U32: true}
+		got := FormatRawValue(p, []byte{0x01, 0x02})
+		// With only 2 bytes and U32, falls through to uint16 path
+		assert.Equal(t, "258", got, "U32 with 2 bytes falls through to uint16")
+	})
+
+	t.Run("ASCIIProbe", func(t *testing.T) {
+		p := Probe{Name: "SN", IsASCII: true}
+		data := []byte("AB")
+		got := FormatRawValue(p, data)
+		assert.Equal(t, "4142", got, "ASCII probe raw value should be hex")
+	})
+}
+
 // === Task 1 TDD RED tests ===
 
 func TestProbeGroupStruct(t *testing.T) {
