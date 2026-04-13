@@ -382,6 +382,7 @@ function navigateToSection(section) {
     // Update content title (per UI-SPEC copywriting contract)
     var sectionTitles = {
         system: 'System',
+        configuration: 'Configuration',
         grid: 'Grid',
         eps: 'EPS',
         pv: 'PV',
@@ -421,15 +422,42 @@ function navigateToSection(section) {
     // Show loading spinner
     showLoading();
 
-    // Show auto-refresh button
+    // Show/hide auto-refresh button (D-09: hidden for configuration, static values)
     var autoBtn = $('#btn-auto-refresh');
-    autoBtn.style.display = '';
-    updateAutoRefreshButton();
+    if (section === 'configuration') {
+        autoBtn.style.display = 'none';
+        // Also stop any active auto-refresh when entering configuration
+        if (refreshState.active) {
+            refreshState.active = false;
+            if (refreshState.delayTimer) {
+                clearTimeout(refreshState.delayTimer);
+                refreshState.delayTimer = null;
+            }
+            refreshState.cycleCount = 0;
+        }
+    } else {
+        autoBtn.style.display = '';
+        updateAutoRefreshButton();
+    }
 
-    // Show cycle delay dropdown when connected and viewing a section
+    // Show/hide cycle delay dropdown (hidden for configuration)
     var cycleDelaySelect = $('#cycle-delay-select');
     if (cycleDelaySelect) {
-        cycleDelaySelect.style.display = '';
+        if (section === 'configuration') {
+            cycleDelaySelect.style.display = 'none';
+        } else {
+            cycleDelaySelect.style.display = '';
+        }
+    }
+
+    // Show/hide timing controls (hidden for configuration)
+    var timingCtrls = $('#timing-controls');
+    if (timingCtrls) {
+        if (section === 'configuration') {
+            timingCtrls.style.display = 'none';
+        } else if (App.connectionState === 'connected') {
+            timingCtrls.style.display = '';
+        }
     }
 
     // Show/hide manual Refresh button based on auto-refresh state
@@ -1958,6 +1986,16 @@ function handleRegisterValue(msg) {
     var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
     if (!el) return;
 
+    // D-10: For configuration section, hide registers that return errors (illegal address = unsupported by model)
+    if (msg.section === 'configuration' && msg.error) {
+        var row = el.closest('.data-row-h');
+        if (row) row.style.display = 'none';
+        console.warn('[Config] Register unavailable:', msg.name,
+            '(0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0') + ')',
+            msg.error);
+        return;
+    }
+
     // Format register address as hex for tooltip (D-16)
     var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
 
@@ -1996,6 +2034,19 @@ function handleRegisterValue(msg) {
 function handleSectionComplete(msg) {
     if (msg.section !== App.activeSection) return;
 
+    // D-02: For configuration section, hide groups where all registers were hidden (all failed)
+    if (msg.section === 'configuration') {
+        var cards = document.querySelectorAll('#content-body .group-card');
+        cards.forEach(function(card) {
+            var allRows = card.querySelectorAll('.data-row-h');
+            var visibleRows = card.querySelectorAll('.data-row-h:not([style*="display: none"])');
+            // Hide group card if it has rows but all are hidden
+            if (allRows.length > 0 && visibleRows.length === 0) {
+                card.style.display = 'none';
+            }
+        });
+    }
+
     // Update timestamp display (existing logic preserved)
     if (msg.timestamp) {
         var ts = $('#content-timestamp');
@@ -2024,7 +2075,7 @@ function handleSectionComplete(msg) {
     refreshState.readingInProgress = false;
     updateRefreshButtonState();
 
-    if (refreshState.active) {
+    if (refreshState.active && msg.section !== 'configuration') {
         refreshState.cycleCount++;
         updateAutoRefreshButton();
 
