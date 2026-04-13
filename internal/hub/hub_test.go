@@ -2504,3 +2504,169 @@ func TestPackSkipResetOnSwitch(t *testing.T) {
 	}
 }
 
+// === Phase 15: Configuration Section Tests ===
+
+func TestConfigurationSectionRegistered(t *testing.T) {
+	assert := assert.New(t)
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	// Configuration section should exist after hub startup
+	assert.True(h.HasSection("configuration"), "hub should have configuration section")
+
+	// Configuration section should have readOnce=true
+	assert.True(h.GetSectionReadOnce("configuration"), "configuration section should have readOnce=true")
+
+	// Configuration section should have hasReadOnce=false initially
+	assert.False(h.GetSectionHasReadOnce("configuration"), "configuration section hasReadOnce should be false initially")
+
+	// Configuration section should have groups
+	groups := h.GetSectionGroups("configuration")
+	assert.True(len(groups) > 0, "configuration section should have probe groups")
+}
+
+func TestConfigurationReadOnceFirstReadCycleTriggers(t *testing.T) {
+	assert := assert.New(t)
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	// Connect the broker
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 4096)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+
+	// Subscribe triggers an immediate read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "configuration"})
+
+	// Drain until section_complete (proves the read happened)
+	msgs := drainUntilComplete(t, send, 30*time.Second)
+	foundComplete := false
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeSectionComplete {
+			foundComplete = true
+		}
+	}
+	assert.True(foundComplete, "first subscribe should trigger read and produce section_complete")
+
+	// After completion, hasReadOnce should be true
+	assert.True(h.GetSectionHasReadOnce("configuration"), "hasReadOnce should be true after first read completes")
+}
+
+func TestConfigurationReadOnceSkipsSecondReadCycle(t *testing.T) {
+	assert := assert.New(t)
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	// Connect the broker
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 4096)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+
+	// Subscribe and drain initial read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "configuration"})
+	drainUntilComplete(t, send, 30*time.Second)
+
+	initialReadCount := mb.getBatchCallCount()
+
+	// Send read_cycle -- should be SKIPPED (hasReadOnce is true)
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "configuration"})
+	time.Sleep(200 * time.Millisecond)
+
+	// Read count should NOT have increased
+	assert.Equal(initialReadCount, mb.getBatchCallCount(), "read_cycle should be skipped for cached configuration section")
+}
+
+func TestConfigurationRefreshResetsCache(t *testing.T) {
+	assert := assert.New(t)
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	// Connect the broker
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 4096)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+
+	// Subscribe and drain initial read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "configuration"})
+	drainUntilComplete(t, send, 30*time.Second)
+
+	assert.True(h.GetSectionHasReadOnce("configuration"), "hasReadOnce should be true after first read")
+
+	initialReadCount := mb.getBatchCallCount()
+
+	// Send explicit refresh -- should trigger re-read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeRefresh, Section: "configuration"})
+	drainUntilComplete(t, send, 30*time.Second)
+
+	assert.Greater(mb.getBatchCallCount(), initialReadCount, "refresh should trigger re-read for configuration section")
+
+	// After refresh completes, hasReadOnce should be true again
+	assert.True(h.GetSectionHasReadOnce("configuration"), "hasReadOnce should be true again after refresh completes")
+}
+
+func TestOtherSectionsUnaffectedByReadOnce(t *testing.T) {
+	assert := assert.New(t)
+	mb := newMockBroker()
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+	time.Sleep(20 * time.Millisecond)
+
+	// Verify other sections do NOT have readOnce
+	assert.False(h.GetSectionReadOnce("system"), "system section should not have readOnce")
+	assert.False(h.GetSectionReadOnce("grid"), "grid section should not have readOnce")
+	assert.False(h.GetSectionReadOnce("eps"), "eps section should not have readOnce")
+	assert.False(h.GetSectionReadOnce("pv"), "pv section should not have readOnce")
+	assert.False(h.GetSectionReadOnce("battery"), "battery section should not have readOnce")
+
+	// Connect the broker
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 4096)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(20 * time.Millisecond)
+
+	// Subscribe to grid and drain initial read
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeSubscribe, Section: "grid"})
+	drainUntilComplete(t, send, 10*time.Second)
+
+	countAfterFirst := mb.getBatchCallCount()
+
+	// Send read_cycle for grid -- should NOT be skipped
+	h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
+	drainUntilComplete(t, send, 10*time.Second)
+
+	assert.Greater(mb.getBatchCallCount(), countAfterFirst, "grid should still re-read on read_cycle (not affected by readOnce)")
+}
+

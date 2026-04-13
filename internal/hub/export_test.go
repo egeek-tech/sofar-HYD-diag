@@ -95,3 +95,29 @@ func (h *Hub) GetPackSkipRegisters() map[uint16]bool {
 	})
 	return result
 }
+
+// GetSectionReadOnce returns the readOnce flag for a named section.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetSectionReadOnce(name string) bool {
+	var readOnce bool
+	h.RunFunc(func() {
+		sec, ok := h.sections[name]
+		if ok {
+			readOnce = sec.readOnce
+		}
+	})
+	return readOnce
+}
+
+// GetSectionHasReadOnce returns the hasReadOnce flag for a named section.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetSectionHasReadOnce(name string) bool {
+	var hasReadOnce bool
+	h.RunFunc(func() {
+		sec, ok := h.sections[name]
+		if ok {
+			hasReadOnce = sec.hasReadOnce
+		}
+	})
+	return hasReadOnce
+}
