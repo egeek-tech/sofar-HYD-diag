@@ -1109,6 +1109,7 @@ body {
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 8px;
+    text-align: left;
 }
 
 .balance-status--ok {
