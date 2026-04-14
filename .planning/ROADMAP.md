@@ -128,7 +128,12 @@ Plans:
   2. The tool identifies registers present in XLSX but missing from the current probe definitions
   3. Meter registers (0x7080+) and any other valuable newly discovered registers are added to the appropriate sections in the web UI
   4. The production binary size is unchanged by the XLSX tool (excelize/v2 excluded via build tag)
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 17-01-PLAN.md -- Build CLI discovery tool with V1.38 register map, XLSX parser, three-way comparison, and Makefile
+- [ ] 17-02-PLAN.md -- Create Meter/DCDC/PCU/BDU register definitions, hub registration, and sidebar buttons
+- [ ] 17-03-PLAN.md -- Run tool to close register gaps in existing sections, verify binary size and UI
+**UI hint**: yes
 
 ## Progress
 
@@ -154,4 +159,4 @@ Note: Phases 15, 16, and 17 depend only on Phase 12, not on each other. They are
 | 14. System Time Fix | v1.3 | 1/1 | Complete    | 2026-04-13 |
 | 15. Configuration Section | v1.3 | 3/3 | Complete    | 2026-04-13 |
 | 16. Frontend Polish | v1.3 | 2/2 | Complete    | 2026-04-14 |
-| 17. XLSX Register Discovery | v1.3 | 0/0 | Not started | - |
+| 17. XLSX Register Discovery | v1.3 | 0/3 | Planned     | - |
