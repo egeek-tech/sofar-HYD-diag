@@ -58,6 +58,19 @@ func (h *Hub) GetSectionGroups(name string) []register.ProbeGroup {
 	return groups
 }
 
+// GetSectionBatchPlan returns the BatchPlan for a named section.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetSectionBatchPlan(name string) register.BatchPlan {
+	var plan register.BatchPlan
+	h.RunFunc(func() {
+		sec, ok := h.sections[name]
+		if ok {
+			plan = sec.BatchPlan
+		}
+	})
+	return plan
+}
+
 // HasSection returns true if the hub has a section with the given name.
 // Thread-safe: routes the query through the hub event loop.
 func (h *Hub) HasSection(name string) bool {
