@@ -640,7 +640,7 @@ func (h *Hub) registerBuiltinSections() {
 	h.RegisterGroupedSection("grid", register.GridGroups)
 	h.RegisterGroupedSection("eps", register.EPSGroups)
 	h.RegisterGroupedSection("pv", register.GeneratePVGroups(h.defaultPVChannels))
-	h.RegisterGroupedSection("battery", register.GenerateBatteryGroups(2)) // default 2 channels, auto-detect on read
+	h.RegisterGroupedSection("battery", append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)) // default 2 channels, auto-detect on read
 	h.registerBMSSection()
 
 	// New sections from XLSX register discovery (Phase 17)

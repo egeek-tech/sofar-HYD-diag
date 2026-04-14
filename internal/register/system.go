@@ -15,7 +15,16 @@ var SystemGroups = []ProbeGroup{
 	}},
 	{Name: "Status", Probes: []Probe{
 		{Name: "Running state", Addr: 0x0404, Count: 1, Enum: RunningStateEnum},
+		{Name: "Grid-connected wait time", Addr: 0x0417, Count: 1, Unit: "s", Scale: 1},
+		{Name: "Power gen time today", Addr: 0x0426, Count: 1, Unit: "min", Scale: 1},
 		{Name: "System time", Addr: 0x042C, Count: 0}, // Synthetic: schema-only, not read as probe
+	}},
+	{Name: "Firmware (Extended)", Probes: []Probe{
+		{Name: "ARM BOOT version", Addr: 0x045D, Count: 1},
+		{Name: "Master DSP BOOT ver", Addr: 0x045E, Count: 1},
+		{Name: "Slave DSP BOOT ver", Addr: 0x045F, Count: 1},
+		{Name: "Safety cert SW ver", Addr: 0x0460, Count: 4, IsASCII: true},
+		{Name: "Safety package ver", Addr: 0x0467, Count: 6, IsASCII: true},
 	}},
 	{Name: "Temperatures", Probes: []Probe{
 		{Name: "Ambient temp 1", Addr: 0x0418, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 1},
@@ -62,6 +71,11 @@ var GridGroups = []ProbeGroup{
 	{Name: "PCC Power", Probes: []Probe{
 		{Name: "PCC active power", Addr: 0x0488, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
 		{Name: "PCC reactive power", Addr: 0x0489, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
+		{Name: "PCC apparent power", Addr: 0x048A, Count: 1, Signed: true, Unit: "kVA", Scale: 0.01},
+		{Name: "PCC active power 2", Addr: 0x048B, Count: 1, Signed: true, Unit: "kW", Scale: 0.1},
+		{Name: "PCC current R", Addr: 0x0492, Count: 1, Unit: "A", Scale: 0.01},
+		{Name: "PCC active power R", Addr: 0x0493, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
+		{Name: "PCC reactive power R", Addr: 0x0494, Count: 1, Signed: true, Unit: "kVar", Scale: 0.01},
 	}},
 	{Name: "Line Voltages", Probes: []Probe{
 		{Name: "L1 (R/S)", Addr: 0x04BA, Count: 1, Unit: "V", Scale: 0.1},
@@ -69,6 +83,7 @@ var GridGroups = []ProbeGroup{
 		{Name: "L3 (T/R)", Addr: 0x04BC, Count: 1, Unit: "V", Scale: 0.1},
 	}},
 	{Name: "Load", Probes: []Probe{
+		{Name: "External power gen", Addr: 0x04AE, Count: 1, Unit: "kW", Scale: 0.01},
 		{Name: "Total load power", Addr: 0x04AF, Count: 1, Unit: "kW", Scale: 0.01},
 		{Name: "Total power factor", Addr: 0x04BD, Count: 1, Signed: true, Scale: 0.001},
 		{Name: "Generation efficiency", Addr: 0x04BF, Count: 1, Unit: "%", Scale: 0.01},
@@ -87,6 +102,7 @@ var EPSGroups = []ProbeGroup{
 	{Name: "Phase R", Layout: "column", Probes: []Probe{
 		{Name: "Inverter output voltage", Addr: 0x050A, Count: 1, Unit: "V", Scale: 0.1},
 		{Name: "Load current", Addr: 0x050B, Count: 1, Signed: true, Unit: "A", Scale: 0.01},
+		{Name: "Load active power", Addr: 0x050C, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
 	}},
 	{Name: "Phase S", Layout: "column", Probes: []Probe{
 		{Name: "Inverter output voltage", Addr: 0x0512, Count: 1, Unit: "V", Scale: 0.1},

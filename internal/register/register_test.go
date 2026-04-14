@@ -126,11 +126,11 @@ func TestRunningStateEnum(t *testing.T) {
 }
 
 func TestSystemGroups(t *testing.T) {
-	if len(SystemGroups) != 5 {
-		t.Fatalf("SystemGroups len = %d, want 5", len(SystemGroups))
+	if len(SystemGroups) != 6 {
+		t.Fatalf("SystemGroups len = %d, want 6", len(SystemGroups))
 	}
 
-	expectedNames := []string{"Identity", "Firmware", "Status", "Temperatures", "Protection"}
+	expectedNames := []string{"Identity", "Firmware", "Status", "Firmware (Extended)", "Temperatures", "Protection"}
 	for i, want := range expectedNames {
 		if SystemGroups[i].Name != want {
 			t.Errorf("SystemGroups[%d].Name = %q, want %q", i, SystemGroups[i].Name, want)
@@ -180,7 +180,7 @@ func TestSystemGroups(t *testing.T) {
 		}
 	}
 
-	// Status: Running state with Enum at 0x0404, plus synthetic System time
+	// Status: Running state with Enum at 0x0404, grid wait time, power gen time, plus synthetic System time
 	status := SystemGroups[2]
 	if status.Probes[0].Addr != 0x0404 {
 		t.Errorf("Status running state addr = 0x%04X, want 0x0404", status.Probes[0].Addr)
@@ -188,21 +188,27 @@ func TestSystemGroups(t *testing.T) {
 	if status.Probes[0].Enum == nil {
 		t.Error("Status running state Enum should not be nil")
 	}
-	if len(status.Probes) != 2 {
-		t.Errorf("Status probes = %d, want 2 (running state + synthetic System time)", len(status.Probes))
+	if len(status.Probes) != 4 {
+		t.Errorf("Status probes = %d, want 4 (running state + wait time + gen time + synthetic System time)", len(status.Probes))
 	}
-	if status.Probes[1].Name != "System time" {
-		t.Errorf("Status[1].Name = %q, want %q", status.Probes[1].Name, "System time")
+	if status.Probes[3].Name != "System time" {
+		t.Errorf("Status[3].Name = %q, want %q", status.Probes[3].Name, "System time")
 	}
-	if status.Probes[1].Addr != 0x042C {
-		t.Errorf("Status[1].Addr = 0x%04X, want 0x042C", status.Probes[1].Addr)
+	if status.Probes[3].Addr != 0x042C {
+		t.Errorf("Status[3].Addr = 0x%04X, want 0x042C", status.Probes[3].Addr)
 	}
-	if status.Probes[1].Count != 0 {
-		t.Errorf("Status[1].Count = %d, want 0 (synthetic probe)", status.Probes[1].Count)
+	if status.Probes[3].Count != 0 {
+		t.Errorf("Status[3].Count = %d, want 0 (synthetic probe)", status.Probes[3].Count)
+	}
+
+	// Firmware (Extended): BOOT versions + safety versions
+	fwExt := SystemGroups[3]
+	if fwExt.Name != "Firmware (Extended)" {
+		t.Errorf("SystemGroups[3].Name = %q, want %q", fwExt.Name, "Firmware (Extended)")
 	}
 
 	// Temperatures: 4 probes, all S16
-	temps := SystemGroups[3]
+	temps := SystemGroups[4]
 	if len(temps.Probes) != 4 {
 		t.Fatalf("Temperatures probes = %d, want 4", len(temps.Probes))
 	}
@@ -228,7 +234,7 @@ func TestSystemGroups(t *testing.T) {
 	}
 
 	// Protection: Insulation impedance (0x042B) and Fan speed (0x043E)
-	protection := SystemGroups[4]
+	protection := SystemGroups[5]
 	if len(protection.Probes) != 2 {
 		t.Fatalf("Protection probes = %d, want 2", len(protection.Probes))
 	}
@@ -317,25 +323,28 @@ func TestGridGroups(t *testing.T) {
 		t.Errorf("Phase T voltage addr = 0x%04X, want 0x04A3", phaseT.Probes[0].Addr)
 	}
 
-	// Load: Total load power (0x04AF), Total power factor (0x04BD S16 Scale 0.001), Generation efficiency (0x04BF)
+	// Load: External power gen (0x04AE), Total load power (0x04AF), Total power factor (0x04BD S16 Scale 0.001), Generation efficiency (0x04BF)
 	load := GridGroups[6]
-	if len(load.Probes) != 3 {
-		t.Fatalf("Load probes = %d, want 3", len(load.Probes))
+	if len(load.Probes) != 4 {
+		t.Fatalf("Load probes = %d, want 4", len(load.Probes))
 	}
-	if load.Probes[0].Addr != 0x04AF {
-		t.Errorf("Load total load power addr = 0x%04X, want 0x04AF", load.Probes[0].Addr)
+	if load.Probes[0].Addr != 0x04AE {
+		t.Errorf("Load external power gen addr = 0x%04X, want 0x04AE", load.Probes[0].Addr)
 	}
-	if load.Probes[1].Addr != 0x04BD {
-		t.Errorf("Load total power factor addr = 0x%04X, want 0x04BD", load.Probes[1].Addr)
+	if load.Probes[1].Addr != 0x04AF {
+		t.Errorf("Load total load power addr = 0x%04X, want 0x04AF", load.Probes[1].Addr)
 	}
-	if !load.Probes[1].Signed {
+	if load.Probes[2].Addr != 0x04BD {
+		t.Errorf("Load total power factor addr = 0x%04X, want 0x04BD", load.Probes[2].Addr)
+	}
+	if !load.Probes[2].Signed {
 		t.Error("Load total power factor should be signed")
 	}
-	if load.Probes[1].Scale != 0.001 {
-		t.Errorf("Load total power factor scale = %f, want 0.001", load.Probes[1].Scale)
+	if load.Probes[2].Scale != 0.001 {
+		t.Errorf("Load total power factor scale = %f, want 0.001", load.Probes[2].Scale)
 	}
-	if load.Probes[2].Addr != 0x04BF {
-		t.Errorf("Load generation efficiency addr = 0x%04X, want 0x04BF", load.Probes[2].Addr)
+	if load.Probes[3].Addr != 0x04BF {
+		t.Errorf("Load generation efficiency addr = 0x%04X, want 0x04BF", load.Probes[3].Addr)
 	}
 }
 

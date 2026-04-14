@@ -265,6 +265,7 @@ func currentProbeAddrs() map[uint16]*RegisterInfo {
 	addGroups(register.DCDCGroups)
 	addGroups(register.PCUGroups)
 	addGroups(register.BDUGroups)
+	addGroups(register.InternalInfoGroups())
 
 	// Flat probe functions
 	for _, p := range register.PackRTProbes() {

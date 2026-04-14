@@ -72,6 +72,26 @@ func BMSInfoGroups() []ProbeGroup {
 				{Name: "SW Minor", Addr: 0x901B, Count: 1},
 				{Name: "SN", Addr: 0x9024, Count: 10, IsASCII: true},
 				{Name: "Online Bitmap", Addr: 0x9022, Count: 1},
+			{Name: "Hibernation State", Addr: 0x9023, Count: 1},
+			{Name: "Max Discharge Current", Addr: 0x902F, Count: 1, Signed: true, Unit: "A", Scale: 1},
+			{Name: "Max Charge Current", Addr: 0x9030, Count: 1, Signed: true, Unit: "A", Scale: 1},
+			},
+		},
+	}
+}
+
+// InternalInfoGroups returns ProbeGroup definitions for inverter internal info registers.
+// From Sofar Modbus-G3 V1.38 section 5.1.10 (0x06C4-0x06EF).
+func InternalInfoGroups() []ProbeGroup {
+	return []ProbeGroup{
+		{
+			Name: "Internal Info",
+			Probes: []Probe{
+				{Name: "Total BUS voltage", Addr: 0x06CC, Count: 1, Unit: "V", Scale: 0.1},
+				{Name: "BUS positive voltage", Addr: 0x06CD, Count: 1, Unit: "V", Scale: 0.1},
+				{Name: "BUS negative voltage", Addr: 0x06CE, Count: 1, Unit: "V", Scale: 0.1},
+				{Name: "Buck Boost current", Addr: 0x06D0, Count: 1, Signed: true, Unit: "A", Scale: 0.01},
+				{Name: "Rated power", Addr: 0x06ED, Count: 1, Unit: "kW", Scale: 0.1},
 			},
 		},
 	}
