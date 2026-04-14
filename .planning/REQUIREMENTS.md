@@ -38,17 +38,17 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BATCH-01 | TBD | Pending |
-| BATCH-02 | TBD | Pending |
-| BATCH-03 | TBD | Pending |
-| BATCH-04 | TBD | Pending |
-| SAFE-02 | TBD | Pending |
-| SAFE-03 | TBD | Pending |
+| BATCH-01 | Phase 18 | Pending |
+| BATCH-02 | Phase 19 | Pending |
+| BATCH-03 | Phase 19 | Pending |
+| BATCH-04 | Phase 19 | Pending |
+| SAFE-02 | Phase 18 | Pending |
+| SAFE-03 | Phase 18 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 6 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 6
+- Mapped to phases: 6
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-14*
