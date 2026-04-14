@@ -29,6 +29,9 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - ✓ Complete tooltip coverage in pack drill-down (Balance State, Pack Status) — Validated in Phase 16
 - ✓ Zero-temperature hiding for disconnected sensors, PackInfoProbes error suppression — Validated in Phase 16
 - ✓ Per-group batch streaming in pack drill-down (groups fill at once instead of individual values) — Validated in Phase 16
+- ✓ XLSX register discovery tool with three-way comparison (XLSX V1.29 / PDF V1.38 / current probes) — Validated in Phase 17
+- ✓ Meter, DCDC, PCU, BDU sections added to sidebar with full register coverage — Validated in Phase 17
+- ✓ 22 gap-filled registers across existing sections from XLSX discovery — Validated in Phase 17
 
 ### Validated (v1.2)
 
@@ -117,7 +120,7 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 
 This document evolves at phase transitions and milestone boundaries.
 
-Last updated: 2026-04-14 — Phase 16 complete
+Last updated: 2026-04-14 — v1.3 milestone complete
 
 **After each phase transition** (via `/gsd-transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
