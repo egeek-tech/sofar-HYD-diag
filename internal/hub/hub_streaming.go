@@ -219,6 +219,7 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 					case h.funcs <- func() {
 						sec.Groups = newGroups
 						sec.Probes = flattenProbeGroups(newGroups)
+						sec.BatchPlan = register.AnalyzeBatchPlan(newGroups)
 						h.logger.Info("battery section auto-detected channels", "channels", detected)
 						h.triggerSectionRead("battery")
 					}:
