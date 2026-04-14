@@ -95,6 +95,16 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - **Single connection**: Only one TCP connection to inverter at a time (Modbus is serial)
 - **Deployment**: Single binary, no external dependencies
 
+## Current Milestone: v1.4 Batch Register Reading
+
+**Goal:** Prove that batching contiguous register reads dramatically reduces section load times, starting with System and Configuration sections as a PoC.
+
+**Target features:**
+- Analyze register groups for contiguous address ranges batchable into single Modbus requests (up to 60 registers)
+- Implement batch read strategy in the broker/hub layer
+- Apply to System and Configuration sections as PoC
+- Measure and verify speedup vs per-register reads
+
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
@@ -120,7 +130,7 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 
 This document evolves at phase transitions and milestone boundaries.
 
-Last updated: 2026-04-14 — v1.3 milestone complete
+Last updated: 2026-04-14 — v1.4 milestone started
 
 **After each phase transition** (via `/gsd-transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
