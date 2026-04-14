@@ -1051,7 +1051,7 @@ function initTooltip() {
 
     // Event delegation with useCapture for dynamically-created elements (D-15)
     body.addEventListener('mouseenter', function(e) {
-        var target = e.target.closest('.data-row-h__value');
+        var target = e.target.closest('.data-row-h__value') || e.target.closest('[data-pack-status-tooltip]');
         if (!target) return;
         clearTimeout(tooltipTimer);
         tooltipTimer = setTimeout(function() {
@@ -1060,7 +1060,7 @@ function initTooltip() {
     }, true);
 
     body.addEventListener('mouseleave', function(e) {
-        var target = e.target.closest('.data-row-h__value');
+        var target = e.target.closest('.data-row-h__value') || e.target.closest('[data-pack-status-tooltip]');
         if (!target) return;
         clearTimeout(tooltipTimer);
         hideTooltip();
@@ -1068,6 +1068,57 @@ function initTooltip() {
 }
 
 function showTooltip(el) {
+    // TIP-02: Pack Status tooltip -- build multiline content from packStatusState
+    if (el.hasAttribute('data-pack-status-tooltip')) {
+        var lines = [];
+        var statusRegMap = {
+            'Alarm Status': 0x9076,
+            'Protection Status': 0x9077,
+            'Fault Status': 0x9078,
+            'Alarm Status 2': 0x9124,
+            'Protection Status 2': 0x9125,
+            'Fault Status 2': 0x9126
+        };
+        var regs = packStatusState.registers;
+        for (var regName in statusRegMap) {
+            if (statusRegMap.hasOwnProperty(regName)) {
+                var addrHex = '0x' + statusRegMap[regName].toString(16).toUpperCase().padStart(4, '0');
+                var rawVal = (regs[regName] !== undefined) ? regs[regName].toString() : '?';
+                lines.push('Register: ' + addrHex + ' (' + regName + ')');
+                lines.push('Raw: ' + rawVal);
+            }
+        }
+        var timeAttr = el.getAttribute('data-register-time');
+        if (timeAttr) lines.push('Last read: ' + timeAttr);
+
+        if (lines.length === 0) return;
+
+        tooltipEl.textContent = '';
+        lines.forEach(function(line) {
+            var div = document.createElement('div');
+            div.textContent = line;
+            tooltipEl.appendChild(div);
+        });
+
+        tooltipEl.classList.remove('param-tooltip--below');
+        tooltipEl.style.display = '';
+
+        var rect = el.getBoundingClientRect();
+        var tipWidth = tooltipEl.offsetWidth;
+        var tipHeight = tooltipEl.offsetHeight;
+        var left = rect.left + (rect.width - tipWidth) / 2;
+        var top = rect.top - tipHeight - 8;
+        if (left < 4) left = 4;
+        if (left + tipWidth > window.innerWidth - 4) left = window.innerWidth - tipWidth - 4;
+        if (top < 4) {
+            top = rect.bottom + 8;
+            tooltipEl.classList.add('param-tooltip--below');
+        }
+        tooltipEl.style.left = left + 'px';
+        tooltipEl.style.top = top + 'px';
+        return;
+    }
+
     var addr = el.getAttribute('data-register-addr');
     var raw = el.getAttribute('data-register-raw');
     var time = el.getAttribute('data-register-time');
@@ -1396,7 +1447,7 @@ function renderBalanceSkeleton(group) {
     balanceSection.appendChild(balanceLabel);
 
     var balanceValue = document.createElement('div');
-    balanceValue.className = 'balance-status data-row-h__value--pending';
+    balanceValue.className = 'balance-status data-row-h__value data-row-h__value--pending';
     balanceValue.textContent = '\u2014';
     balanceValue.setAttribute('data-register', 'Balance State::Balance State');
     balanceValue.setAttribute('data-pack-balance', 'true');
@@ -1420,7 +1471,7 @@ function renderBalanceSkeletonStandalone(group) {
     container.appendChild(sep);
 
     var balanceValue = document.createElement('div');
-    balanceValue.className = 'balance-status data-row-h__value--pending';
+    balanceValue.className = 'balance-status data-row-h__value data-row-h__value--pending';
     balanceValue.textContent = '\u2014';
     balanceValue.setAttribute('data-register', 'Balance State::Balance State');
     balanceValue.setAttribute('data-pack-balance', 'true');
@@ -1519,6 +1570,20 @@ function renderTempGridSkeleton(group) {
 // === Phase 11: Pack Register Value Handlers ===
 
 function handlePackRegisterValue(msg) {
+    // D-04: Suppress PackInfoProbes errors (0x9104-0x9126) -- hide row, console.warn
+    if (msg.error && msg.register_addr >= 0x9104 && msg.register_addr <= 0x9126) {
+        var key = msg.group + '::' + msg.name;
+        var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
+        if (el) {
+            var row = el.closest('.data-row-h');
+            if (row) row.style.display = 'none';
+        }
+        console.warn('[PackInfo] Register unavailable:', msg.name,
+            '(0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0') + ')',
+            msg.error);
+        return;
+    }
+
     if (msg.group === 'Cell Voltages') {
         updateCellValue(msg);
     } else if (msg.group === 'Balance State') {
@@ -1707,10 +1772,10 @@ function updateBalanceValue(msg) {
         el.classList.add('data-row-h__value--fresh');
 
         if (bitmap === 0) {
-            el.className = 'balance-status balance-status--ok data-row-h__value--fresh';
+            el.className = 'balance-status balance-status--ok data-row-h__value data-row-h__value--fresh';
             el.textContent = 'Balanced';
         } else {
-            el.className = 'balance-status balance-status--active data-row-h__value--fresh';
+            el.className = 'balance-status balance-status--active data-row-h__value data-row-h__value--fresh';
 
             var statusText = document.createElement('span');
             statusText.textContent = 'Balancing Active';
@@ -1745,6 +1810,44 @@ function updateBalanceValue(msg) {
 }
 
 function updateTemperatureValue(msg) {
+    // D-01: Hide 0.0C temperatures entirely (disconnected sensors)
+    if (!msg.error && msg.raw_value) {
+        var rawVal = parseInt(msg.raw_value, 10);
+        if (rawVal === 0) {
+            // Hide the entire temperature cell
+            var key = msg.group + '::' + msg.name;
+            var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
+            if (el) {
+                var cell = el.closest('.cell-voltage');
+                if (cell) cell.classList.add('temp-sensor--hidden');
+            }
+            // Do NOT track in packTempState, do NOT update summary, do NOT call updateStandardPackValue
+            // Cache the hidden state so it persists across section switches
+            var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+            var now = new Date();
+            var timeStr = now.toTimeString().slice(0, 8);
+            updateCache(key, {
+                value: msg.value || '',
+                registerAddr: addrHex,
+                rawValue: msg.raw_value || '',
+                timestamp: timeStr,
+                error: false,
+                hidden: true
+            });
+            return;
+        }
+    }
+
+    // Non-zero temperature: ensure cell is visible (sensor may come back online)
+    if (!msg.error && msg.raw_value) {
+        var key2 = msg.group + '::' + msg.name;
+        var el2 = document.querySelector('[data-register="' + CSS.escape(key2) + '"]');
+        if (el2) {
+            var cell2 = el2.closest('.cell-voltage');
+            if (cell2) cell2.classList.remove('temp-sensor--hidden');
+        }
+    }
+
     // Use standard value update first
     updateStandardPackValue(msg);
 
@@ -1917,6 +2020,10 @@ function renderPackStatusFromState(card) {
         var heading = document.createElement('h3');
         heading.className = 'fault-card__heading';
         heading.textContent = '\u2713 Pack Status';
+        heading.setAttribute('data-pack-status-tooltip', 'true');
+        heading.style.cursor = 'help';
+        var now = new Date();
+        heading.setAttribute('data-register-time', now.toTimeString().slice(0, 8));
         card.appendChild(heading);
 
         var clearText = document.createElement('p');
@@ -1928,6 +2035,10 @@ function renderPackStatusFromState(card) {
         var heading = document.createElement('h3');
         heading.className = 'fault-card__heading';
         heading.textContent = '\u26A0 Pack Status';
+        heading.setAttribute('data-pack-status-tooltip', 'true');
+        heading.style.cursor = 'help';
+        var now = new Date();
+        heading.setAttribute('data-register-time', now.toTimeString().slice(0, 8));
         card.appendChild(heading);
 
         // Decode bitmaps using BMS bitmap tables
@@ -2041,6 +2152,18 @@ function handleSectionComplete(msg) {
             var allRows = card.querySelectorAll('.data-row-h');
             var visibleRows = card.querySelectorAll('.data-row-h:not([style*="display: none"])');
             // Hide group card if it has rows but all are hidden
+            if (allRows.length > 0 && visibleRows.length === 0) {
+                card.style.display = 'none';
+            }
+        });
+    }
+
+    // D-04: For BMS pack detail, hide Pack Info group cards where all rows are suppressed
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') {
+        var packCards = document.querySelectorAll('#content-body .group-card');
+        packCards.forEach(function(card) {
+            var allRows = card.querySelectorAll('.data-row-h');
+            var visibleRows = card.querySelectorAll('.data-row-h:not([style*="display: none"])');
             if (allRows.length > 0 && visibleRows.length === 0) {
                 card.style.display = 'none';
             }

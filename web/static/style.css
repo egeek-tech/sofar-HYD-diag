@@ -1201,3 +1201,8 @@ body {
     border-top-color: transparent;
     border-bottom-color: var(--tooltip-bg, #1a1a2e);
 }
+
+/* Phase 16: Hide disconnected temperature sensors (CLEAN-03, D-01) */
+.temp-sensor--hidden {
+    display: none;
+}
