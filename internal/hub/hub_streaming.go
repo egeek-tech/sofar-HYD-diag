@@ -273,8 +273,9 @@ func (h *Hub) buildPackSchema(input, tower, pack int, groups []register.ProbeGro
 	}
 }
 
-// streamPackRead reads pack registers one-by-one, streaming register_value messages
-// for each probe, then sends section_complete. Follows the same pattern as streamBMSRead.
+// streamPackRead reads pack registers group-by-group, accumulating results per group
+// and sending them as a batch when each group completes. This creates a per-group
+// streaming effect where all values in a group appear together in the UI (D-05, D-06).
 // Implements D-01 (streaming), D-04 (skip unsupported), D-05 (skip cleared in handleSelectPack).
 func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx context.Context) {
 	groups := register.PackProbeGroups()
@@ -321,8 +322,9 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 		schema := h.buildPackSchema(input, tower, pack, groups)
 		h.results <- sectionResult{section: "bms", msg: schema}
 
-		// Step 4: Read each probe individually, streaming register_value messages
+		// Step 4: Read probes per group, accumulate results, send as batch (D-05)
 		for _, g := range groups {
+			var groupResults []sectionResult
 			for _, p := range g.Probes {
 				if readCtx.Err() != nil {
 					return
@@ -341,20 +343,24 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 					if readCtx.Err() != nil {
 						return
 					}
-					h.results <- sectionResult{
+					groupResults = append(groupResults, sectionResult{
 						section: "bms",
 						msg:     NewRegisterValue("bms", g.Name, p.Name, "", errStr, p.Addr, ""),
-					}
+					})
 					continue
 				}
 
 				if readCtx.Err() != nil {
 					return
 				}
-				h.results <- sectionResult{
+				groupResults = append(groupResults, sectionResult{
 					section: "bms",
 					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), "", p.Addr, FormatRawValue(p, data)),
-				}
+				})
+			}
+			// D-05: Send all results for this group at once
+			for _, r := range groupResults {
+				h.results <- r
 			}
 		}
 
