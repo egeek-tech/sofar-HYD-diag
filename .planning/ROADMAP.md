@@ -46,7 +46,7 @@
 - [x] **Phase 13: Statistics-to-System Merge** - Consolidate statistics into System section with additional daily metrics (completed 2026-04-13)
 - [x] **Phase 14: System Time Fix** - Display system time as a single concatenated row (completed 2026-04-13)
 - [x] **Phase 15: Configuration Section** - New read-only section displaying device configuration registers (completed 2026-04-13)
-- [ ] **Phase 16: Frontend Polish** - Fix pack drill-down tooltips and hide disconnected temperature sensors
+- [x] **Phase 16: Frontend Polish** - Fix pack drill-down tooltips and hide disconnected temperature sensors (completed 2026-04-14)
 - [ ] **Phase 17: XLSX Register Discovery** - Offline tool to parse XLSX register map and integrate newly discovered registers
 
 ## Phase Details
@@ -113,10 +113,10 @@ Plans:
   1. Hovering over any Balance State value in the pack drill-down shows a tooltip with register address (hex) and raw value
   2. Hovering over any Pack Status value in the pack drill-down shows a tooltip with register address (hex) and raw value
   3. Zero-value temperatures (0.0C) in the pack drill-down are hidden or visually dimmed as disconnected sensors
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
-- [ ] 16-01-PLAN.md -- Tooltip coverage for Balance State and Pack Status, zero-temp hiding, PackInfoProbes error suppression
-- [ ] 16-02-PLAN.md -- Per-group batch streaming for pack drill-down register values
+- [x] 16-01-PLAN.md -- Tooltip coverage for Balance State and Pack Status, zero-temp hiding, PackInfoProbes error suppression
+- [x] 16-02-PLAN.md -- Per-group batch streaming for pack drill-down register values
 **UI hint**: yes
 
 ### Phase 17: XLSX Register Discovery
@@ -153,5 +153,5 @@ Note: Phases 15, 16, and 17 depend only on Phase 12, not on each other. They are
 | 13. Statistics-to-System Merge | v1.3 | 1/1 | Complete    | 2026-04-13 |
 | 14. System Time Fix | v1.3 | 1/1 | Complete    | 2026-04-13 |
 | 15. Configuration Section | v1.3 | 3/3 | Complete    | 2026-04-13 |
-| 16. Frontend Polish | v1.3 | 0/2 | Planned     | - |
+| 16. Frontend Polish | v1.3 | 2/2 | Complete    | 2026-04-14 |
 | 17. XLSX Register Discovery | v1.3 | 0/0 | Not started | - |
