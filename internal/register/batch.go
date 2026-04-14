@@ -40,8 +40,12 @@ type annotatedProbe struct {
 //
 // This is a pure function with no I/O or side effects.
 func AnalyzeBatchPlan(groups []ProbeGroup) BatchPlan {
-	// Flatten all probes from all groups.
-	var real []annotatedProbe
+	// Flatten all probes from all groups with capacity hint.
+	totalProbes := 0
+	for _, g := range groups {
+		totalProbes += len(g.Probes)
+	}
+	real := make([]annotatedProbe, 0, totalProbes)
 	var unbatchable []ProbeMapping
 
 	for _, g := range groups {
