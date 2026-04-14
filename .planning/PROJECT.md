@@ -25,6 +25,10 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 ### Validated (v1.3)
 
 - ✓ System time as single composed row (HH:MM:SS DD-MM-YYYY) — batch read replaces 6 individual register reads — Validated in Phase 14
+- ✓ Read-only Configuration section with all V1.38 config registers, enum decoding, read-once caching, per-group streaming — Validated in Phase 15
+- ✓ Complete tooltip coverage in pack drill-down (Balance State, Pack Status) — Validated in Phase 16
+- ✓ Zero-temperature hiding for disconnected sensors, PackInfoProbes error suppression — Validated in Phase 16
+- ✓ Per-group batch streaming in pack drill-down (groups fill at once instead of individual values) — Validated in Phase 16
 
 ### Validated (v1.2)
 
@@ -97,7 +101,7 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 | Reuse existing main.go Modbus layer | Proven working code, verified against real hardware | — Pending |
 | Configurable PV channels (2-16) | Different HYD models have different PV input counts | — Pending |
 | Configurable battery topology | Different setups: 1-2 inputs, 1-4 towers, 4-10 packs | ⚠️ Revisit — v1.1 hardcoded to 2/10/16, configurable removed |
-| Per-register streaming | Stream each value as read instead of batch-then-send | ✓ Good — v1.1 |
+| Per-register streaming | Stream each value as read instead of batch-then-send | ✓ Good — v1.1, refined in v1.3 Phase 16 with per-group batching |
 | Hardcoded topology constants | User's actual setup: 2 towers, 10 packs, 16 cells | ✓ Good — v1.1, simpler than configurable |
 | 0x9022 is tower bitmap | "Battery" = tower in Sofar protocol, not individual pack | ✓ Good — v1.1, corrected from v1.0 misinterpretation |
 | Desktop-only layout | Diagnostic tool used at inverter location on laptop/desktop | — Pending |
@@ -113,7 +117,7 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 
 This document evolves at phase transitions and milestone boundaries.
 
-Last updated: 2026-04-13 — Phase 14 complete
+Last updated: 2026-04-14 — Phase 16 complete
 
 **After each phase transition** (via `/gsd-transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
@@ -154,4 +158,4 @@ All 20 battery packs accessible with per-register streaming, browser-driven refr
 - ~250 lines deprecated dead code (triggerPackRead) — cleanup deferred after streaming stability confirmed
 
 ---
-*Last updated: 2026-04-13 after v1.3 milestone start*
+*Last updated: 2026-04-13 after Phase 15 (Configuration Section) complete*
