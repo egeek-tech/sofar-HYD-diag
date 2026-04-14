@@ -2504,6 +2504,175 @@ func TestPackSkipResetOnSwitch(t *testing.T) {
 	}
 }
 
+// === Phase 16: Per-group batch ordering ===
+
+func TestStreamPackReadGroupBatch(t *testing.T) {
+	mb := newMockBroker()
+	// Set up register results for all pack probe addresses
+	mb.registerResults = make(map[uint16]broker.Result)
+
+	// Pack Info probes (single-register)
+	for _, addr := range []uint16{0x9044, 0x9079, 0x907A, 0x9071, 0x9072, 0x9073, 0x9074, 0x907B, 0x907C, 0x9104, 0x9105, 0x910A, 0x910B} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 100)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+	// Serial Number (ASCII, 10 registers = 20 bytes)
+	snData := make([]byte, 20)
+	copy(snData, []byte("TEST1234567890123456"))
+	mb.registerResults[0x9047] = broker.Result{Data: snData}
+	// Manufacturer (ASCII, 4 registers = 8 bytes)
+	mfgData := make([]byte, 8)
+	copy(mfgData, []byte("TESTMFG"))
+	mb.registerResults[0x9106] = broker.Result{Data: mfgData}
+
+	// Cell voltages (16 cells)
+	for i := 0; i < 16; i++ {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 3300+uint16(i))
+		mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: data}
+	}
+	// Max/Min cell voltage
+	for _, addr := range []uint16{0x9069, 0x906A} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 3310)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+	// Balance state
+	balData := make([]byte, 2)
+	binary.BigEndian.PutUint16(balData, 0)
+	mb.registerResults[0x9075] = broker.Result{Data: balData}
+	// Temperatures (10 probes)
+	for _, addr := range []uint16{0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 250)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+	// Status registers
+	for _, addr := range []uint16{0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126} {
+		data := make([]byte, 2)
+		binary.BigEndian.PutUint16(data, 0)
+		mb.registerResults[addr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	send := make(chan []byte, 512)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to BMS section
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "bms"})
+	time.Sleep(50 * time.Millisecond)
+
+	// Simulate connected state
+	mb.mu.Lock()
+	mb.state = broker.StateConnected
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	mb.mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+
+	// Drain any initial messages (state, schema, bms overview read)
+	drainRawMessages(send, 2*time.Second)
+
+	// Send select_pack command
+	h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
+
+	// Collect all messages until section_complete
+	rawMsgs := collectRawMessages(t, send, 5*time.Second)
+
+	// Parse messages and extract register_value messages with their group field
+	type regMsg struct {
+		Type  string `json:"type"`
+		Group string `json:"group"`
+		Name  string `json:"name"`
+	}
+
+	var regValues []regMsg
+	var lastMsgType string
+	for _, raw := range rawMsgs {
+		var msg regMsg
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			continue
+		}
+		if msg.Type == "register_value" {
+			regValues = append(regValues, msg)
+		}
+		lastMsgType = msg.Type
+	}
+
+	require.True(t, len(regValues) > 0, "should have register_value messages")
+
+	// Verify group ordering: all messages of one group appear before the next group
+	// Expected group order: Pack Info, Cell Voltages, Balance State, Temperatures, Pack Status
+	expectedGroups := []string{"Pack Info", "Cell Voltages", "Balance State", "Temperatures", "Pack Status"}
+
+	// Build seen-group order (preserving first-seen order)
+	var seenOrder []string
+	seenSet := make(map[string]bool)
+	for _, rv := range regValues {
+		if !seenSet[rv.Group] {
+			seenSet[rv.Group] = true
+			seenOrder = append(seenOrder, rv.Group)
+		}
+	}
+
+	// seenOrder should match expectedGroups
+	assert.Equal(t, expectedGroups, seenOrder, "groups should appear in expected order")
+
+	// Verify no interleaving: once a new group starts, the previous group should not appear again
+	currentGroup := ""
+	groupDone := make(map[string]bool)
+	for _, rv := range regValues {
+		if rv.Group != currentGroup {
+			if groupDone[rv.Group] {
+				t.Errorf("group %q appeared again after being completed (interleaved with other groups)", rv.Group)
+			}
+			if currentGroup != "" {
+				groupDone[currentGroup] = true
+			}
+			currentGroup = rv.Group
+		}
+	}
+
+	// Verify Cell Voltages all appear before Temperatures
+	lastCellIdx := -1
+	firstTempIdx := -1
+	for i, rv := range regValues {
+		if rv.Group == "Cell Voltages" {
+			lastCellIdx = i
+		}
+		if rv.Group == "Temperatures" && firstTempIdx == -1 {
+			firstTempIdx = i
+		}
+	}
+	if lastCellIdx >= 0 && firstTempIdx >= 0 {
+		assert.Less(t, lastCellIdx, firstTempIdx, "all Cell Voltages should appear before any Temperatures")
+	}
+
+	// Verify Temperatures all appear before Pack Status
+	lastTempIdx := -1
+	firstStatusIdx := -1
+	for i, rv := range regValues {
+		if rv.Group == "Temperatures" {
+			lastTempIdx = i
+		}
+		if rv.Group == "Pack Status" && firstStatusIdx == -1 {
+			firstStatusIdx = i
+		}
+	}
+	if lastTempIdx >= 0 && firstStatusIdx >= 0 {
+		assert.Less(t, lastTempIdx, firstStatusIdx, "all Temperatures should appear before any Pack Status")
+	}
+
+	// Verify section_complete is the last message
+	assert.Equal(t, "section_complete", lastMsgType, "last message should be section_complete")
+}
+
 // === Phase 15: Configuration Section Tests ===
 
 func TestConfigurationSectionRegistered(t *testing.T) {
