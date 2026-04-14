@@ -1570,6 +1570,20 @@ function renderTempGridSkeleton(group) {
 // === Phase 11: Pack Register Value Handlers ===
 
 function handlePackRegisterValue(msg) {
+    // D-04: Suppress PackInfoProbes errors (0x9104-0x9126) -- hide row, console.warn
+    if (msg.error && msg.register_addr >= 0x9104 && msg.register_addr <= 0x9126) {
+        var key = msg.group + '::' + msg.name;
+        var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
+        if (el) {
+            var row = el.closest('.data-row-h');
+            if (row) row.style.display = 'none';
+        }
+        console.warn('[PackInfo] Register unavailable:', msg.name,
+            '(0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0') + ')',
+            msg.error);
+        return;
+    }
+
     if (msg.group === 'Cell Voltages') {
         updateCellValue(msg);
     } else if (msg.group === 'Balance State') {
@@ -2138,6 +2152,18 @@ function handleSectionComplete(msg) {
             var allRows = card.querySelectorAll('.data-row-h');
             var visibleRows = card.querySelectorAll('.data-row-h:not([style*="display: none"])');
             // Hide group card if it has rows but all are hidden
+            if (allRows.length > 0 && visibleRows.length === 0) {
+                card.style.display = 'none';
+            }
+        });
+    }
+
+    // D-04: For BMS pack detail, hide Pack Info group cards where all rows are suppressed
+    if (msg.section === 'bms' && packViewState.mode === 'pack_detail') {
+        var packCards = document.querySelectorAll('#content-body .group-card');
+        packCards.forEach(function(card) {
+            var allRows = card.querySelectorAll('.data-row-h');
+            var visibleRows = card.querySelectorAll('.data-row-h:not([style*="display: none"])');
             if (allRows.length > 0 && visibleRows.length === 0) {
                 card.style.display = 'none';
             }
