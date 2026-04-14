@@ -643,6 +643,12 @@ func (h *Hub) registerBuiltinSections() {
 	h.RegisterGroupedSection("battery", register.GenerateBatteryGroups(2)) // default 2 channels, auto-detect on read
 	h.registerBMSSection()
 
+	// New sections from XLSX register discovery (Phase 17)
+	h.RegisterGroupedSection("meter", register.MeterGroups)
+	h.RegisterGroupedSection("dcdc", register.DCDCGroups)
+	h.RegisterGroupedSection("pcu", register.PCUGroups)
+	h.RegisterGroupedSection("bdu", register.BDUGroups)
+
 	// D-09: Configuration section uses read-once caching (static device settings)
 	if sec, ok := h.sections["configuration"]; ok {
 		sec.readOnce = true
