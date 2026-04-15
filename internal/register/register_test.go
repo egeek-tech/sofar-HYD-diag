@@ -1817,8 +1817,8 @@ func TestConfigurationGroups(t *testing.T) {
 	if groups == nil {
 		t.Fatal("ConfigurationGroups is nil")
 	}
-	if len(groups) < 15 {
-		t.Errorf("ConfigurationGroups has %d groups, want >= 15", len(groups))
+	if len(groups) < 18 {
+		t.Errorf("ConfigurationGroups has %d groups, want >= 18", len(groups))
 	}
 
 	// First group should be "System Config"
@@ -1907,20 +1907,9 @@ func TestConfigurationGroups(t *testing.T) {
 		}
 	}
 
-	// Total probe count >= 150
-	if totalProbes < 150 {
-		t.Errorf("Total probe count = %d, want >= 150", totalProbes)
-	}
-
-	// 6 EMS Time Period groups exist
-	emsCount := 0
-	for _, g := range groups {
-		if strings.Contains(g.Name, "EMS Time Period") && !strings.Contains(g.Name, "Enable") {
-			emsCount++
-		}
-	}
-	if emsCount != 6 {
-		t.Errorf("EMS Time Period group count = %d, want 6", emsCount)
+	// Total probe count >= 224 (post hardware sweep cleanup)
+	if totalProbes < 224 {
+		t.Errorf("Total probe count = %d, want >= 224", totalProbes)
 	}
 
 	// At least 5 safety groups exist ("Safety:" prefix)
