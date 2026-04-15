@@ -29,70 +29,84 @@ func (h *Hub) buildSectionSchema(sectionName string, sec *Section) SectionSchema
 	return NewSectionSchema(sectionName, schemaGroups)
 }
 
-// streamStandardRead replaces triggerStandardRead with per-register streaming.
-// Instead of calling ReadBatch and waiting for all results, it reads each register
-// individually and sends a register_value message immediately after each read (STREAM-01, D-01).
+// streamStandardRead reads a standard section using batch spans from the pre-computed
+// BatchPlan. Each span issues a single ReadRegisters call for the full contiguous range,
+// then extracts individual probe values from the response. On span failure, falls back
+// to individual probe reads (D-02). Section timing is logged at Info level (D-05, D-06).
 func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx context.Context) {
-	groups := sec.Groups
 	isFault := sec.faultSection
 
 	go func() {
 		defer sec.reading.Store(false)
 
-		// Stream each probe individually using ReadRegisters
-		for _, g := range groups {
-			for _, p := range g.Probes {
-				if p.Count == 0 {
-					continue // synthetic probe: schema placeholder only (D-07)
-				}
-				if readCtx.Err() != nil {
-					return
-				}
+		start := time.Now()
+		spanCount := len(sec.BatchPlan.Spans)
+		var totalRegisters uint16
 
-				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
-
-				var errStr string
-				var value string
-
-				var rawVal string
-				if err != nil {
-					errStr = err.Error()
-				} else {
-					value = FormatValue(p, data)
-					rawVal = FormatRawValue(p, data)
-				}
-
-				// WR-02: skip send if context cancelled after ReadRegisters returned
-				if readCtx.Err() != nil {
-					return
-				}
-				// Send register_value immediately
-				h.results <- sectionResult{
-					section: sectionName,
-					msg:     NewRegisterValue(sectionName, g.Name, p.Name, value, errStr, p.Addr, rawVal),
-				}
+		// D-01: Iterate batch spans instead of individual probes.
+		// Every standard section gets batch reading automatically.
+		for _, span := range sec.BatchPlan.Spans {
+			if readCtx.Err() != nil {
+				return
 			}
 
-			// D-04, D-05: Batch read time registers after Status group probes
-			if g.Name == "Status" && readCtx.Err() == nil {
-				data, err := h.broker.ReadRegisters(readCtx, 0x042C, 6)
-				if err == nil && len(data) >= 12 {
-					var vals [6]uint16
-					for i := 0; i < 6; i++ {
-						vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
+			totalRegisters += span.TotalCount
+
+			data, err := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
+			if err != nil {
+				// D-02: Per-span fallback to individual reads.
+				h.logger.Warn("batch span failed, falling back to individual reads",
+					"section", sectionName,
+					"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
+					"span_count", span.TotalCount,
+					"error", err,
+				)
+				for _, pm := range span.Probes {
+					if readCtx.Err() != nil {
+						return
 					}
-					composed := register.ComposeSystemTime(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
-					rawStr := fmt.Sprintf("0x042C-0x0431 | %d, %d, %d, %d, %d, %d",
-						vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
-					// D-06: Only send on success; on failure skeleton em-dash persists
-					if readCtx.Err() == nil {
-						h.results <- sectionResult{
-							section: sectionName,
-							msg:     NewRegisterValue(sectionName, g.Name, "System time", composed, "", 0x042C, rawStr),
-						}
+					indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
+					var errStr, value, rawVal string
+					if indErr != nil {
+						errStr = indErr.Error()
+					} else {
+						value = FormatValue(pm.Probe, indData)
+						rawVal = FormatRawValue(pm.Probe, indData)
+					}
+					// WR-02: skip send if context cancelled after ReadRegisters returned
+					if readCtx.Err() != nil {
+						return
+					}
+					h.results <- sectionResult{
+						section: sectionName,
+						msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
 					}
 				}
-				// D-06: On error, silently skip — skeleton dash persists until next successful cycle
+				continue
+			}
+
+			// WR-02: skip send if context cancelled after successful batch read
+			if readCtx.Err() != nil {
+				return
+			}
+
+			// Extract each probe's data from the batch response
+			for _, pm := range span.Probes {
+				end := pm.ByteOffset + pm.ByteLength
+				if end > len(data) {
+					h.results <- sectionResult{
+						section: sectionName,
+						msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, "", "short response", pm.Probe.Addr, ""),
+					}
+					continue
+				}
+				probeData := data[pm.ByteOffset:end]
+				value := FormatValue(pm.Probe, probeData)
+				rawVal := FormatRawValue(pm.Probe, probeData)
+				h.results <- sectionResult{
+					section: sectionName,
+					msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, "", pm.Probe.Addr, rawVal),
+				}
 			}
 		}
 
@@ -135,6 +149,14 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				},
 			}
 		}
+
+		// D-05, D-06: Log section read timing at Info level (always-on, no debug flag).
+		h.logger.Info("section read complete",
+			"section", sectionName,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"spans", spanCount,
+			"registers", totalRegisters,
+		)
 
 		// Signal completion
 		h.results <- sectionResult{
