@@ -645,7 +645,8 @@ func (h *Hub) registerBuiltinSections() {
 
 	// New sections from XLSX register discovery (Phase 17)
 	h.RegisterGroupedSection("meter", register.MeterGroups)
-	h.RegisterGroupedSection("dcdc", register.DCDCGroups)
+	// DCDC section removed: all registers returned illegal data address / timeout
+	// on real hardware (2026-04-15). See tools/section-sweep/results.json.
 	h.RegisterGroupedSection("pcu", register.PCUGroups)
 	h.RegisterGroupedSection("bdu", register.BDUGroups)
 

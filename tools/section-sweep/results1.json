@@ -1,0 +1,1077 @@
+{
+  "timestamp": "2026-04-15T21:38:44Z",
+  "host": "10.5.99.29",
+  "port": 4192,
+  "slave_id": 1,
+  "pv_channels": 2,
+  "sections": [
+    {
+      "name": "grid",
+      "total_probes": 33,
+      "passed": 33,
+      "failed": 0,
+      "errors": 0,
+      "spans": [
+        {
+          "start_addr": "0x0484",
+          "total_count": 8,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Grid frequency",
+              "group": "General",
+              "addr": "0x0484",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total active power",
+              "group": "General",
+              "addr": "0x0485",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total reactive power",
+              "group": "General",
+              "addr": "0x0486",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total apparent power",
+              "group": "General",
+              "addr": "0x0487",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC active power",
+              "group": "PCC Power",
+              "addr": "0x0488",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC reactive power",
+              "group": "PCC Power",
+              "addr": "0x0489",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC apparent power",
+              "group": "PCC Power",
+              "addr": "0x048A",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC active power 2",
+              "group": "PCC Power",
+              "addr": "0x048B",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x048D",
+          "total_count": 8,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Voltage",
+              "group": "Phase R",
+              "addr": "0x048D",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Current",
+              "group": "Phase R",
+              "addr": "0x048E",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Active power",
+              "group": "Phase R",
+              "addr": "0x048F",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Reactive power",
+              "group": "Phase R",
+              "addr": "0x0490",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Power factor",
+              "group": "Phase R",
+              "addr": "0x0491",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC current R",
+              "group": "PCC Power",
+              "addr": "0x0492",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC active power R",
+              "group": "PCC Power",
+              "addr": "0x0493",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "PCC reactive power R",
+              "group": "PCC Power",
+              "addr": "0x0494",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x0498",
+          "total_count": 5,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Voltage",
+              "group": "Phase S",
+              "addr": "0x0498",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Current",
+              "group": "Phase S",
+              "addr": "0x0499",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Active power",
+              "group": "Phase S",
+              "addr": "0x049A",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Reactive power",
+              "group": "Phase S",
+              "addr": "0x049B",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Power factor",
+              "group": "Phase S",
+              "addr": "0x049C",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x04A3",
+          "total_count": 5,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Voltage",
+              "group": "Phase T",
+              "addr": "0x04A3",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Current",
+              "group": "Phase T",
+              "addr": "0x04A4",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Active power",
+              "group": "Phase T",
+              "addr": "0x04A5",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Reactive power",
+              "group": "Phase T",
+              "addr": "0x04A6",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Power factor",
+              "group": "Phase T",
+              "addr": "0x04A7",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x04AE",
+          "total_count": 2,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "External power gen",
+              "group": "Load",
+              "addr": "0x04AE",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total load power",
+              "group": "Load",
+              "addr": "0x04AF",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x04BA",
+          "total_count": 4,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "L1 (R/S)",
+              "group": "Line Voltages",
+              "addr": "0x04BA",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "L2 (S/T)",
+              "group": "Line Voltages",
+              "addr": "0x04BB",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "L3 (T/R)",
+              "group": "Line Voltages",
+              "addr": "0x04BC",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total power factor",
+              "group": "Load",
+              "addr": "0x04BD",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x04BF",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Generation efficiency",
+              "group": "Load",
+              "addr": "0x04BF",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "eps",
+      "total_probes": 14,
+      "passed": 14,
+      "failed": 0,
+      "errors": 0,
+      "spans": [
+        {
+          "start_addr": "0x0504",
+          "total_count": 4,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Load active power",
+              "group": "General",
+              "addr": "0x0504",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Load reactive power",
+              "group": "General",
+              "addr": "0x0505",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Load apparent power",
+              "group": "General",
+              "addr": "0x0506",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Output voltage frequency",
+              "group": "General",
+              "addr": "0x0507",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x050A",
+          "total_count": 3,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Inverter output voltage",
+              "group": "Phase R",
+              "addr": "0x050A",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Load current",
+              "group": "Phase R",
+              "addr": "0x050B",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Load active power",
+              "group": "Phase R",
+              "addr": "0x050C",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x0510",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Emergency load voltage R",
+              "group": "Emergency Load",
+              "addr": "0x0510",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x0512",
+          "total_count": 2,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Inverter output voltage",
+              "group": "Phase S",
+              "addr": "0x0512",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Load current",
+              "group": "Phase S",
+              "addr": "0x0513",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x0518",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Emergency load voltage S",
+              "group": "Emergency Load",
+              "addr": "0x0518",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x051A",
+          "total_count": 2,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Inverter output voltage",
+              "group": "Phase T",
+              "addr": "0x051A",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Load current",
+              "group": "Phase T",
+              "addr": "0x051B",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x0520",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Emergency load voltage T",
+              "group": "Emergency Load",
+              "addr": "0x0520",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pv",
+      "total_probes": 7,
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "spans": [
+        {
+          "start_addr": "0x0584",
+          "total_count": 6,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Voltage",
+              "group": "PV 1",
+              "addr": "0x0584",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Current",
+              "group": "PV 1",
+              "addr": "0x0585",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Power",
+              "group": "PV 1",
+              "addr": "0x0586",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Voltage",
+              "group": "PV 2",
+              "addr": "0x0587",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Current",
+              "group": "PV 2",
+              "addr": "0x0588",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Power",
+              "group": "PV 2",
+              "addr": "0x0589",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x05C4",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Total PV power",
+              "group": "Total PV Power",
+              "addr": "0x05C4",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "meter",
+      "total_probes": 2,
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "spans": [
+        {
+          "start_addr": "0x7080",
+          "total_count": 2,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Auto-ID status",
+              "group": "Meter Info",
+              "addr": "0x7080",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Connected meters",
+              "group": "Meter Info",
+              "addr": "0x7081",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dcdc",
+      "total_probes": 25,
+      "passed": 0,
+      "failed": 15,
+      "errors": 10,
+      "spans": [
+        {
+          "start_addr": "0x5029",
+          "total_count": 10,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "DCDC SN",
+              "group": "System Info",
+              "addr": "0x5029",
+              "count": 10,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:43348-\u003e10.5.99.29:4192: i/o timeout"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x5044",
+          "total_count": 1,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "Parallel DCDC count",
+              "group": "Real-Time Data",
+              "addr": "0x5044",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:53970-\u003e10.5.99.29:4192: i/o timeout"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x5046",
+          "total_count": 3,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "System running state",
+              "group": "Real-Time Data",
+              "addr": "0x5046",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:51736-\u003e10.5.99.29:4192: i/o timeout"
+            },
+            {
+              "name": "Power limiting state",
+              "group": "Real-Time Data",
+              "addr": "0x5047",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "SOC balanced power",
+              "group": "Real-Time Data",
+              "addr": "0x5048",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x504E",
+          "total_count": 1,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "LV side bus voltage",
+              "group": "Real-Time Data",
+              "addr": "0x504E",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:37110-\u003e10.5.99.29:4192: i/o timeout"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x5050",
+          "total_count": 2,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "LV side current",
+              "group": "Real-Time Data",
+              "addr": "0x5050",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:56450-\u003e10.5.99.29:4192: i/o timeout"
+            },
+            {
+              "name": "LV side power",
+              "group": "Real-Time Data",
+              "addr": "0x5051",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x505C",
+          "total_count": 1,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "HV bus voltage",
+              "group": "Real-Time Data",
+              "addr": "0x505C",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:56198-\u003e10.5.99.29:4192: i/o timeout"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x505E",
+          "total_count": 1,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "Insulation impedance",
+              "group": "Real-Time Data",
+              "addr": "0x505E",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:35382-\u003e10.5.99.29:4192: i/o timeout"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x5060",
+          "total_count": 3,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "Internal env temp",
+              "group": "Real-Time Data",
+              "addr": "0x5060",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:35518-\u003e10.5.99.29:4192: i/o timeout"
+            },
+            {
+              "name": "Radiator temp 1",
+              "group": "Real-Time Data",
+              "addr": "0x5061",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Radiator temp 2",
+              "group": "Real-Time Data",
+              "addr": "0x5062",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x5065",
+          "total_count": 10,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "Fault 1",
+              "group": "Faults",
+              "addr": "0x5065",
+              "count": 1,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:46258-\u003e10.5.99.29:4192: i/o timeout"
+            },
+            {
+              "name": "Fault 2",
+              "group": "Faults",
+              "addr": "0x5066",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 3",
+              "group": "Faults",
+              "addr": "0x5067",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 4",
+              "group": "Faults",
+              "addr": "0x5068",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 5",
+              "group": "Faults",
+              "addr": "0x5069",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 6",
+              "group": "Faults",
+              "addr": "0x506A",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 7",
+              "group": "Faults",
+              "addr": "0x506B",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 8",
+              "group": "Faults",
+              "addr": "0x506C",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 9",
+              "group": "Faults",
+              "addr": "0x506D",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            },
+            {
+              "name": "Fault 10",
+              "group": "Faults",
+              "addr": "0x506E",
+              "count": 1,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x5074",
+          "total_count": 4,
+          "batch_status": "FAIL",
+          "probes": [
+            {
+              "name": "Total charge capacity",
+              "group": "Capacity",
+              "addr": "0x5074",
+              "count": 2,
+              "status": "ERROR",
+              "error": "timeout: read tcp 10.5.10.10:55826-\u003e10.5.99.29:4192: i/o timeout"
+            },
+            {
+              "name": "Total discharge capacity",
+              "group": "Capacity",
+              "addr": "0x5076",
+              "count": 2,
+              "status": "FAIL",
+              "error": "illegal data address (0x02)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pcu",
+      "total_probes": 18,
+      "passed": 18,
+      "failed": 0,
+      "errors": 0,
+      "spans": [
+        {
+          "start_addr": "0x6004",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Total PCU online",
+              "group": "Info",
+              "addr": "0x6004",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x6010",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "PCU Code",
+              "group": "Info",
+              "addr": "0x6010",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x6020",
+          "total_count": 16,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Module state",
+              "group": "Info",
+              "addr": "0x6020",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Internal temp",
+              "group": "Temperatures",
+              "addr": "0x6021",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Radiator temp 1",
+              "group": "Temperatures",
+              "addr": "0x6022",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Radiator temp 2",
+              "group": "Temperatures",
+              "addr": "0x6023",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Alarm 1",
+              "group": "Alarms",
+              "addr": "0x6024",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Alarm 2",
+              "group": "Alarms",
+              "addr": "0x6025",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Alarm 3",
+              "group": "Alarms",
+              "addr": "0x6026",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Alarm 4",
+              "group": "Alarms",
+              "addr": "0x6027",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Fault 1",
+              "group": "Faults",
+              "addr": "0x6028",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Fault 2",
+              "group": "Faults",
+              "addr": "0x6029",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Fault 3",
+              "group": "Faults",
+              "addr": "0x602A",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Fault 4",
+              "group": "Faults",
+              "addr": "0x602B",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "DC HV side voltage",
+              "group": "DC Measurements",
+              "addr": "0x602C",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "DC LV side voltage",
+              "group": "DC Measurements",
+              "addr": "0x602D",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "DC LV side current",
+              "group": "DC Measurements",
+              "addr": "0x602E",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "DC LV side power",
+              "group": "DC Measurements",
+              "addr": "0x602F",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bdu",
+      "total_probes": 8,
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "spans": [
+        {
+          "start_addr": "0x6084",
+          "total_count": 1,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "Total BDU online",
+              "group": "Info",
+              "addr": "0x6084",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        },
+        {
+          "start_addr": "0x6090",
+          "total_count": 19,
+          "batch_status": "PASS",
+          "probes": [
+            {
+              "name": "BDU Code",
+              "group": "Info",
+              "addr": "0x6090",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "BDU Serial number",
+              "group": "Info",
+              "addr": "0x6091",
+              "count": 10,
+              "status": "PASS"
+            },
+            {
+              "name": "BDU Version",
+              "group": "Info",
+              "addr": "0x609B",
+              "count": 4,
+              "status": "PASS"
+            },
+            {
+              "name": "BDU Fault info",
+              "group": "Info",
+              "addr": "0x609F",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Cells in single cluster",
+              "group": "Topology",
+              "addr": "0x60A0",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total strings",
+              "group": "Topology",
+              "addr": "0x60A1",
+              "count": 1,
+              "status": "PASS"
+            },
+            {
+              "name": "Total battery circuits",
+              "group": "Topology",
+              "addr": "0x60A2",
+              "count": 1,
+              "status": "PASS"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_sections": 7,
+    "total_probes": 107,
+    "passed": 82,
+    "failed": 15,
+    "errors": 10
+  }
+}
