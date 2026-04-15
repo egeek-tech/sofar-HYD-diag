@@ -2839,3 +2839,245 @@ func TestOtherSectionsUnaffectedByReadOnce(t *testing.T) {
 	assert.Greater(mb.getBatchCallCount(), countAfterFirst, "grid should still re-read on read_cycle (not affected by readOnce)")
 }
 
+// === Phase 19-02: Batch streaming tests ===
+
+func TestBatchStreamingMessages(t *testing.T) {
+	// Verify that batch reading produces register_value messages for all probes in a section.
+	// Use the grid section for predictable span structure.
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+
+	// Set up batch response for each span in grid's batch plan.
+	gridPlan := register.AnalyzeBatchPlan(register.GridGroups)
+	for _, span := range gridPlan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		// Fill with non-zero pattern so we can detect correct extraction
+		for i := range data {
+			data[i] = byte(i + 1)
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+
+	// Collect messages until section_complete (from the subscribe-triggered read)
+	msgs, completeIdx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	if completeIdx < 0 {
+		t.Fatal("never received section_complete")
+	}
+
+	// Count register_value messages
+	regValCount := 0
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "grid" {
+			regValCount++
+		}
+	}
+
+	// Grid has multiple probes across groups; all should arrive as register_value
+	totalGridProbes := 0
+	for _, g := range register.GridGroups {
+		totalGridProbes += len(g.Probes)
+	}
+	if regValCount != totalGridProbes {
+		t.Errorf("register_value count = %d, want %d (total grid probes)", regValCount, totalGridProbes)
+	}
+}
+
+func TestBatchSpanFallback(t *testing.T) {
+	// Verify that when a batch span read fails, individual probe reads are attempted.
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+
+	// Get the grid batch plan to find a span to fail
+	gridPlan := register.AnalyzeBatchPlan(register.GridGroups)
+	if len(gridPlan.Spans) == 0 {
+		t.Fatal("no spans in grid batch plan")
+	}
+	failSpan := gridPlan.Spans[0]
+
+	// Make the batch span read fail (keyed by span StartAddr)
+	mb.registerResults[failSpan.StartAddr] = broker.Result{
+		Err: fmt.Errorf("simulated batch failure"),
+	}
+
+	// But make individual probe reads succeed
+	for _, pm := range failSpan.Probes {
+		data := make([]byte, pm.ByteLength)
+		if len(data) >= 2 {
+			binary.BigEndian.PutUint16(data[:2], 100)
+		}
+		mb.registerResults[pm.Probe.Addr] = broker.Result{Data: data}
+	}
+
+	// Set up remaining spans to succeed
+	for _, span := range gridPlan.Spans[1:] {
+		data := make([]byte, int(span.TotalCount)*2)
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+
+	msgs, completeIdx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	if completeIdx < 0 {
+		t.Fatal("never received section_complete")
+	}
+
+	// Verify register_value messages arrived for the failed span's probes (via fallback)
+	regValCount := 0
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "grid" {
+			regValCount++
+		}
+	}
+
+	// All probes should still produce values (batch failed, fallback succeeded)
+	totalGridProbes := 0
+	for _, g := range register.GridGroups {
+		totalGridProbes += len(g.Probes)
+	}
+	if regValCount != totalGridProbes {
+		t.Errorf("register_value count after fallback = %d, want %d", regValCount, totalGridProbes)
+	}
+}
+
+func TestBatchProgressiveStreaming(t *testing.T) {
+	// Verify BATCH-04: values appear progressively per span, not all at once.
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+
+	gridPlan := register.AnalyzeBatchPlan(register.GridGroups)
+	for _, span := range gridPlan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for i := range data {
+			data[i] = byte(i%255 + 1)
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+
+	msgs, _ := waitForMessageType(t, send, "section_complete", 10*time.Second)
+
+	// Verify register_value messages precede section_complete (progressive)
+	firstRegVal := -1
+	lastRegVal := -1
+	sectionComplete := -1
+	for i, m := range msgs {
+		if m.Type == "register_value" && m.Section == "grid" {
+			if firstRegVal == -1 {
+				firstRegVal = i
+			}
+			lastRegVal = i
+		}
+		if m.Type == "section_complete" && m.Section == "grid" {
+			sectionComplete = i
+		}
+	}
+
+	if firstRegVal == -1 {
+		t.Fatal("no register_value messages received")
+	}
+	if sectionComplete == -1 {
+		t.Fatal("no section_complete received")
+	}
+	// register_value messages must come BEFORE section_complete (progressive update)
+	if lastRegVal >= sectionComplete {
+		t.Errorf("last register_value at index %d but section_complete at %d; values should precede completion", lastRegVal, sectionComplete)
+	}
+	// First register_value should appear early (not bunched at the end)
+	if firstRegVal > sectionComplete/2 {
+		t.Errorf("first register_value at index %d of %d total; expected progressive delivery", firstRegVal, len(msgs))
+	}
+}
+
+func TestBatchTimingLog(t *testing.T) {
+	// Verify the timing log code path runs to completion by checking that
+	// streamStandardRead completes with section_complete for a non-fault section.
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+
+	// Use EPS section (small, no faults)
+	epsPlan := register.AnalyzeBatchPlan(register.EPSGroups)
+	for _, span := range epsPlan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	client := hub.NewTestClient(h, send)
+	h.Register(client)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "eps"})
+
+	// If timing log panics or breaks the flow, section_complete would not arrive
+	msgs, completeIdx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	if completeIdx < 0 {
+		t.Fatal("section_complete not received -- timing log may have broken the flow")
+	}
+
+	// Verify at least one register_value was sent
+	hasRegVal := false
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "eps" {
+			hasRegVal = true
+			break
+		}
+	}
+	if !hasRegVal {
+		t.Error("no register_value messages for eps section")
+	}
+}
+
