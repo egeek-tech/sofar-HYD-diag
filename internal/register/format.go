@@ -10,6 +10,18 @@ import (
 // and returns a human-readable string. Returns the formatted value only (no prefix/address).
 // Extracted from main.go.bak formatResult() lines 433-460.
 func FormatValue(p Probe, data []byte) string {
+	// Composite: dispatch to specialized composition function.
+	if p.Composite == "system_time" {
+		if len(data) < 12 { // 6 registers * 2 bytes
+			return "<no data>"
+		}
+		var vals [6]uint16
+		for i := 0; i < 6; i++ {
+			vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
+		}
+		return ComposeSystemTime(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+	}
+
 	if p.IsASCII {
 		s := string(data)
 		if i := strings.IndexByte(s, 0); i >= 0 {
@@ -86,6 +98,20 @@ func FormatValue(p Probe, data []byte) string {
 // before scaling or formatting. Returns a decimal string for numeric probes
 // or hex string for ASCII probes. Returns empty string for insufficient data.
 func FormatRawValue(p Probe, data []byte) string {
+	// Composite: format all register values.
+	if p.Composite == "system_time" {
+		if len(data) < 12 {
+			return ""
+		}
+		var vals [6]uint16
+		for i := 0; i < 6; i++ {
+			vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
+		}
+		endAddr := p.Addr + p.Count - 1
+		return fmt.Sprintf("0x%04X-0x%04X | %d, %d, %d, %d, %d, %d",
+			p.Addr, endAddr, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+	}
+
 	if len(data) < 2 {
 		return ""
 	}

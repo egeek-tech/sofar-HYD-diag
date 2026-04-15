@@ -479,6 +479,46 @@ func TestComposeSystemTime(t *testing.T) {
 	}
 }
 
+func TestFormatValueComposite(t *testing.T) {
+	p := Probe{Name: "System time", Addr: 0x042C, Count: 6, Composite: "system_time"}
+	data := make([]byte, 12)
+	binary.BigEndian.PutUint16(data[0:2], 26)  // year
+	binary.BigEndian.PutUint16(data[2:4], 4)   // month
+	binary.BigEndian.PutUint16(data[4:6], 14)  // day
+	binary.BigEndian.PutUint16(data[6:8], 10)  // hour
+	binary.BigEndian.PutUint16(data[8:10], 30) // min
+	binary.BigEndian.PutUint16(data[10:12], 45) // sec
+	got := FormatValue(p, data)
+	want := "10:30:45 14-04-2026"
+	if got != want {
+		t.Errorf("FormatValue Composite = %q, want %q", got, want)
+	}
+}
+
+func TestFormatValueCompositeNoData(t *testing.T) {
+	p := Probe{Name: "System time", Addr: 0x042C, Count: 6, Composite: "system_time"}
+	got := FormatValue(p, []byte{0x00, 0x01})
+	if got != "<no data>" {
+		t.Errorf("FormatValue Composite short data = %q, want %q", got, "<no data>")
+	}
+}
+
+func TestFormatRawValueComposite(t *testing.T) {
+	p := Probe{Name: "System time", Addr: 0x042C, Count: 6, Composite: "system_time"}
+	data := make([]byte, 12)
+	binary.BigEndian.PutUint16(data[0:2], 26)
+	binary.BigEndian.PutUint16(data[2:4], 4)
+	binary.BigEndian.PutUint16(data[4:6], 14)
+	binary.BigEndian.PutUint16(data[6:8], 10)
+	binary.BigEndian.PutUint16(data[8:10], 30)
+	binary.BigEndian.PutUint16(data[10:12], 45)
+	got := FormatRawValue(p, data)
+	want := "0x042C-0x0431 | 26, 4, 14, 10, 30, 45"
+	if got != want {
+		t.Errorf("FormatRawValue Composite = %q, want %q", got, want)
+	}
+}
+
 // === Task 2 TDD tests: Fault bitmap decoder ===
 
 func TestFaultBitStruct(t *testing.T) {
@@ -1552,6 +1592,18 @@ func TestFormatRawValue(t *testing.T) {
 			p:    Probe{Signed: true, Count: 1},
 			data: []byte{0xFF, 0xFE},
 			want: "65534",
+		},
+		{
+			name: "Composite_system_time",
+			p:    Probe{Addr: 0x042C, Count: 6, Composite: "system_time"},
+			data: func() []byte {
+				d := make([]byte, 12)
+				for i := 0; i < 6; i++ {
+					binary.BigEndian.PutUint16(d[i*2:i*2+2], uint16(i+1))
+				}
+				return d
+			}(),
+			want: "0x042C-0x0431 | 1, 2, 3, 4, 5, 6",
 		},
 	}
 

@@ -11,5 +11,6 @@ type Probe struct {
 	Unit    string
 	Scale   float64
 	Enum    map[uint16]string // optional: value -> human-readable label (D-04)
-	U32     bool              // when true, Count must be 2; FormatValue reads 4 bytes as 32-bit unsigned
+	U32       bool              // when true, Count must be 2; FormatValue reads 4 bytes as 32-bit unsigned
+	Composite string            // when set, FormatValue dispatches to a composition function (e.g., "system_time")
 }
