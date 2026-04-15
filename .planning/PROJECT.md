@@ -22,6 +22,16 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - ✓ Battery Information section: global battery info per channel, BMS global info, configurable topology, online bitmap — Validated in Phase 4
 - ✓ Electricity Statistics section (daily/total/monthly/yearly: generation, consumption, bought, sold, battery charge/discharge) — Validated in Phase 4
 
+### Validated (v1.4)
+
+- ✓ Register groups with contiguous addresses batched into single Modbus requests (up to 60 regs) — Validated in Phase 18
+- ✓ Batch reads respect 60-register limit and protocol block boundaries — Validated in Phase 18
+- ✓ Per-span fallback to individual reads on batch failure — Validated in Phase 18, 19
+- ✓ Composite probe type with formatting dispatch (system_time composition) — Validated in Phase 19
+- ✓ System section ~3-5x faster with batch reading (confirmed by human testing) — Validated in Phase 19
+- ✓ Configuration section dramatically faster with batch reading — Validated in Phase 19
+- ✓ Progressive UI rendering preserved — values appear in span-groups — Validated in Phase 19
+
 ### Validated (v1.3)
 
 - ✓ System time as single composed row (HH:MM:SS DD-MM-YYYY) — batch read replaces 6 individual register reads — Validated in Phase 14
@@ -95,15 +105,9 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - **Single connection**: Only one TCP connection to inverter at a time (Modbus is serial)
 - **Deployment**: Single binary, no external dependencies
 
-## Current Milestone: v1.4 Batch Register Reading
+## Completed Milestone: v1.4 Batch Register Reading (shipped 2026-04-15)
 
-**Goal:** Prove that batching contiguous register reads dramatically reduces section load times, starting with System and Configuration sections as a PoC.
-
-**Target features:**
-- Analyze register groups for contiguous address ranges batchable into single Modbus requests (up to 60 registers)
-- Implement batch read strategy in the broker/hub layer
-- Apply to System and Configuration sections as PoC
-- Measure and verify speedup vs per-register reads
+Proved that batching contiguous register reads dramatically reduces section load times. System section 3-5x faster, Configuration section ~6x faster. Batch infrastructure ready to extend to all remaining sections.
 
 ## Key Decisions
 
@@ -125,6 +129,9 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 | Pack streaming rewrite | Replace batch pack reads with per-register streaming | ✓ Good — v1.2, consistent with all other sections |
 | Synthetic probe convention | Count: 0 marks schema-only probes skipped during read | ✓ Good — v1.3, enables composed values without extra message fields |
 | Batch time read | Single ReadRegisters(0x042C, 6) replaces 6 individual reads | ✓ Good — v1.3, saves 2.5s per System refresh cycle |
+| Composite probe type | Probe.Composite field with format dispatch instead of special-case code | ✓ Good — v1.4, system time is a real batchable probe |
+| Batch span streaming | Iterate BatchPlan.Spans with single read per span, fallback per span | ✓ Good — v1.4, 3-5x speedup confirmed by human testing |
+| Synthetic → Composite migration | Convert Count:0 probes to real Composite probes for batch eligibility | ✓ Good — v1.4, eliminates unbatchable probes in System section |
 
 ## Evolution
 
@@ -145,30 +152,16 @@ Last updated: 2026-04-14 — v1.4 milestone started
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v1.3 Data Cleanup & Configuration
-
-**Goal:** Clean up data display issues, consolidate sections, add device configuration readout, and expand register coverage from XLSX register map.
-
-**Target features:**
-- Remove empty "This Month"/"This Year" from statistics, merge stats into System section
-- Add battery/PV daily statistics alongside existing stats
-- Fix system time display — concatenate date parts into single row
-- Research XLSX register map — discover meter, battery system, and config registers
-- Hide zero-value temperatures in pack drill-down (disconnected sensors)
-- New "Configuration" section from device config registers (Basic Parameter, Reactive Power, Frequency, Voltage, DCI protection, etc.)
-- Fix missing tooltips for Balance State and Pack Status in BMS pack view
-- Dead code cleanup (deprecated triggerPackRead)
-
 ## Current State
 
-Shipped v1.2 with ~10,600 LOC Go + ~2,900 LOC JS/HTML/CSS.
-Three milestones complete (v1.0 MVP, v1.1 UX Polish & Battery Pack Fix, v1.2 Reliability & UX Refinements).
-All 20 battery packs accessible with per-register streaming, browser-driven refresh, immediate disconnect, automatic retry, value persistence with dimming, section caching, parameter tooltips, and BMS bitmap decoding.
+Shipped v1.4 with ~11,700 LOC Go + ~2,900 LOC JS/HTML/CSS.
+Four milestones complete (v1.0 MVP, v1.1 UX Polish & Battery Pack Fix, v1.2 Reliability & UX Refinements, v1.3 Data Cleanup & Configuration, v1.4 Batch Register Reading).
+All 20 battery packs accessible with per-register streaming, browser-driven refresh, immediate disconnect, automatic retry, value persistence with dimming, section caching, parameter tooltips, BMS bitmap decoding, batch reading for System and Configuration sections.
 
 **Known issues (from todos):**
 - PackInfoProbes (0x9104-0x9126) returns illegal address on this BMS hardware — skip unsupported registers
 - Read delay burst on section switch — enforceInterReadDelay timing edge case
-- ~250 lines deprecated dead code (triggerPackRead) — cleanup deferred after streaming stability confirmed
+- Some Configuration section parameters show errors under batch reads (to be addressed in future milestone)
 
 ---
-*Last updated: 2026-04-13 after Phase 15 (Configuration Section) complete*
+*Last updated: 2026-04-15 after v1.4 milestone (Batch Register Reading) shipped*
