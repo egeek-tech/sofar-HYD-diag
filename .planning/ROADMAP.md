@@ -64,7 +64,7 @@
 
 **Milestone Goal:** Extend batch reading to every section and clean up non-functional configuration registers for a fully optimized, error-free UI.
 
-- [ ] **Phase 20: Configuration Register Cleanup** - Remove unsupported config registers and empty groups
+- [x] **Phase 20: Configuration Register Cleanup** - Remove unsupported config registers and empty groups (completed 2026-04-15)
 - [ ] **Phase 21: Standard Section Batch Verification** - Confirm existing batch behavior across all standard sections on real hardware
 - [ ] **Phase 22: SpanTracker Integration** - Track and auto-skip persistently-failing spans
 - [ ] **Phase 23: Battery Section Batch Migration** - Migrate battery section to BatchPlan span reading
@@ -83,8 +83,8 @@
   3. Configuration groups that contained only unsupported registers are no longer visible in the sidebar or UI
 **Plans**: 2 plans
 Plans:
-- [ ] 20-01-PLAN.md -- Build config-sweep standalone tool for hardware register testing
-- [ ] 20-02-PLAN.md -- Run sweep on hardware, remove failing probes and empty groups, update tests
+- [x] 20-01-PLAN.md -- Build config-sweep standalone tool for hardware register testing
+- [x] 20-02-PLAN.md -- Run sweep on hardware, remove failing probes and empty groups, update tests
 
 ### Phase 21: Standard Section Batch Verification
 **Goal**: All standard sections confirmed working via batch spans on real hardware
@@ -96,7 +96,10 @@ Plans:
   3. PV, Meter, DCDC, PCU, and BDU sections each load via batch spans on real hardware without errors
   4. No section shows fallback-to-individual-read behavior in server logs during normal operation
   5. All section values match expected ranges for the connected inverter
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 21-01-PLAN.md -- Build section-sweep standalone tool for batch span verification across all 7 sections
+- [ ] 21-02-PLAN.md -- Run sweep on hardware, remove failing registers and empty groups, update tests
 
 ### Phase 22: SpanTracker Integration
 **Goal**: Persistently-failing spans are automatically detected and skipped on subsequent reads
@@ -147,8 +150,8 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24 -> 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 20. Configuration Register Cleanup | v1.5 | 0/2 | Not started | - |
-| 21. Standard Section Batch Verification | v1.5 | 0/? | Not started | - |
+| 20. Configuration Register Cleanup | v1.5 | 2/2 | Complete    | 2026-04-15 |
+| 21. Standard Section Batch Verification | v1.5 | 0/2 | Not started | - |
 | 22. SpanTracker Integration | v1.5 | 0/? | Not started | - |
 | 23. Battery Section Batch Migration | v1.5 | 0/? | Not started | - |
 | 24. BMS Batch Migration | v1.5 | 0/? | Not started | - |
