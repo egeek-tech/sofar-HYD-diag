@@ -3,6 +3,10 @@ package register
 // ConfigurationGroups contains all configuration register definitions organized into ProbeGroups.
 // Covers sections 5.2.x (Safety Parameter Area) and 5.3.x (Parameter Configuration Area)
 // of the Sofar Modbus-G3 V1.38 protocol.
+//
+// Registers verified against real hardware on 2026-04-15 using tools/config-sweep.
+// Probes returning Modbus exception 0x02 (illegal data address) have been removed.
+// See tools/config-sweep/results.json for the full sweep report.
 var ConfigurationGroups = buildConfigurationGroups()
 
 func buildConfigurationGroups() []ProbeGroup {
@@ -119,21 +123,6 @@ func buildConfigurationGroups() []ProbeGroup {
 			{Name: "Generator startup voltage", Addr: 0x10BB, Count: 1, Unit: "V", Scale: 0.1},
 			{Name: "Generator stop voltage", Addr: 0x10BC, Count: 1, Unit: "V", Scale: 0.1},
 			{Name: "Generator SOC", Addr: 0x10BD, Count: 1, Unit: "%", Scale: 1},
-			{Name: "Comm interruption control", Addr: 0x10C0, Count: 1, Enum: CommunicationInterruptEnum},
-			{Name: "Comm interruption timeout", Addr: 0x10C1, Count: 1, Unit: "s", Scale: 1},
-			{Name: "Comm interruption preset", Addr: 0x10C2, Count: 1, Signed: true, Unit: "%", Scale: 0.1},
-			{Name: "Power enable control", Addr: 0x10CC, Count: 1},
-			{Name: "Active power output", Addr: 0x10CD, Count: 2, U32: true, Signed: true, Unit: "kW", Scale: 0.01},
-			{Name: "Reactive power output", Addr: 0x10CF, Count: 2, U32: true, Signed: true, Unit: "kVar", Scale: 0.01},
-			{Name: "Fan self-test control", Addr: 0x10E0, Count: 1, Enum: ProhibitEnableEnum},
-			{Name: "Fan noise mode", Addr: 0x10E1, Count: 1, Enum: FanNoiseEnum},
-			{Name: "Fan speed control", Addr: 0x10E4, Count: 1, Unit: "%", Scale: 1},
-			{Name: "Unbalanced power control", Addr: 0x10EB, Count: 1, Enum: ProhibitEnableEnum},
-			{Name: "Unbalanced R-phase", Addr: 0x10EC, Count: 1, Signed: true, Unit: "%", Scale: 0.1},
-			{Name: "Unbalanced S-phase", Addr: 0x10ED, Count: 1, Signed: true, Unit: "%", Scale: 0.1},
-			{Name: "Unbalanced T-phase", Addr: 0x10EE, Count: 1, Signed: true, Unit: "%", Scale: 0.1},
-			{Name: "Relay configuration", Addr: 0x10F0, Count: 1},
-			{Name: "Standby monitoring", Addr: 0x10F1, Count: 1, Enum: ProhibitEnableEnum},
 		}},
 
 		// 5.3.5 Remote control parameter (0x1104-0x110D)
@@ -205,60 +194,11 @@ func buildConfigurationGroups() []ProbeGroup {
 			{Name: "Comm interruption data source", Addr: 0x11C7, Count: 1},
 		}},
 
-		// 5.3.13 EMS Time period enable (0x1204)
-		{Name: "EMS Time Period Enable", Probes: []Probe{
-			{Name: "Time period enable bits", Addr: 0x1204, Count: 1},
-		}},
 	}
-
-	// Append EMS Time Period groups 1-6
-	groups = append(groups, emsTimePeriodGroups()...)
 
 	// Append Safety groups
 	groups = append(groups, safetyGroups()...)
 
-	// Append Network Config
-	groups = append(groups, networkConfigGroup())
-
-	return groups
-}
-
-// emsTimePeriodGroups generates 6 EMS Time Period ProbeGroups from explicit base addresses.
-// The stride is NOT uniform -- Period 4->5 has stride 0x18, not 0x0D. Use explicit addresses.
-// From V1.38 sections 5.3.14-5.3.19.
-func emsTimePeriodGroups() []ProbeGroup {
-	type periodDef struct {
-		name string
-		base uint16
-	}
-	periods := []periodDef{
-		{"EMS Time Period 1", 0x1205},
-		{"EMS Time Period 2", 0x1212},
-		{"EMS Time Period 3", 0x121F},
-		{"EMS Time Period 4", 0x122C},
-		{"EMS Time Period 5", 0x1244},
-		{"EMS Time Period 6", 0x1251},
-	}
-
-	groups := make([]ProbeGroup, 0, len(periods))
-	for _, p := range periods {
-		groups = append(groups, ProbeGroup{
-			Name: p.name,
-			Probes: []Probe{
-				{Name: "Start time", Addr: p.base, Count: 1},
-				{Name: "End time", Addr: p.base + 1, Count: 1},
-				{Name: "Work mode", Addr: p.base + 2, Count: 1, Enum: EMSTimePeriodModeEnum},
-				{Name: "Grid point power upper", Addr: p.base + 3, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
-				{Name: "Grid point power lower", Addr: p.base + 4, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
-				{Name: "Battery charge upper limit", Addr: p.base + 5, Count: 1, Unit: "%", Scale: 1},
-				{Name: "Battery discharge lower limit", Addr: p.base + 6, Count: 1, Unit: "%", Scale: 1},
-				{Name: "Allow grid to charge", Addr: p.base + 7, Count: 1, Enum: ProhibitEnableEnum},
-				{Name: "Inverter power", Addr: p.base + 8, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
-				{Name: "Force charge/discharge power", Addr: p.base + 9, Count: 1, Signed: true, Unit: "kW", Scale: 0.01},
-				{Name: "Self use excess grid", Addr: p.base + 10, Count: 1, Enum: ProhibitEnableEnum},
-			},
-		})
-	}
 	return groups
 }
 
@@ -382,20 +322,3 @@ func safetyGroups() []ProbeGroup {
 	}
 }
 
-// networkConfigGroup returns the Network Config ProbeGroup.
-// From V1.38 section 5.5.1 (0x2504-0x2512).
-func networkConfigGroup() ProbeGroup {
-	return ProbeGroup{
-		Name: "Network Config",
-		Probes: []Probe{
-			{Name: "MAC address high", Addr: 0x2504, Count: 1},
-			{Name: "MAC address mid", Addr: 0x2505, Count: 1},
-			{Name: "MAC address low", Addr: 0x2506, Count: 1},
-			{Name: "IP allocation mode", Addr: 0x2507, Count: 1, Enum: IPAllocationEnum},
-			{Name: "IP address", Addr: 0x2508, Count: 2, U32: true},
-			{Name: "Gateway", Addr: 0x250A, Count: 2, U32: true},
-			{Name: "Subnet mask", Addr: 0x250C, Count: 2, U32: true},
-			{Name: "Modbus TCP port", Addr: 0x2512, Count: 1},
-		},
-	}
-}
