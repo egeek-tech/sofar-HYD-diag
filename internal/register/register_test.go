@@ -189,7 +189,7 @@ func TestSystemGroups(t *testing.T) {
 		t.Error("Status running state Enum should not be nil")
 	}
 	if len(status.Probes) != 4 {
-		t.Errorf("Status probes = %d, want 4 (running state + wait time + gen time + synthetic System time)", len(status.Probes))
+		t.Errorf("Status probes = %d, want 4 (running state + wait time + gen time + System time)", len(status.Probes))
 	}
 	if status.Probes[3].Name != "System time" {
 		t.Errorf("Status[3].Name = %q, want %q", status.Probes[3].Name, "System time")
@@ -197,8 +197,11 @@ func TestSystemGroups(t *testing.T) {
 	if status.Probes[3].Addr != 0x042C {
 		t.Errorf("Status[3].Addr = 0x%04X, want 0x042C", status.Probes[3].Addr)
 	}
-	if status.Probes[3].Count != 0 {
-		t.Errorf("Status[3].Count = %d, want 0 (synthetic probe)", status.Probes[3].Count)
+	if status.Probes[3].Count != 6 {
+		t.Errorf("Status[3].Count = %d, want 6 (Composite system_time probe)", status.Probes[3].Count)
+	}
+	if status.Probes[3].Composite != "system_time" {
+		t.Errorf("Status[3].Composite = %q, want %q", status.Probes[3].Composite, "system_time")
 	}
 
 	// Firmware (Extended): BOOT versions + safety versions

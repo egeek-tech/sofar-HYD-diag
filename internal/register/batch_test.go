@@ -233,25 +233,23 @@ func TestAnalyzeBatchPlan_EmptyGroups(t *testing.T) {
 
 func TestAnalyzeBatchPlan_RealSystemSection(t *testing.T) {
 	// SystemGroups from system.go: 6 groups with real register addresses.
-	// After sorting and analyzing contiguity (with overlap handling for HW version):
-	// Span 1: 0x0404 (1 reg) -- Running state
-	// Span 2: 0x0417 (4 regs) -- Grid wait + Temps (0x0417,0x0418,0x0419,0x041A)
-	// Span 3: 0x0420 (1 reg) -- Module temp
-	// Span 4: 0x0426 (1 reg) -- Power gen time
-	// Span 5: 0x042B (1 reg) -- Insulation impedance
-	// Span 6: 0x043E (1 reg) -- Fan speed
-	// Span 7: 0x0445 (31 regs) -- Identity+Firmware+FirmwareExt (0x0445 to 0x0463)
-	// Span 8: 0x0467 (6 regs) -- Safety package ver
-	// Unbatchable: 0x042C (system time, Count=0)
+	// After D-03: System time is a real probe (Count: 6, Composite: "system_time").
+	// It merges with insulation impedance (0x042B) into a 7-register span.
+	// Span 0: 0x0404 (1 reg) -- Running state
+	// Span 1: 0x0417 (4 regs) -- Grid wait + Temps (0x0417,0x0418,0x0419,0x041A)
+	// Span 2: 0x0420 (1 reg) -- Module temp
+	// Span 3: 0x0426 (1 reg) -- Power gen time
+	// Span 4: 0x042B (7 regs) -- Insulation impedance + System time (0x042B-0x0431)
+	// Span 5: 0x043E (1 reg) -- Fan speed
+	// Span 6: 0x0445 (31 regs) -- Identity+Firmware+FirmwareExt (0x0445 to 0x0463)
+	// Span 7: 0x0467 (6 regs) -- Safety package ver
+	// Unbatchable: none (was 1 for synthetic system time)
 	plan := AnalyzeBatchPlan(SystemGroups)
 	if len(plan.Spans) != 8 {
 		t.Fatalf("len(Spans) = %d, want 8", len(plan.Spans))
 	}
-	if len(plan.Unbatchable) != 1 {
-		t.Fatalf("len(Unbatchable) = %d, want 1", len(plan.Unbatchable))
-	}
-	if plan.Unbatchable[0].Probe.Addr != 0x042C {
-		t.Errorf("Unbatchable[0].Probe.Addr = 0x%04X, want 0x042C", plan.Unbatchable[0].Probe.Addr)
+	if len(plan.Unbatchable) != 0 {
+		t.Fatalf("len(Unbatchable) = %d, want 0", len(plan.Unbatchable))
 	}
 
 	// Verify key spans
@@ -268,6 +266,17 @@ func TestAnalyzeBatchPlan_RealSystemSection(t *testing.T) {
 	}
 	if plan.Spans[1].TotalCount != 4 {
 		t.Errorf("Span 1 TotalCount = %d, want 4", plan.Spans[1].TotalCount)
+	}
+
+	// Span 4: 0x042B with 7 regs (insulation impedance + system time merged)
+	if plan.Spans[4].StartAddr != 0x042B {
+		t.Errorf("Span 4 StartAddr = 0x%04X, want 0x042B", plan.Spans[4].StartAddr)
+	}
+	if plan.Spans[4].TotalCount != 7 {
+		t.Errorf("Span 4 TotalCount = %d, want 7", plan.Spans[4].TotalCount)
+	}
+	if len(plan.Spans[4].Probes) != 2 {
+		t.Errorf("Span 4 probe count = %d, want 2", len(plan.Spans[4].Probes))
 	}
 
 	// Span 6: large merged span starting at 0x0445

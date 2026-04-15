@@ -17,7 +17,7 @@ var SystemGroups = []ProbeGroup{
 		{Name: "Running state", Addr: 0x0404, Count: 1, Enum: RunningStateEnum},
 		{Name: "Grid-connected wait time", Addr: 0x0417, Count: 1, Unit: "s", Scale: 1},
 		{Name: "Power gen time today", Addr: 0x0426, Count: 1, Unit: "min", Scale: 1},
-		{Name: "System time", Addr: 0x042C, Count: 0}, // Synthetic: schema-only, not read as probe
+		{Name: "System time", Addr: 0x042C, Count: 6, Composite: "system_time"},
 	}},
 	{Name: "Firmware (Extended)", Probes: []Probe{
 		{Name: "ARM BOOT version", Addr: 0x045D, Count: 1},
