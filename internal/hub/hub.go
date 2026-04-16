@@ -403,7 +403,7 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 		h.streamBMSRead(sec, readCtx)
 		return
 	case "battery":
-		h.streamBatteryRead(sec, readCtx)
+		h.streamBatteryBatchRead(sec, readCtx)
 		return
 	}
 

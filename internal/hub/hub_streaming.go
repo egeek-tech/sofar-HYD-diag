@@ -261,16 +261,13 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 	}()
 }
 
-// streamBatteryRead replaces triggerBatteryRead with per-register streaming.
-// Streams individual registers while collecting results for auto-detection logic.
-func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
-	groups := sec.Groups
-	probes := sec.Probes
-
+// streamBatteryBatchRead reads the battery section using batch spans from the
+// pre-computed BatchPlan. Before starting batch reads, it pre-reads register
+// 0x066A individually to detect the active channel count. If the count changed,
+// it rebuilds Groups/Probes/BatchPlan with InternalInfoGroups re-appended,
+// resets SpanTracker, and re-triggers the read with the new plan (D-01 through D-05).
+func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
 	go func() {
-		// retrigger tracks whether a section re-read was dispatched.
-		// When true, the defer skips clearing sec.reading so it stays true
-		// through the handoff to the event loop's triggerSectionRead (WR-05).
 		retrigger := false
 		defer func() {
 			if !retrigger {
@@ -278,75 +275,164 @@ func (h *Hub) streamBatteryRead(sec *Section, readCtx context.Context) {
 			}
 		}()
 
-		// Read all probes individually, streaming each value
-		allResults := make([]broker.Result, len(probes))
-		probeIdx := 0
-
-		for _, g := range groups {
-			for _, p := range g.Probes {
-				if readCtx.Err() != nil {
-					return
-				}
-
-				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
-				result := broker.Result{Data: data, Err: err}
-				allResults[probeIdx] = result
-				probeIdx++
-
-				var errStr string
-				var value string
-				var rawVal string
-				if err != nil {
-					errStr = err.Error()
-				} else {
-					value = FormatValue(p, data)
-					rawVal = FormatRawValue(p, data)
-				}
-
-				// WR-02: skip send if context cancelled after ReadRegisters returned
-				if readCtx.Err() != nil {
-					return
-				}
-				h.results <- sectionResult{
-					section: "battery",
-					msg:     NewRegisterValue("battery", g.Name, p.Name, value, errStr, p.Addr, rawVal),
-				}
-			}
-		}
-
-		// Auto-detect channel count from 0x066A (same logic as triggerBatteryRead)
-		packCountIdx := -1
-		for i, p := range probes {
-			if p.Addr == 0x066A {
-				packCountIdx = i
-				break
-			}
-		}
-		if packCountIdx >= 0 && allResults[packCountIdx].Err == nil && len(allResults[packCountIdx].Data) >= 2 {
-			detected := int(binary.BigEndian.Uint16(allResults[packCountIdx].Data[:2]))
+		// Step 1: Pre-read 0x066A individually to detect channel count (D-03).
+		// This is independent of SpanTracker -- always read even if the Global Stats
+		// span is degraded/skipped. Do NOT emit sectionResult for this pre-read;
+		// the batch span loop will emit the actual value (Pitfall 5).
+		packCountData, err := h.broker.ReadRegisters(readCtx, 0x066A, 1)
+		if err == nil && len(packCountData) >= 2 {
+			detected := int(binary.BigEndian.Uint16(packCountData[:2]))
 			if detected > 0 && detected <= 8 {
-				currentChannels := len(groups) - 1
+				currentChannels := countBatteryChannels(sec.Groups)
 				if detected != currentChannels {
-					newGroups := register.GenerateBatteryGroups(detected)
-					// Keep reading=true through the handoff to prevent
-					// duplicate reads from read_cycle during the window
+					// Channel count changed: rebuild with InternalInfoGroups (D-04, D-07).
+					newGroups := append(register.GenerateBatteryGroups(detected), register.InternalInfoGroups()...)
 					retrigger = true
-					// WR-03: use select with context to avoid goroutine leak on hub shutdown
 					select {
 					case h.funcs <- func() {
 						sec.Groups = newGroups
 						sec.Probes = flattenProbeGroups(newGroups)
 						sec.BatchPlan = register.AnalyzeBatchPlan(newGroups)
+						sec.SpanTracker.Reset() // D-05: reset since span addresses change
 						h.logger.Info("battery section auto-detected channels", "channels", detected)
 						h.triggerSectionRead("battery")
 					}:
 					case <-readCtx.Done():
-						retrigger = false // context cancelled; let defer clear reading flag
+						retrigger = false
 					}
 					return
 				}
 			}
+		} else if err != nil {
+			// 0x066A pre-read failed: log warning and continue with existing BatchPlan (Pitfall 6).
+			h.logger.Warn("battery 0x066A pre-read failed, using existing plan", "error", err)
 		}
+
+		if readCtx.Err() != nil {
+			return
+		}
+
+		// Step 2: SpanTracker tick (D-06).
+		start := time.Now()
+		spanCount := len(sec.BatchPlan.Spans)
+		var totalRegisters uint16
+
+		if sec.SpanTracker != nil {
+			sec.SpanTracker.Tick()
+		}
+
+		// Step 3: Iterate batch spans with SpanTracker three-state degradation (D-02, D-06).
+		for _, span := range sec.BatchPlan.Spans {
+			if readCtx.Err() != nil {
+				return
+			}
+
+			totalRegisters += span.TotalCount
+
+			var state SpanState
+			var shouldProbe bool
+			if sec.SpanTracker != nil {
+				state = sec.SpanTracker.State(span.StartAddr)
+				shouldProbe = sec.SpanTracker.ShouldProbe(span.StartAddr)
+			}
+
+			// Fully skipped: no reads at all.
+			if state == SpanSkipped && !shouldProbe {
+				continue
+			}
+
+			// Degraded (not probing): individual reads only.
+			if state == SpanDegraded && !shouldProbe {
+				allIndivFailed := h.readSpanIndividualFallback("battery", span, readCtx)
+				if readCtx.Err() != nil {
+					return
+				}
+				if allIndivFailed && sec.SpanTracker != nil {
+					sec.SpanTracker.RecordIndividualFailure(span.StartAddr)
+				} else if !allIndivFailed && sec.SpanTracker != nil {
+					sec.SpanTracker.RecordSuccess(span.StartAddr)
+				}
+				continue
+			}
+
+			// Normal or probing: attempt batch read.
+			data, batchErr := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
+			if batchErr != nil {
+				if shouldProbe {
+					if state == SpanNormal {
+						if sec.SpanTracker != nil {
+							sec.SpanTracker.RecordFailure(span.StartAddr)
+						}
+					}
+					h.logger.Warn("batch span failed, falling back to individual reads",
+						"section", "battery",
+						"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
+						"span_count", span.TotalCount,
+						"error", batchErr,
+					)
+					h.readSpanIndividualFallback("battery", span, readCtx)
+					if readCtx.Err() != nil {
+						return
+					}
+					continue
+				}
+
+				if sec.SpanTracker != nil {
+					sec.SpanTracker.RecordFailure(span.StartAddr)
+				}
+				h.logger.Warn("batch span failed, falling back to individual reads",
+					"section", "battery",
+					"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
+					"span_count", span.TotalCount,
+					"error", batchErr,
+				)
+				h.readSpanIndividualFallback("battery", span, readCtx)
+				if readCtx.Err() != nil {
+					return
+				}
+				continue
+			}
+
+			// Batch read succeeded.
+			if sec.SpanTracker != nil {
+				sec.SpanTracker.RecordSuccess(span.StartAddr)
+			}
+
+			if readCtx.Err() != nil {
+				return
+			}
+
+			// Extract each probe's data from the batch response.
+			for _, pm := range span.Probes {
+				end := pm.ByteOffset + pm.ByteLength
+				if end > len(data) {
+					h.results <- sectionResult{
+						section: "battery",
+						msg:     NewRegisterValue("battery", pm.GroupName, pm.Probe.Name, "", "short response", pm.Probe.Addr, ""),
+					}
+					continue
+				}
+				probeData := data[pm.ByteOffset:end]
+				value := FormatValue(pm.Probe, probeData)
+				rawVal := FormatRawValue(pm.Probe, probeData)
+				h.results <- sectionResult{
+					section: "battery",
+					msg:     NewRegisterValue("battery", pm.GroupName, pm.Probe.Name, value, "", pm.Probe.Addr, rawVal),
+				}
+			}
+		}
+
+		if readCtx.Err() != nil {
+			return
+		}
+
+		// Step 4: Log section read timing and emit section_complete (D-09).
+		h.logger.Info("section read complete",
+			"section", "battery",
+			"duration_ms", time.Since(start).Milliseconds(),
+			"spans", spanCount,
+			"registers", totalRegisters,
+		)
 
 		h.results <- sectionResult{
 			section: "battery",
