@@ -407,7 +407,12 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 	towersPerInput := TopoTowers
 	queryWord := register.EncodePackQuery(input, tower, pack, towersPerInput)
 	settleMs := h.packSettleMs
-	skipRegs := h.packSkipRegisters // capture reference for goroutine
+	// WR-03 fix: deep-copy the map so the goroutine writes to an independent copy,
+	// avoiding a data race with handleSelectPack which replaces h.packSkipRegisters.
+	skipRegs := make(map[uint16]bool, len(h.packSkipRegisters))
+	for k, v := range h.packSkipRegisters {
+		skipRegs[k] = v
+	}
 
 	// Capture BMS section on hub goroutine before launching reader goroutine
 	// to avoid data race on h.sections map (CR-01).
