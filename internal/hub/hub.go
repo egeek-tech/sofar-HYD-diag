@@ -262,6 +262,12 @@ func (h *Hub) handleStateEvent(evt broker.StateEvent) {
 	switch evt.State {
 	case broker.StateConnected:
 		h.connected = true
+		// D-02: Reset SpanTrackers on reconnect to give spans a fresh start.
+		for _, sec := range h.sections {
+			if sec.SpanTracker != nil {
+				sec.SpanTracker.Reset()
+			}
+		}
 	case broker.StateDisconnected, broker.StateReconnecting:
 		h.connected = false
 		// Cancel all in-progress reads (D-13: disconnection stops reads)

@@ -134,3 +134,16 @@ func (h *Hub) GetSectionHasReadOnce(name string) bool {
 	})
 	return hasReadOnce
 }
+
+// GetSectionSpanTracker returns the SpanTracker for a named section.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetSectionSpanTracker(name string) *SpanTracker {
+	var tracker *SpanTracker
+	h.RunFunc(func() {
+		sec, ok := h.sections[name]
+		if ok {
+			tracker = sec.SpanTracker
+		}
+	})
+	return tracker
+}

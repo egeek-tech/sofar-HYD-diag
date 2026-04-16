@@ -26,6 +26,7 @@ type Section struct {
 	Probes       []register.Probe      // flattened from Groups for read requests
 	Groups       []register.ProbeGroup // source of truth for grouped sections (D-06)
 	BatchPlan    register.BatchPlan   // pre-computed batch read plan (D-02)
+	SpanTracker  *SpanTracker         // per-section span degradation tracker (D-01)
 	faultSection bool                 // true for "system" section (reads fault registers)
 	readOnce     bool                  // D-09: when true, skip re-reads after initial successful read
 	hasReadOnce  bool                  // D-09: true after first successful read completes
@@ -49,14 +50,16 @@ func newSection(name string, probes []register.Probe, logger *slog.Logger) *Sect
 // Probes are flattened from the groups for backward-compatible read request generation.
 // The faultSection flag is set for "system" to enable fault register reading.
 func newGroupedSection(name string, groups []register.ProbeGroup, logger *slog.Logger) *Section {
+	sectionLogger := logger.With("section", name)
 	return &Section{
 		Name:         name,
 		Probes:       flattenProbeGroups(groups),
 		Groups:       groups,
 		BatchPlan:    register.AnalyzeBatchPlan(groups),
+		SpanTracker:  NewSpanTracker(DefaultDegradationThreshold, sectionLogger),
 		faultSection: name == "system",
 		subscribers:  make(map[*Client]bool),
-		logger:       logger.With("section", name),
+		logger:       sectionLogger,
 	}
 }
 
