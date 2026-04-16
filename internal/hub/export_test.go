@@ -6,6 +6,9 @@ import (
 	"sofar-hyd-diag/internal/register"
 )
 
+// CountBatteryChannels exports countBatteryChannels for external test packages.
+var CountBatteryChannels = countBatteryChannels
+
 // NewTestHub creates a Hub for testing with default 2 PV channels.
 // Uses a default logger. Topology uses package-level constants.
 func NewTestHub(b BrokerInterface) *Hub {

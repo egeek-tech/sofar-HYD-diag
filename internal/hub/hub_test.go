@@ -3401,3 +3401,55 @@ func TestStreamStandardRead_SpanTrackerResetOnReconnect(t *testing.T) {
 		"span should be reset to Normal after reconnect (D-02)")
 }
 
+// === Phase 23-02: Battery batch read integration tests ===
+
+// setupBatterySpanTest creates a mock broker configured for battery section batch tests.
+// All spans (2-channel + InternalInfo) succeed at batch level with deterministic data.
+// The 0x066A individual pre-read returns packCount=2 (matching default, no reconfiguration).
+func setupBatterySpanTest(t *testing.T) (*mockBroker, register.BatchPlan) {
+	t.Helper()
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+	mb.spanFailAddrs = make(map[uint16]error)
+
+	groups := append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)
+	plan := register.AnalyzeBatchPlan(groups)
+	require.NotEmpty(t, plan.Spans, "battery batch plan must have spans")
+
+	// Set up all spans to succeed at batch level with known probe values.
+	for _, span := range plan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			// Write value 100 at each probe's byte offset.
+			if pm.ByteLength >= 2 {
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 100)
+			}
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	// 0x066A pre-read: return packCount=2 (matches default, no reconfiguration).
+	preReadData := make([]byte, 2)
+	binary.BigEndian.PutUint16(preReadData, 2)
+	mb.registerResults[0x066A] = broker.Result{Data: preReadData}
+
+	return mb, plan
+}
+
+func TestCountBatteryChannels(t *testing.T) {
+	// 2-channel groups: [Channel 1, Channel 2, Global Stats]
+	groups2 := register.GenerateBatteryGroups(2)
+	assert.Equal(t, 2, hub.CountBatteryChannels(groups2), "2-channel groups without InternalInfo")
+
+	// 2-channel + InternalInfo: [Channel 1, Channel 2, Global Stats, Internal Info]
+	groups2i := append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)
+	assert.Equal(t, 2, hub.CountBatteryChannels(groups2i), "2-channel groups with InternalInfo")
+
+	// 4-channel + InternalInfo: [Channel 1..4, Global Stats, Internal Info]
+	groups4i := append(register.GenerateBatteryGroups(4), register.InternalInfoGroups()...)
+	assert.Equal(t, 4, hub.CountBatteryChannels(groups4i), "4-channel groups with InternalInfo")
+
+	// Edge: no groups
+	assert.Equal(t, 0, hub.CountBatteryChannels(nil), "nil groups")
+}
+
