@@ -116,35 +116,36 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 						if sec.SpanTracker != nil {
 							sec.SpanTracker.RecordFailure(span.StartAddr)
 						}
-						// Normal span batch failure: do individual fallback.
-						h.logger.Warn("batch span failed, falling back to individual reads",
-							"section", sectionName,
-							"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
-							"span_count", span.TotalCount,
-							"error", err,
-						)
-						for _, pm := range span.Probes {
-							if readCtx.Err() != nil {
-								return
-							}
-							indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
-							var errStr, value, rawVal string
-							if indErr != nil {
-								errStr = indErr.Error()
-							} else {
-								value = FormatValue(pm.Probe, indData)
-								rawVal = FormatRawValue(pm.Probe, indData)
-							}
-							if readCtx.Err() != nil {
-								return
-							}
-							h.results <- sectionResult{
-								section: sectionName,
-								msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
-							}
+					}
+					// WR-01 fix: Probe batch failed -- do individual fallback reads so
+					// subscribers still get updated (or error) values this cycle,
+					// regardless of whether the span is Normal, Degraded, or Skipped.
+					h.logger.Warn("batch span failed, falling back to individual reads",
+						"section", sectionName,
+						"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
+						"span_count", span.TotalCount,
+						"error", err,
+					)
+					for _, pm := range span.Probes {
+						if readCtx.Err() != nil {
+							return
+						}
+						indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
+						var errStr, value, rawVal string
+						if indErr != nil {
+							errStr = indErr.Error()
+						} else {
+							value = FormatValue(pm.Probe, indData)
+							rawVal = FormatRawValue(pm.Probe, indData)
+						}
+						if readCtx.Err() != nil {
+							return
+						}
+						h.results <- sectionResult{
+							section: sectionName,
+							msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
 						}
 					}
-					// For degraded/skipped probes that fail: just continue (stay in current state).
 					continue
 				}
 

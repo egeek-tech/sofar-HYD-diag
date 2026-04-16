@@ -60,13 +60,13 @@
 
 </details>
 
-### 🚧 v1.5 Full Batch Reading & Configuration Cleanup (In Progress)
+### v1.5 Full Batch Reading & Configuration Cleanup (In Progress)
 
 **Milestone Goal:** Extend batch reading to every section and clean up non-functional configuration registers for a fully optimized, error-free UI.
 
 - [x] **Phase 20: Configuration Register Cleanup** - Remove unsupported config registers and empty groups (completed 2026-04-15)
 - [ ] **Phase 21: Standard Section Batch Verification** - Confirm existing batch behavior across all standard sections on real hardware
-- [ ] **Phase 22: SpanTracker Integration** - Track and auto-skip persistently-failing spans
+- [x] **Phase 22: SpanTracker Integration** - Track and auto-skip persistently-failing spans (completed 2026-04-16)
 - [ ] **Phase 23: Battery Section Batch Migration** - Migrate battery section to BatchPlan span reading
 - [ ] **Phase 24: BMS Batch Migration** - Migrate BMS section to BatchPlan with Composite probes for composed values
 - [ ] **Phase 25: Pack Drill-Down Batch Migration** - Migrate pack drill-down to BatchPlan span reading
@@ -98,7 +98,7 @@ Plans:
   5. All section values match expected ranges for the connected inverter
 **Plans**: 2 plans
 Plans:
-- [ ] 21-01-PLAN.md -- Build section-sweep standalone tool for batch span verification across all 7 sections
+- [x] 21-01-PLAN.md -- Build section-sweep standalone tool for batch span verification across all 7 sections
 - [ ] 21-02-PLAN.md -- Run sweep on hardware, remove failing registers and empty groups, update tests
 
 ### Phase 22: SpanTracker Integration
@@ -109,7 +109,10 @@ Plans:
   1. SpanTracker is wired into streamStandardRead and records which spans fail
   2. A span that fails on consecutive reads is automatically skipped on the next read cycle
   3. Skipped spans do not cause UI errors or blank values -- previously cached values persist (dimmed)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 22-01-PLAN.md -- Extend SpanTracker to three-state degradation model with unit tests
+- [x] 22-02-PLAN.md -- Wire SpanTracker into streamStandardRead, Section, reconnect handler with integration tests
 
 ### Phase 23: Battery Section Batch Migration
 **Goal**: Battery section reads all registers via batch spans instead of individual reads
@@ -151,8 +154,8 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24 -> 25
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 20. Configuration Register Cleanup | v1.5 | 2/2 | Complete    | 2026-04-15 |
-| 21. Standard Section Batch Verification | v1.5 | 0/2 | Not started | - |
-| 22. SpanTracker Integration | v1.5 | 0/? | Not started | - |
+| 21. Standard Section Batch Verification | v1.5 | 1/2 | In Progress|  |
+| 22. SpanTracker Integration | v1.5 | 2/2 | Complete    | 2026-04-16 |
 | 23. Battery Section Batch Migration | v1.5 | 0/? | Not started | - |
 | 24. BMS Batch Migration | v1.5 | 0/? | Not started | - |
 | 25. Pack Drill-Down Batch Migration | v1.5 | 0/? | Not started | - |
