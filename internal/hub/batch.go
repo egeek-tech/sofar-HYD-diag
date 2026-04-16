@@ -142,11 +142,12 @@ func (st *SpanTracker) Tick() {
 // ShouldProbe returns true if a degraded or skipped span should be attempted
 // this cycle for recovery. Normal spans are never probed (they read normally).
 // Probe attempts occur every probeInterval cycles (D-07).
+// Cycle 0 never probes — this prevents immediate probe storms after Reset().
 func (st *SpanTracker) ShouldProbe(startAddr uint16) bool {
 	if st.states[startAddr] == SpanNormal {
 		return false
 	}
-	return st.cycle%st.probeInterval == 0
+	return st.cycle > 0 && st.cycle%st.probeInterval == 0
 }
 
 // Reset clears all tracking state back to initial values. Used on reconnection
