@@ -49,6 +49,9 @@ type mockBroker struct {
 	lastDelay time.Duration
 	// Per-address register results for ReadRegisters (streaming model)
 	registerResults map[uint16]broker.Result
+	// spanFailAddrs: addresses that fail only for batch reads (count > 1).
+	// Checked before registerResults so individual reads (count=1) can succeed.
+	spanFailAddrs map[uint16]error
 }
 
 type reconfigureCall struct {
@@ -167,7 +170,15 @@ func (m *mockBroker) getDisconnectCalls() int {
 
 func (m *mockBroker) ReadRegisters(ctx context.Context, addr uint16, count uint16) ([]byte, error) {
 	m.mu.Lock()
-	// Check per-address register results first (used by streaming tests)
+	// Check span-level failures first: fail only batch reads (count > 1)
+	if m.spanFailAddrs != nil && count > 1 {
+		if err, ok := m.spanFailAddrs[addr]; ok {
+			m.batchCallCount++
+			m.mu.Unlock()
+			return nil, err
+		}
+	}
+	// Check per-address register results (used by streaming tests)
 	if m.registerResults != nil {
 		if r, ok := m.registerResults[addr]; ok {
 			m.batchCallCount++
@@ -196,6 +207,40 @@ func (m *mockBroker) getWriteCalls() []writeCall {
 	cp := make([]writeCall, len(m.writeCalls))
 	copy(cp, m.writeCalls)
 	return cp
+}
+
+// setRegisterResult sets a per-address register result thread-safely.
+func (m *mockBroker) setRegisterResult(addr uint16, r broker.Result) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.registerResults == nil {
+		m.registerResults = make(map[uint16]broker.Result)
+	}
+	m.registerResults[addr] = r
+}
+
+// resetBatchCallCount resets the batch call counter thread-safely.
+func (m *mockBroker) resetBatchCallCount() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.batchCallCount = 0
+}
+
+// setSpanFail marks an address to fail only for batch reads (count > 1).
+func (m *mockBroker) setSpanFail(addr uint16, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.spanFailAddrs == nil {
+		m.spanFailAddrs = make(map[uint16]error)
+	}
+	m.spanFailAddrs[addr] = err
+}
+
+// clearSpanFail removes a span failure so batch reads succeed again.
+func (m *mockBroker) clearSpanFail(addr uint16) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.spanFailAddrs, addr)
 }
 
 // collectClientMessages reads from a client's send channel with timeout.
@@ -3079,5 +3124,280 @@ func TestBatchTimingLog(t *testing.T) {
 	if !hasRegVal {
 		t.Error("no register_value messages for eps section")
 	}
+}
+
+// === Phase 22: SpanTracker integration tests ===
+
+// setupGridSpanTest creates a mock broker with grid batch plan spans configured.
+// The first span (failSpanAddr) is set to fail at batch level.
+// All other spans succeed. Individual probes can be configured separately.
+func setupGridSpanTest(t *testing.T) (*mockBroker, register.BatchPlan, uint16) {
+	t.Helper()
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+	mb.spanFailAddrs = make(map[uint16]error)
+
+	gridPlan := register.AnalyzeBatchPlan(register.GridGroups)
+	require.NotEmpty(t, gridPlan.Spans, "grid batch plan must have spans")
+	failSpan := gridPlan.Spans[0]
+
+	// Make the batch span read fail via spanFailAddrs (only fails count > 1)
+	mb.spanFailAddrs[failSpan.StartAddr] = fmt.Errorf("simulated batch failure")
+
+	// Make individual probe reads succeed for the failing span
+	for _, pm := range failSpan.Probes {
+		data := make([]byte, pm.ByteLength)
+		if len(data) >= 2 {
+			binary.BigEndian.PutUint16(data[:2], 100)
+		}
+		mb.registerResults[pm.Probe.Addr] = broker.Result{Data: data}
+	}
+
+	// Set up remaining spans to succeed at batch level
+	for _, span := range gridPlan.Spans[1:] {
+		data := make([]byte, int(span.TotalCount)*2)
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	return mb, gridPlan, failSpan.StartAddr
+}
+
+// triggerGridReadCycle subscribes (if first time) or sends read_cycle, then drains until section_complete.
+func triggerGridReadCycle(t *testing.T, h *hub.Hub, c *hub.Client, send chan []byte) []hub.OutboundMessage {
+	t.Helper()
+	hub.SendReadCycle(h, c, "grid")
+	msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received")
+	return msgs
+}
+
+func TestStreamStandardRead_SpanTrackerDegradation(t *testing.T) {
+	// After 3 batch failures on span 0, SpanTracker should degrade it.
+	// Individual fallback reads still produce register_value messages.
+	mb, _, failAddr := setupGridSpanTest(t)
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to grid (triggers first read cycle)
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+	msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received on subscribe")
+
+	// Verify register_value messages arrived (individual fallback works)
+	regValCount := 0
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "grid" {
+			regValCount++
+		}
+	}
+	assert.Greater(t, regValCount, 0, "should have register_value messages from fallback")
+
+	// Trigger 2 more read cycles (total 3 batch failures = degradation threshold)
+	for i := 0; i < 2; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	// SpanTracker should now show the span as degraded
+	tracker := h.GetSectionSpanTracker("grid")
+	require.NotNil(t, tracker, "grid section must have a SpanTracker")
+	assert.Equal(t, hub.SpanDegraded, h.GetSpanState("grid", failAddr),
+		"span at 0x%04X should be degraded after 3 batch failures", failAddr)
+}
+
+func TestStreamStandardRead_SpanTrackerSkipped(t *testing.T) {
+	// After 3 batch failures (degraded) + 2 all-individual-fail cycles (skipped),
+	// the span transitions to SpanSkipped.
+	mb, gridPlan, failAddr := setupGridSpanTest(t)
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to grid (triggers first read cycle)
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+	_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0)
+
+	// Trigger 2 more read cycles (3 total = degraded)
+	for i := 0; i < 2; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	tracker := h.GetSectionSpanTracker("grid")
+	require.NotNil(t, tracker)
+	assert.Equal(t, hub.SpanDegraded, h.GetSpanState("grid", failAddr))
+
+	// Now make individual reads also fail for the failing span's probes
+	failSpan := gridPlan.Spans[0]
+	for _, pm := range failSpan.Probes {
+		mb.setRegisterResult(pm.Probe.Addr, broker.Result{Err: fmt.Errorf("individual read failure")})
+	}
+
+	// Trigger 2 more read cycles (individual reads all fail -> transitions to Skipped)
+	for i := 0; i < 2; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	assert.Equal(t, hub.SpanSkipped, h.GetSpanState("grid", failAddr),
+		"span should be skipped after 2 cycles of all-individual-fail")
+
+	// Trigger one more non-probe read cycle and verify reduced call count.
+	// The skipped span should produce zero ReadRegisters calls.
+	mb.resetBatchCallCount()
+	triggerGridReadCycle(t, h, c, send)
+
+	// Count: remaining 6 spans x 1 batch read each = 6 calls (no calls for skipped span 0)
+	callCount := mb.getBatchCallCount()
+	remainingSpans := len(gridPlan.Spans) - 1
+	assert.Equal(t, remainingSpans, callCount,
+		"skipped span should produce no ReadRegisters calls; expected %d, got %d", remainingSpans, callCount)
+}
+
+func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
+	// After a span becomes skipped, a probe on the 10th cycle should recover it.
+	mb, gridPlan, failAddr := setupGridSpanTest(t)
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe triggers first read
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+	_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0)
+
+	// 2 more cycles to degrade (3 total batch failures)
+	for i := 0; i < 2; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	// Make individual reads fail to transition to skipped
+	failSpan := gridPlan.Spans[0]
+	for _, pm := range failSpan.Probes {
+		mb.setRegisterResult(pm.Probe.Addr, broker.Result{Err: fmt.Errorf("individual read failure")})
+	}
+
+	// 2 more cycles (individual all-fail -> skipped); total cycles = 5
+	for i := 0; i < 2; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	tracker := h.GetSectionSpanTracker("grid")
+	require.NotNil(t, tracker)
+	require.Equal(t, hub.SpanSkipped, h.GetSpanState("grid", failAddr))
+
+	// Now make the batch read succeed for recovery:
+	// Clear the span-level failure so batch reads (count > 1) fall through to registerResults.
+	mb.clearSpanFail(failSpan.StartAddr)
+	// Set a successful batch-sized result for the span's start address.
+	batchData := make([]byte, int(failSpan.TotalCount)*2)
+	binary.BigEndian.PutUint16(batchData[:2], 42) // non-zero value
+	mb.setRegisterResult(failSpan.StartAddr, broker.Result{Data: batchData})
+
+	// Run cycles 6-14 (no probe yet, span stays skipped)
+	// DefaultProbeInterval=10, cycle counter is at 5 after the 5 cycles above.
+	// Probe happens when cycle % 10 == 0, so at cycle 10.
+	// We need 5 more cycles (cycles 6,7,8,9,10) to reach the probe.
+	for i := 0; i < 5; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	// After cycle 10 (which is a probe cycle), the batch read succeeds -> recovery
+	assert.Equal(t, hub.SpanNormal, h.GetSpanState("grid", failAddr),
+		"span should recover to Normal after successful probe")
+
+	// Verify register_value messages arrive on the next cycle (span reads normally again)
+	msgs := triggerGridReadCycle(t, h, c, send)
+	regCount := 0
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "grid" {
+			regCount++
+		}
+	}
+	// All grid probes should produce values (all spans now normal)
+	totalGridProbes := 0
+	for _, g := range register.GridGroups {
+		totalGridProbes += len(g.Probes)
+	}
+	assert.Equal(t, totalGridProbes, regCount,
+		"all grid probes should produce register_value messages after recovery")
+}
+
+func TestStreamStandardRead_SpanTrackerResetOnReconnect(t *testing.T) {
+	// Degraded span should reset to Normal when broker reconnects.
+	mb, _, failAddr := setupGridSpanTest(t)
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe and trigger 3 read cycles to degrade span 0
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+	_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0)
+
+	for i := 0; i < 2; i++ {
+		triggerGridReadCycle(t, h, c, send)
+	}
+
+	tracker := h.GetSectionSpanTracker("grid")
+	require.NotNil(t, tracker)
+	require.Equal(t, hub.SpanDegraded, h.GetSpanState("grid", failAddr),
+		"span should be degraded before reconnect")
+
+	// Simulate disconnect + reconnect
+	mb.statesCh <- broker.StateEvent{State: broker.StateDisconnected}
+	time.Sleep(50 * time.Millisecond)
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain state messages
+	drainClientMessages(send, 100*time.Millisecond)
+
+	// SpanTracker should be reset to Normal
+	assert.Equal(t, hub.SpanNormal, h.GetSpanState("grid", failAddr),
+		"span should be reset to Normal after reconnect (D-02)")
 }
 

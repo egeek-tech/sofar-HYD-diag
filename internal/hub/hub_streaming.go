@@ -43,6 +43,11 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 		spanCount := len(sec.BatchPlan.Spans)
 		var totalRegisters uint16
 
+		// D-01 (Phase 22): Increment SpanTracker cycle counter for probe scheduling.
+		if sec.SpanTracker != nil {
+			sec.SpanTracker.Tick()
+		}
+
 		// D-01: Iterate batch spans instead of individual probes.
 		// Every standard section gets batch reading automatically.
 		for _, span := range sec.BatchPlan.Spans {
@@ -52,9 +57,101 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 
 			totalRegisters += span.TotalCount
 
+			// Phase 22: Three-state degradation check.
+			var state SpanState
+			var shouldProbe bool
+			if sec.SpanTracker != nil {
+				state = sec.SpanTracker.State(span.StartAddr)
+				shouldProbe = sec.SpanTracker.ShouldProbe(span.StartAddr)
+			}
+
+			// Fully skipped: no reads at all (D-03 state 3).
+			// Cached values persist dimmed in the UI (D-06).
+			if state == SpanSkipped && !shouldProbe {
+				continue
+			}
+
+			// Degraded (not probing): skip batch, try individual reads only (D-03 state 2).
+			if state == SpanDegraded && !shouldProbe {
+				allIndivFailed := true
+				for _, pm := range span.Probes {
+					if readCtx.Err() != nil {
+						return
+					}
+					indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
+					var errStr, value, rawVal string
+					if indErr != nil {
+						errStr = indErr.Error()
+					} else {
+						allIndivFailed = false
+						value = FormatValue(pm.Probe, indData)
+						rawVal = FormatRawValue(pm.Probe, indData)
+					}
+					if readCtx.Err() != nil {
+						return
+					}
+					h.results <- sectionResult{
+						section: sectionName,
+						msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
+					}
+				}
+				// If ALL individual reads failed this cycle, record individual failure.
+				// After 2 such cycles, span transitions to Skipped (D-03).
+				if allIndivFailed && sec.SpanTracker != nil {
+					sec.SpanTracker.RecordIndividualFailure(span.StartAddr)
+				} else if !allIndivFailed && sec.SpanTracker != nil {
+					// At least one individual read succeeded -- recover to Normal (D-08).
+					sec.SpanTracker.RecordSuccess(span.StartAddr)
+				}
+				continue
+			}
+
+			// Normal OR probing: attempt batch read.
 			data, err := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
 			if err != nil {
-				// D-02: Per-span fallback to individual reads.
+				if shouldProbe {
+					// Probe failed -- stay in current state for degraded/skipped.
+					// For normal spans that happen to be on a probe cycle, still record failure.
+					if state == SpanNormal {
+						if sec.SpanTracker != nil {
+							sec.SpanTracker.RecordFailure(span.StartAddr)
+						}
+						// Normal span batch failure: do individual fallback.
+						h.logger.Warn("batch span failed, falling back to individual reads",
+							"section", sectionName,
+							"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
+							"span_count", span.TotalCount,
+							"error", err,
+						)
+						for _, pm := range span.Probes {
+							if readCtx.Err() != nil {
+								return
+							}
+							indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
+							var errStr, value, rawVal string
+							if indErr != nil {
+								errStr = indErr.Error()
+							} else {
+								value = FormatValue(pm.Probe, indData)
+								rawVal = FormatRawValue(pm.Probe, indData)
+							}
+							if readCtx.Err() != nil {
+								return
+							}
+							h.results <- sectionResult{
+								section: sectionName,
+								msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
+							}
+						}
+					}
+					// For degraded/skipped probes that fail: just continue (stay in current state).
+					continue
+				}
+
+				// Normal span batch failure (not a probe cycle): record failure, individual fallback.
+				if sec.SpanTracker != nil {
+					sec.SpanTracker.RecordFailure(span.StartAddr)
+				}
 				h.logger.Warn("batch span failed, falling back to individual reads",
 					"section", sectionName,
 					"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
@@ -73,7 +170,6 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 						value = FormatValue(pm.Probe, indData)
 						rawVal = FormatRawValue(pm.Probe, indData)
 					}
-					// WR-02: skip send if context cancelled after ReadRegisters returned
 					if readCtx.Err() != nil {
 						return
 					}
@@ -83,6 +179,11 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 					}
 				}
 				continue
+			}
+
+			// Batch read succeeded.
+			if sec.SpanTracker != nil {
+				sec.SpanTracker.RecordSuccess(span.StartAddr)
 			}
 
 			// WR-02: skip send if context cancelled after successful batch read

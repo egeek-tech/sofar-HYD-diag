@@ -147,3 +147,16 @@ func (h *Hub) GetSectionSpanTracker(name string) *SpanTracker {
 	})
 	return tracker
 }
+
+// GetSpanState returns the SpanState for a given span address in a named section.
+// Thread-safe: reads SpanTracker state on the hub event loop to avoid data races.
+func (h *Hub) GetSpanState(section string, startAddr uint16) SpanState {
+	var state SpanState
+	h.RunFunc(func() {
+		sec, ok := h.sections[section]
+		if ok && sec.SpanTracker != nil {
+			state = sec.SpanTracker.State(startAddr)
+		}
+	})
+	return state
+}
