@@ -122,7 +122,10 @@ Plans:
   1. Battery section uses BatchPlan spans for all register reads instead of per-register individual reads
   2. Battery channel auto-detection (0x066A read to determine active channels) still works correctly after migration
   3. Battery section UI displays identical information to pre-migration behavior (same values, same groups, same formatting)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 23-01-PLAN.md -- Extract shared fallback helper, create streamBatteryBatchRead with pre-read + batch spans, update routing
+- [ ] 23-02-PLAN.md -- Integration tests for battery batch read: span reads, auto-detection, output equivalence, fallback
 
 ### Phase 24: BMS Batch Migration
 **Goal**: BMS section reads all registers via batch spans with Composite probes for composed values
@@ -156,6 +159,6 @@ Phases execute in numeric order: 20 -> 21 -> 22 -> 23 -> 24 -> 25
 | 20. Configuration Register Cleanup | v1.5 | 2/2 | Complete    | 2026-04-15 |
 | 21. Standard Section Batch Verification | v1.5 | 1/2 | In Progress|  |
 | 22. SpanTracker Integration | v1.5 | 2/2 | Complete    | 2026-04-16 |
-| 23. Battery Section Batch Migration | v1.5 | 0/? | Not started | - |
+| 23. Battery Section Batch Migration | v1.5 | 0/2 | Not started | - |
 | 24. BMS Batch Migration | v1.5 | 0/? | Not started | - |
 | 25. Pack Drill-Down Batch Migration | v1.5 | 0/? | Not started | - |
