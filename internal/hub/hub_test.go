@@ -3453,3 +3453,240 @@ func TestCountBatteryChannels(t *testing.T) {
 	assert.Equal(t, 0, hub.CountBatteryChannels(nil), "nil groups")
 }
 
+func TestBatteryBatchRead_SpanReads(t *testing.T) {
+	// BATT-01: Verify battery section reads via batch spans and emits
+	// register_value messages for all probes.
+	mb, plan := setupBatterySpanTest(t)
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to battery (triggers first read cycle)
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "battery"})
+	msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received")
+
+	// Count register_value messages for battery section
+	regValCount := 0
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "battery" {
+			regValCount++
+		}
+	}
+
+	// Battery 2-channel + InternalInfo: all probes should produce register_value messages.
+	totalProbes := 0
+	for _, span := range plan.Spans {
+		totalProbes += len(span.Probes)
+	}
+	assert.Equal(t, totalProbes, regValCount,
+		"should receive register_value for every probe in the batch plan")
+}
+
+func TestBatteryBatchRead_AutoDetect(t *testing.T) {
+	// BATT-02: Verify that when 0x066A returns a different channel count,
+	// the section reconfigures and InternalInfoGroups are preserved.
+	mb, _ := setupBatterySpanTest(t)
+
+	// Override 0x066A to return 4 channels instead of default 2.
+	preReadData := make([]byte, 2)
+	binary.BigEndian.PutUint16(preReadData, 4)
+	mb.registerResults[0x066A] = broker.Result{Data: preReadData}
+
+	// Set up results for 4-channel battery spans too, since after reconfiguration
+	// a new read cycle will use the 4-channel plan.
+	groups4 := append(register.GenerateBatteryGroups(4), register.InternalInfoGroups()...)
+	plan4 := register.AnalyzeBatchPlan(groups4)
+	for _, span := range plan4.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			if pm.ByteLength >= 2 {
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 200)
+			}
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe triggers read, which detects 4 channels and reconfigures.
+	// After reconfiguration, a re-triggered read completes with section_complete.
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "battery"})
+	_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received after auto-detection")
+
+	// Verify the section was reconfigured to 4 channels.
+	groups := h.GetSectionGroups("battery")
+	channelCount := 0
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "Channel ") {
+			channelCount++
+		}
+	}
+	assert.Equal(t, 4, channelCount, "should have reconfigured to 4 channels")
+
+	// Verify InternalInfoGroups preserved after reconfiguration (bug fix).
+	hasInternalInfo := false
+	for _, g := range groups {
+		if g.Name == "Internal Info" {
+			hasInternalInfo = true
+			break
+		}
+	}
+	assert.True(t, hasInternalInfo, "Internal Info group must survive reconfiguration")
+}
+
+func TestBatteryBatchRead_OutputEquivalence(t *testing.T) {
+	// BATT-03: Verify batch read produces the same register names and non-empty
+	// values as expected for a 2-channel battery section.
+	mb, _ := setupBatterySpanTest(t)
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "battery"})
+
+	// Drain raw messages until section_complete for JSON field access.
+	var rawMsgs [][]byte
+	deadline := time.After(10 * time.Second)
+drainLoop:
+	for {
+		select {
+		case raw := <-send:
+			rawMsgs = append(rawMsgs, raw)
+			var peek map[string]interface{}
+			if err := json.Unmarshal(raw, &peek); err == nil {
+				if peek["type"] == "section_complete" {
+					break drainLoop
+				}
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for section_complete in output equivalence test")
+		}
+	}
+	require.NotEmpty(t, rawMsgs, "should receive messages from battery read")
+
+	// Build a set of expected register names from the battery groups.
+	groups := append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)
+	expectedNames := make(map[string]bool)
+	for _, g := range groups {
+		for _, p := range g.Probes {
+			expectedNames[p.Name] = true
+		}
+	}
+
+	// Collect actual register names from register_value messages via raw JSON.
+	actualNames := make(map[string]bool)
+	for _, raw := range rawMsgs {
+		var generic map[string]interface{}
+		if err := json.Unmarshal(raw, &generic); err != nil {
+			continue
+		}
+		if generic["type"] != "register_value" {
+			continue
+		}
+		if generic["section"] != "battery" {
+			continue
+		}
+		name, _ := generic["name"].(string)
+		if name != "" {
+			actualNames[name] = true
+		}
+		// Every register_value should have a non-empty value (mock data is non-zero).
+		value, _ := generic["value"].(string)
+		assert.NotEmpty(t, value, "register %s should have a value", name)
+	}
+
+	// Every expected register name should appear in actual output.
+	for name := range expectedNames {
+		assert.True(t, actualNames[name], "expected register %q not found in output", name)
+	}
+	// No unexpected register names.
+	for name := range actualNames {
+		assert.True(t, expectedNames[name], "unexpected register %q in output", name)
+	}
+}
+
+func TestBatteryBatchRead_SpanFallback(t *testing.T) {
+	// BATT-01 degradation path: Verify that when a battery batch span fails,
+	// individual fallback reads still produce register_value messages.
+	mb, plan := setupBatterySpanTest(t)
+
+	// Make the first span fail at batch level.
+	failSpan := plan.Spans[0]
+	mb.spanFailAddrs[failSpan.StartAddr] = fmt.Errorf("simulated batch failure")
+
+	// Set up individual probe reads for the failing span.
+	for _, pm := range failSpan.Probes {
+		data := make([]byte, pm.ByteLength)
+		if len(data) >= 2 {
+			binary.BigEndian.PutUint16(data[:2], 50)
+		}
+		mb.registerResults[pm.Probe.Addr] = broker.Result{Data: data}
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "battery"})
+	msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received")
+
+	// Even with first span failing, all register_value messages should arrive
+	// (failed span uses individual fallback).
+	regValCount := 0
+	for _, m := range msgs {
+		if m.Type == "register_value" && m.Section == "battery" {
+			regValCount++
+		}
+	}
+
+	totalProbes := 0
+	for _, span := range plan.Spans {
+		totalProbes += len(span.Probes)
+	}
+	assert.Equal(t, totalProbes, regValCount,
+		"all probes should have register_value messages even with span fallback")
+}
+
