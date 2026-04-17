@@ -716,5 +716,11 @@ func (h *Hub) sendPackError(client *Client, input, tower, pack int, errMsg strin
 	select {
 	case client.send <- data:
 	default:
+		h.logger.Warn("pack error message dropped (client buffer full)")
+		// Route removal through hub event loop (sendPackError runs outside it).
+		select {
+		case h.funcs <- func() { h.removeClient(client) }:
+		default:
+		}
 	}
 }
