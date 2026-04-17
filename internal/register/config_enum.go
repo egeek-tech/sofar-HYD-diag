@@ -183,17 +183,6 @@ var PowerControlEnum = map[uint16]string{
 	3: "Active + Reactive enabled",
 }
 
-// EMSTimePeriodModeEnum maps work mode for EMS time period (0x1207 etc.) values.
-var EMSTimePeriodModeEnum = map[uint16]string{
-	0: "Photovoltaic mode",
-	1: "Constant power mode",
-	2: "Spontaneous self use mode",
-	3: "Peak shaving and valley filling mode",
-	4: "Demand control mode",
-	5: "Battery forced charge mode",
-	6: "Battery forced discharge mode",
-}
-
 // ChargeDischargeControlEnum maps timed charge/discharge enable control (0x1112) values.
 // Bit0: Charge enable, Bit1: Discharge enable.
 var ChargeDischargeControlEnum = map[uint16]string{
@@ -246,12 +235,6 @@ var InputChannelTypeEnum = map[uint16]string{
 	3: "Fan input",
 }
 
-// IPAllocationEnum maps IP allocation method (0x2507) values.
-var IPAllocationEnum = map[uint16]string{
-	0: "Static IP",
-	1: "DHCP",
-}
-
 // TimeShareControlModeEnum maps time sharing enable control (0x1121) values.
 var TimeShareControlModeEnum = map[uint16]string{
 	0: "Prohibit",
@@ -264,18 +247,3 @@ var PeakShavingBuyEnum = map[uint16]string{
 	1: "Enabled",
 }
 
-// CommunicationInterruptEnum maps communication interruption control (0x10C0) values.
-var CommunicationInterruptEnum = map[uint16]string{
-	0: "Prohibit this function",
-	1: "Execute shutdown",
-	2: "Operate per pre-interruption state",
-	3: "Operate per preset active percentage",
-	4: "Operate per preset reactive percentage",
-	5: "Operate per preset power factor",
-}
-
-// FanNoiseEnum maps fan noise mode (0x10E1) values.
-var FanNoiseEnum = map[uint16]string{
-	0: "Standard mode",
-	1: "Low noise mode",
-}

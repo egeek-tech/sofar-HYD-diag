@@ -1908,7 +1908,6 @@ func TestConfigEnumMaps(t *testing.T) {
 		"SafetyCountryEnum":         SafetyCountryEnum,
 		"RemoteOnOffEnum":           RemoteOnOffEnum,
 		"PowerControlEnum":          PowerControlEnum,
-		"EMSTimePeriodModeEnum":     EMSTimePeriodModeEnum,
 		"ChargeDischargeControlEnum": ChargeDischargeControlEnum,
 		"ChargingSourceEnum":        ChargingSourceEnum,
 		"ProtectionEnableEnum":      ProtectionEnableEnum,

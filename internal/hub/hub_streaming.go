@@ -29,36 +29,6 @@ func (h *Hub) buildSectionSchema(sectionName string, sec *Section) SectionSchema
 	return NewSectionSchema(sectionName, schemaGroups)
 }
 
-// readSpanIndividualFallback reads each probe in a span individually, emitting
-// sectionResult per probe. Returns true if ALL individual reads failed (used by
-// SpanTracker to decide individual-failure escalation). Returns early (with true)
-// if readCtx is cancelled.
-func (h *Hub) readSpanIndividualFallback(sectionName string, span register.BatchSpan, readCtx context.Context) bool {
-	allFailed := true
-	for _, pm := range span.Probes {
-		if readCtx.Err() != nil {
-			return true
-		}
-		indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
-		var errStr, value, rawVal string
-		if indErr != nil {
-			errStr = indErr.Error()
-		} else {
-			allFailed = false
-			value = FormatValue(pm.Probe, indData)
-			rawVal = FormatRawValue(pm.Probe, indData)
-		}
-		if readCtx.Err() != nil {
-			return true
-		}
-		h.results <- sectionResult{
-			section: sectionName,
-			msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
-		}
-	}
-	return allFailed
-}
-
 // countBatteryChannels counts the number of battery channel groups by checking
 // for the "Channel " name prefix. This is robust against additional non-channel
 // groups (Global Stats, Internal Info) unlike the previous len(groups)-1 approach.
