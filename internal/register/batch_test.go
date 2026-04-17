@@ -3,6 +3,9 @@ package register
 import (
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAnalyzeBatchPlan_Contiguous(t *testing.T) {
@@ -361,4 +364,66 @@ func TestAnalyzeBatchPlan_GroupNamePreserved(t *testing.T) {
 	if span.Probes[1].GroupName != "PCC Power" {
 		t.Errorf("Probes[1].GroupName = %q, want %q", span.Probes[1].GroupName, "PCC Power")
 	}
+}
+
+func TestPackBatchPlanSpans(t *testing.T) {
+	groups := PackProbeGroups()
+	plan := AnalyzeBatchPlan(groups)
+
+	require.NotEmpty(t, plan.Spans, "pack batch plan must have spans")
+
+	// PackProbeGroups has 4 address ranges:
+	// 1. 0x9044-0x907C (contiguous block covering Pack Info, Cell Voltages, Balance State, partial Temps)
+	// 2. 0x90BC-0x90BF (Temps 5-8)
+	// 3. 0x9104-0x910B (Pack Info block 2 -- fails on hardware)
+	// 4. 0x9124-0x9126 (Pack Status 2 -- fails on hardware)
+	//
+	// Verify spans cover the expected address ranges.
+	// The exact span count depends on the 60-register merging limit.
+
+	// Verify the first span starts at 0x9044 (first register in Pack Info).
+	assert.Equal(t, uint16(0x9044), plan.Spans[0].StartAddr,
+		"first span should start at 0x9044")
+
+	// Verify a span exists covering 0x90BC (Temps 5-8).
+	found90BC := false
+	for _, s := range plan.Spans {
+		if s.StartAddr <= 0x90BC && s.StartAddr+s.TotalCount > 0x90BC {
+			found90BC = true
+			break
+		}
+	}
+	assert.True(t, found90BC, "a span must cover 0x90BC (Temps 5-8)")
+
+	// Verify a span exists starting at or covering 0x9104 (Pack Info block 2).
+	found9104 := false
+	for _, s := range plan.Spans {
+		if s.StartAddr <= 0x9104 && s.StartAddr+s.TotalCount > 0x9104 {
+			found9104 = true
+			break
+		}
+	}
+	assert.True(t, found9104, "a span must cover 0x9104 (Pack Info block 2)")
+
+	// Verify a span exists starting at or covering 0x9124 (Pack Status 2).
+	found9124 := false
+	for _, s := range plan.Spans {
+		if s.StartAddr <= 0x9124 && s.StartAddr+s.TotalCount > 0x9124 {
+			found9124 = true
+			break
+		}
+	}
+	assert.True(t, found9124, "a span must cover 0x9124 (Pack Status 2)")
+
+	// Verify total probe count across all spans matches the total probes in PackProbeGroups.
+	totalProbes := 0
+	for _, g := range groups {
+		totalProbes += len(g.Probes)
+	}
+	spanProbes := 0
+	for _, s := range plan.Spans {
+		spanProbes += len(s.Probes)
+	}
+	assert.Equal(t, totalProbes, spanProbes,
+		"all probes from PackProbeGroups must be covered by spans")
 }
