@@ -72,95 +72,103 @@ func countBatteryChannels(groups []register.ProbeGroup) int {
 	return count
 }
 
-// streamStandardRead reads a standard section using batch spans from the pre-computed
-// BatchPlan. Each span issues a single ReadRegisters call for the full contiguous range,
-// then extracts individual probe values from the response. On span failure, falls back
-// to individual probe reads (D-02). Section timing is logged at Info level (D-05, D-06).
-func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx context.Context) {
-	isFault := sec.faultSection
+// readSpanIndividualFallbackAccum reads each probe in a span individually,
+// emitting sectionResult per probe AND accumulating results into probeResults.
+// Returns true if ALL individual reads failed. Returns early on context cancel.
+func (h *Hub) readSpanIndividualFallbackAccum(sectionName string, span register.BatchSpan, readCtx context.Context, probeResults []broker.Result, addrToIdx map[uint16]int) bool {
+	allFailed := true
+	for _, pm := range span.Probes {
+		if readCtx.Err() != nil {
+			return true
+		}
+		indData, indErr := h.broker.ReadRegisters(readCtx, pm.Probe.Addr, pm.Probe.Count)
+		var errStr, value, rawVal string
+		if indErr != nil {
+			errStr = indErr.Error()
+		} else {
+			allFailed = false
+			value = FormatValue(pm.Probe, indData)
+			rawVal = FormatRawValue(pm.Probe, indData)
+			// Accumulate successful individual read result.
+			if idx, ok := addrToIdx[pm.Probe.Addr]; ok {
+				probeResults[idx] = broker.Result{Data: make([]byte, len(indData))}
+				copy(probeResults[idx].Data, indData)
+			}
+		}
+		if readCtx.Err() != nil {
+			return true
+		}
+		h.results <- sectionResult{
+			section: sectionName,
+			msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, errStr, pm.Probe.Addr, rawVal),
+		}
+	}
+	return allFailed
+}
 
-	go func() {
-		defer sec.reading.Store(false)
+// readBatchSpans iterates a section's BatchPlan spans using SpanTracker
+// three-state degradation. For each probe, it emits a sectionResult to the UI
+// (streaming) and accumulates the broker.Result in probeResults[probeIndex].
+// Returns probeResults aligned with sec.Probes indexing (nil on context cancel).
+func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.Context) []broker.Result {
+	start := time.Now()
+	spanCount := len(sec.BatchPlan.Spans)
+	var totalRegisters uint16
 
-		start := time.Now()
-		spanCount := len(sec.BatchPlan.Spans)
-		var totalRegisters uint16
+	probeResults := make([]broker.Result, len(sec.Probes))
 
-		// D-01 (Phase 22): Increment SpanTracker cycle counter for probe scheduling.
-		if sec.SpanTracker != nil {
-			sec.SpanTracker.Tick()
+	// Build address-to-probe-index map for result accumulation.
+	addrToIdx := make(map[uint16]int, len(sec.Probes))
+	for i, p := range sec.Probes {
+		addrToIdx[p.Addr] = i
+	}
+
+	if sec.SpanTracker != nil {
+		sec.SpanTracker.Tick()
+	}
+
+	for _, span := range sec.BatchPlan.Spans {
+		if readCtx.Err() != nil {
+			return nil
 		}
 
-		// D-01: Iterate batch spans instead of individual probes.
-		// Every standard section gets batch reading automatically.
-		for _, span := range sec.BatchPlan.Spans {
+		totalRegisters += span.TotalCount
+
+		// Three-state degradation check (Phase 22).
+		var state SpanState
+		var shouldProbe bool
+		if sec.SpanTracker != nil {
+			state = sec.SpanTracker.State(span.StartAddr)
+			shouldProbe = sec.SpanTracker.ShouldProbe(span.StartAddr)
+		}
+
+		// Fully skipped: no reads at all.
+		if state == SpanSkipped && !shouldProbe {
+			continue
+		}
+
+		// Degraded (not probing): individual reads only.
+		if state == SpanDegraded && !shouldProbe {
+			allIndivFailed := h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
 			if readCtx.Err() != nil {
-				return
+				return nil
 			}
-
-			totalRegisters += span.TotalCount
-
-			// Phase 22: Three-state degradation check.
-			var state SpanState
-			var shouldProbe bool
-			if sec.SpanTracker != nil {
-				state = sec.SpanTracker.State(span.StartAddr)
-				shouldProbe = sec.SpanTracker.ShouldProbe(span.StartAddr)
+			if allIndivFailed && sec.SpanTracker != nil {
+				sec.SpanTracker.RecordIndividualFailure(span.StartAddr)
+			} else if !allIndivFailed && sec.SpanTracker != nil {
+				sec.SpanTracker.RecordSuccess(span.StartAddr)
 			}
+			continue
+		}
 
-			// Fully skipped: no reads at all (D-03 state 3).
-			// Cached values persist dimmed in the UI (D-06).
-			if state == SpanSkipped && !shouldProbe {
-				continue
-			}
-
-			// Degraded (not probing): skip batch, try individual reads only (D-03 state 2).
-			if state == SpanDegraded && !shouldProbe {
-				allIndivFailed := h.readSpanIndividualFallback(sectionName, span, readCtx)
-				if readCtx.Err() != nil {
-					return
-				}
-				// If ALL individual reads failed this cycle, record individual failure.
-				// After 2 such cycles, span transitions to Skipped (D-03).
-				if allIndivFailed && sec.SpanTracker != nil {
-					sec.SpanTracker.RecordIndividualFailure(span.StartAddr)
-				} else if !allIndivFailed && sec.SpanTracker != nil {
-					// At least one individual read succeeded -- recover to Normal (D-08).
-					sec.SpanTracker.RecordSuccess(span.StartAddr)
-				}
-				continue
-			}
-
-			// Normal OR probing: attempt batch read.
-			data, err := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
-			if err != nil {
-				if shouldProbe {
-					// Probe failed -- stay in current state for degraded/skipped.
-					// For normal spans that happen to be on a probe cycle, still record failure.
-					if state == SpanNormal {
-						if sec.SpanTracker != nil {
-							sec.SpanTracker.RecordFailure(span.StartAddr)
-						}
+		// Normal or probing: attempt batch read.
+		data, err := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
+		if err != nil {
+			if shouldProbe {
+				if state == SpanNormal {
+					if sec.SpanTracker != nil {
+						sec.SpanTracker.RecordFailure(span.StartAddr)
 					}
-					// WR-01 fix: Probe batch failed -- do individual fallback reads so
-					// subscribers still get updated (or error) values this cycle,
-					// regardless of whether the span is Normal, Degraded, or Skipped.
-					h.logger.Warn("batch span failed, falling back to individual reads",
-						"section", sectionName,
-						"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
-						"span_count", span.TotalCount,
-						"error", err,
-					)
-					h.readSpanIndividualFallback(sectionName, span, readCtx)
-					if readCtx.Err() != nil {
-						return
-					}
-					continue
-				}
-
-				// Normal span batch failure (not a probe cycle): record failure, individual fallback.
-				if sec.SpanTracker != nil {
-					sec.SpanTracker.RecordFailure(span.StartAddr)
 				}
 				h.logger.Warn("batch span failed, falling back to individual reads",
 					"section", sectionName,
@@ -168,44 +176,85 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 					"span_count", span.TotalCount,
 					"error", err,
 				)
-				h.readSpanIndividualFallback(sectionName, span, readCtx)
+				h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
 				if readCtx.Err() != nil {
-					return
+					return nil
 				}
 				continue
 			}
 
-			// Batch read succeeded.
 			if sec.SpanTracker != nil {
-				sec.SpanTracker.RecordSuccess(span.StartAddr)
+				sec.SpanTracker.RecordFailure(span.StartAddr)
 			}
-
-			// WR-02: skip send if context cancelled after successful batch read
+			h.logger.Warn("batch span failed, falling back to individual reads",
+				"section", sectionName,
+				"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
+				"span_count", span.TotalCount,
+				"error", err,
+			)
+			h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
 			if readCtx.Err() != nil {
-				return
+				return nil
 			}
-
-			// Extract each probe's data from the batch response
-			for _, pm := range span.Probes {
-				end := pm.ByteOffset + pm.ByteLength
-				if end > len(data) {
-					h.results <- sectionResult{
-						section: sectionName,
-						msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, "", "short response", pm.Probe.Addr, ""),
-					}
-					continue
-				}
-				probeData := data[pm.ByteOffset:end]
-				value := FormatValue(pm.Probe, probeData)
-				rawVal := FormatRawValue(pm.Probe, probeData)
-				h.results <- sectionResult{
-					section: sectionName,
-					msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, "", pm.Probe.Addr, rawVal),
-				}
-			}
+			continue
 		}
 
-		// WR-02: bail out if context cancelled before fault/completion phase
+		// Batch read succeeded.
+		if sec.SpanTracker != nil {
+			sec.SpanTracker.RecordSuccess(span.StartAddr)
+		}
+
+		if readCtx.Err() != nil {
+			return nil
+		}
+
+		// Extract each probe's data from the batch response.
+		for _, pm := range span.Probes {
+			end := pm.ByteOffset + pm.ByteLength
+			if end > len(data) {
+				h.results <- sectionResult{
+					section: sectionName,
+					msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, "", "short response", pm.Probe.Addr, ""),
+				}
+				continue
+			}
+			probeData := data[pm.ByteOffset:end]
+			value := FormatValue(pm.Probe, probeData)
+			rawVal := FormatRawValue(pm.Probe, probeData)
+			h.results <- sectionResult{
+				section: sectionName,
+				msg:     NewRegisterValue(sectionName, pm.GroupName, pm.Probe.Name, value, "", pm.Probe.Addr, rawVal),
+			}
+			// Accumulate result for post-processing.
+			if idx, ok := addrToIdx[pm.Probe.Addr]; ok {
+				probeResults[idx] = broker.Result{Data: make([]byte, len(probeData))}
+				copy(probeResults[idx].Data, probeData)
+			}
+		}
+	}
+
+	h.logger.Info("section read complete",
+		"section", sectionName,
+		"duration_ms", time.Since(start).Milliseconds(),
+		"spans", spanCount,
+		"registers", totalRegisters,
+	)
+
+	return probeResults
+}
+
+// streamStandardRead reads a standard section using batch spans from the pre-computed
+// BatchPlan. Uses the shared readBatchSpans helper for span iteration (D-07).
+// Section timing is logged by readBatchSpans. Fault reading and section_complete
+// are handled after spans complete.
+func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx context.Context) {
+	isFault := sec.faultSection
+
+	go func() {
+		defer sec.reading.Store(false)
+
+		// Use shared helper for batch span reads (D-07).
+		_ = h.readBatchSpans(sectionName, sec, readCtx)
 		if readCtx.Err() != nil {
 			return
 		}
@@ -244,14 +293,6 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				},
 			}
 		}
-
-		// D-05, D-06: Log section read timing at Info level (always-on, no debug flag).
-		h.logger.Info("section read complete",
-			"section", sectionName,
-			"duration_ms", time.Since(start).Milliseconds(),
-			"spans", spanCount,
-			"registers", totalRegisters,
-		)
 
 		// Signal completion
 		h.results <- sectionResult{
@@ -312,131 +353,106 @@ func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
 			return
 		}
 
-		// Step 2: SpanTracker tick (D-06).
-		start := time.Now()
-		spanCount := len(sec.BatchPlan.Spans)
-		var totalRegisters uint16
-
-		if sec.SpanTracker != nil {
-			sec.SpanTracker.Tick()
-		}
-
-		// Step 3: Iterate batch spans with SpanTracker three-state degradation (D-02, D-06).
-		for _, span := range sec.BatchPlan.Spans {
-			if readCtx.Err() != nil {
-				return
-			}
-
-			totalRegisters += span.TotalCount
-
-			var state SpanState
-			var shouldProbe bool
-			if sec.SpanTracker != nil {
-				state = sec.SpanTracker.State(span.StartAddr)
-				shouldProbe = sec.SpanTracker.ShouldProbe(span.StartAddr)
-			}
-
-			// Fully skipped: no reads at all.
-			if state == SpanSkipped && !shouldProbe {
-				continue
-			}
-
-			// Degraded (not probing): individual reads only.
-			if state == SpanDegraded && !shouldProbe {
-				allIndivFailed := h.readSpanIndividualFallback("battery", span, readCtx)
-				if readCtx.Err() != nil {
-					return
-				}
-				if allIndivFailed && sec.SpanTracker != nil {
-					sec.SpanTracker.RecordIndividualFailure(span.StartAddr)
-				} else if !allIndivFailed && sec.SpanTracker != nil {
-					sec.SpanTracker.RecordSuccess(span.StartAddr)
-				}
-				continue
-			}
-
-			// Normal or probing: attempt batch read.
-			data, batchErr := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
-			if batchErr != nil {
-				if shouldProbe {
-					if state == SpanNormal {
-						if sec.SpanTracker != nil {
-							sec.SpanTracker.RecordFailure(span.StartAddr)
-						}
-					}
-					h.logger.Warn("batch span failed, falling back to individual reads",
-						"section", "battery",
-						"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
-						"span_count", span.TotalCount,
-						"error", batchErr,
-					)
-					h.readSpanIndividualFallback("battery", span, readCtx)
-					if readCtx.Err() != nil {
-						return
-					}
-					continue
-				}
-
-				if sec.SpanTracker != nil {
-					sec.SpanTracker.RecordFailure(span.StartAddr)
-				}
-				h.logger.Warn("batch span failed, falling back to individual reads",
-					"section", "battery",
-					"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
-					"span_count", span.TotalCount,
-					"error", batchErr,
-				)
-				h.readSpanIndividualFallback("battery", span, readCtx)
-				if readCtx.Err() != nil {
-					return
-				}
-				continue
-			}
-
-			// Batch read succeeded.
-			if sec.SpanTracker != nil {
-				sec.SpanTracker.RecordSuccess(span.StartAddr)
-			}
-
-			if readCtx.Err() != nil {
-				return
-			}
-
-			// Extract each probe's data from the batch response.
-			for _, pm := range span.Probes {
-				end := pm.ByteOffset + pm.ByteLength
-				if end > len(data) {
-					h.results <- sectionResult{
-						section: "battery",
-						msg:     NewRegisterValue("battery", pm.GroupName, pm.Probe.Name, "", "short response", pm.Probe.Addr, ""),
-					}
-					continue
-				}
-				probeData := data[pm.ByteOffset:end]
-				value := FormatValue(pm.Probe, probeData)
-				rawVal := FormatRawValue(pm.Probe, probeData)
-				h.results <- sectionResult{
-					section: "battery",
-					msg:     NewRegisterValue("battery", pm.GroupName, pm.Probe.Name, value, "", pm.Probe.Addr, rawVal),
-				}
-			}
-		}
-
+		// Step 2: Read all spans via shared helper (D-07).
+		_ = h.readBatchSpans("battery", sec, readCtx)
 		if readCtx.Err() != nil {
 			return
 		}
 
-		// Step 4: Log section read timing and emit section_complete (D-09).
-		h.logger.Info("section read complete",
-			"section", "battery",
-			"duration_ms", time.Since(start).Milliseconds(),
-			"spans", spanCount,
-			"registers", totalRegisters,
-		)
-
 		h.results <- sectionResult{
 			section: "battery",
 			msg:     NewSectionComplete("battery"),
+		}
+	}()
+}
+
+// streamBMSBatchRead reads the BMS section using the shared readBatchSpans helper,
+// then performs BMS-specific post-processing: topology detection, tower bitmap widget,
+// and protection decoding. Per D-06, keeps BMS post-processing isolated from standard path.
+func (h *Hub) streamBMSBatchRead(sec *Section, readCtx context.Context) {
+	go func() {
+		defer sec.reading.Store(false)
+
+		// Step 1: Read all spans via shared helper (D-07).
+		probeResults := h.readBatchSpans("bms", sec, readCtx)
+		if probeResults == nil || readCtx.Err() != nil {
+			return
+		}
+
+		probes := sec.Probes
+
+		// Step 2: Detect topology from 0x900D (same logic as old streamBMSRead Step 2).
+		var detectedStr string
+		var mismatch bool
+		for i, p := range probes {
+			if p.Addr == 0x900D && i < len(probeResults) && probeResults[i].Err == nil && len(probeResults[i].Data) >= 2 {
+				val := binary.BigEndian.Uint16(probeResults[i].Data[:2])
+				pStr, pPack := register.DecodeTopology(val)
+				detectedStr = fmt.Sprintf("%d strings x %d packs", pStr, pPack)
+				if pStr != TopoTowers || pPack != TopoPacksPerTower {
+					mismatch = true
+				}
+				break
+			}
+		}
+
+		// Step 3: Extract tower bitmap from 0x9022 (D-03, same logic as old streamBMSRead Step 3).
+		var towerBitmap uint16
+		for i, p := range probes {
+			if p.Addr == 0x9022 && i < len(probeResults) && probeResults[i].Err == nil && len(probeResults[i].Data) >= 2 {
+				towerBitmap = binary.BigEndian.Uint16(probeResults[i].Data[:2])
+				break
+			}
+		}
+
+		onlineBitmaps := make([]uint16, TopoTowers)
+		for t := 0; t < TopoTowers; t++ {
+			if (towerBitmap>>uint(t))&1 == 1 {
+				onlineBitmaps[t] = (1 << uint(TopoPacksPerTower)) - 1
+			}
+		}
+
+		bitmapGroup := GroupData{
+			Name: "Battery Topology",
+			Type: "bitmap",
+			Bitmap: &BitmapData{
+				Towers:           TopoTowers,
+				PacksPerTower:    TopoPacksPerTower,
+				Online:           onlineBitmaps,
+				DetectedTopology: detectedStr,
+				Mismatch:         mismatch,
+			},
+		}
+
+		// Step 4: Collect protection probe results for buildProtectionGroup (D-05).
+		// Protection probes are identified by address match against the known set.
+		isProtectionAddr := func(addr uint16) bool {
+			switch addr {
+			case 0x9014, 0x9015, 0x9016, 0x9017, 0x901C, 0x901D:
+				return true
+			}
+			return false
+		}
+		var protProbes []register.Probe
+		var protResults []broker.Result
+		for i, p := range probes {
+			if isProtectionAddr(p.Addr) {
+				protProbes = append(protProbes, p)
+				protResults = append(protResults, probeResults[i])
+			}
+		}
+		protGroup := h.buildProtectionGroup(protProbes, protResults)
+
+		// Step 5: Send bitmap and protection as batched section_data.
+		h.results <- sectionResult{
+			section: "bms",
+			msg:     NewGroupedSectionData("bms", []GroupData{bitmapGroup, protGroup}, nil),
+		}
+
+		// Step 6: section_complete.
+		h.results <- sectionResult{
+			section: "bms",
+			msg:     NewSectionComplete("bms"),
 		}
 	}()
 }
@@ -585,194 +601,3 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 	}()
 }
 
-// streamBMSRead replaces triggerBMSRead with per-register streaming.
-// Streams individual BMS info registers while collecting results for
-// topology/bitmap/protection post-processing (Pitfall 6: "stream the reads, batch the computation").
-func (h *Hub) streamBMSRead(sec *Section, readCtx context.Context) {
-	groups := sec.Groups
-	probes := sec.Probes
-
-	// Build read list for protection registers (batch at end)
-	protectionProbes := register.BMSProtectionProbes()
-
-	go func() {
-		defer sec.reading.Store(false)
-
-		// Step 1: Stream each BMS info probe individually
-		probeResults := make([]broker.Result, len(probes))
-		probeIdx := 0
-
-		for _, g := range groups {
-			// Collect BMS clock registers for composition
-			var clockHi, clockLo uint16
-			var hasClockHi, hasClockLo bool
-			var swChar string
-			var swMajor, swNonStd, swMinor uint16
-			var hasSWChar, hasSWMajor, hasSWNonStd, hasSWMinor bool
-
-			for _, p := range g.Probes {
-				if readCtx.Err() != nil {
-					return
-				}
-
-				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
-				probeResults[probeIdx] = broker.Result{Data: data, Err: err}
-				probeIdx++
-
-				if err != nil {
-					// WR-02: skip send if context cancelled
-					if readCtx.Err() != nil {
-						return
-					}
-					h.results <- sectionResult{
-						section: "bms",
-						msg:     NewRegisterValue("bms", g.Name, p.Name, "", err.Error(), p.Addr, ""),
-					}
-					continue
-				}
-
-				// Collect composition registers while still streaming individual values
-				switch p.Addr {
-				case 0x9004:
-					if len(data) >= 2 {
-						clockHi = binary.BigEndian.Uint16(data[:2])
-						hasClockHi = true
-					}
-				case 0x9005:
-					if len(data) >= 2 {
-						clockLo = binary.BigEndian.Uint16(data[:2])
-						hasClockLo = true
-					}
-				case 0x9018:
-					swChar = FormatValue(p, data)
-					hasSWChar = true
-				case 0x9019:
-					if len(data) >= 2 {
-						swMajor = binary.BigEndian.Uint16(data[:2])
-						hasSWMajor = true
-					}
-				case 0x901A:
-					if len(data) >= 2 {
-						swNonStd = binary.BigEndian.Uint16(data[:2])
-						hasSWNonStd = true
-					}
-				case 0x901B:
-					if len(data) >= 2 {
-						swMinor = binary.BigEndian.Uint16(data[:2])
-						hasSWMinor = true
-					}
-				case 0x900D:
-					if len(data) >= 2 {
-						val := binary.BigEndian.Uint16(data[:2])
-						pStr, pPack := register.DecodeTopology(val)
-						value := fmt.Sprintf("%d strings x %d packs (0x%04X)", pStr, pPack, val)
-						if readCtx.Err() != nil {
-							return
-						}
-						h.results <- sectionResult{
-							section: "bms",
-							msg:     NewRegisterValue("bms", g.Name, p.Name, value, "", p.Addr, FormatRawValue(p, data)),
-						}
-						continue // topology already streamed with custom format
-					}
-				}
-
-				// WR-02: skip send if context cancelled after ReadRegisters returned
-				if readCtx.Err() != nil {
-					return
-				}
-				// Stream register value (including composition source registers)
-				h.results <- sectionResult{
-					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), "", p.Addr, FormatRawValue(p, data)),
-				}
-			}
-
-			// After group: send composed BMS clock
-			if hasClockHi && hasClockLo && readCtx.Err() == nil {
-				clockVal := uint32(clockHi)<<16 | uint32(clockLo)
-				h.results <- sectionResult{
-					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, "System Clock", register.DecodeBMSClock(clockVal), "", 0, ""),
-				}
-			}
-
-			// After group: send composed SW version
-			if hasSWChar && hasSWMajor && hasSWNonStd && hasSWMinor && readCtx.Err() == nil {
-				h.results <- sectionResult{
-					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, "SW Version", fmt.Sprintf("%s%d.%d.%d", swChar, swMajor, swNonStd, swMinor), "", 0, ""),
-				}
-			}
-		}
-
-		// WR-02: bail out if context cancelled before post-processing
-		if readCtx.Err() != nil {
-			return
-		}
-
-		// Step 2: Detect topology from 0x900D
-		var detectedStr string
-		var mismatch bool
-		for i, p := range probes {
-			if p.Addr == 0x900D && i < len(probeResults) && probeResults[i].Err == nil && len(probeResults[i].Data) >= 2 {
-				val := binary.BigEndian.Uint16(probeResults[i].Data[:2])
-				pStr, pPack := register.DecodeTopology(val)
-				detectedStr = fmt.Sprintf("%d strings x %d packs", pStr, pPack)
-				if pStr != TopoTowers || pPack != TopoPacksPerTower {
-					mismatch = true
-				}
-				break
-			}
-		}
-
-		// Step 3: Extract tower bitmap from 0x9022
-		var towerBitmap uint16
-		for i, p := range probes {
-			if p.Addr == 0x9022 && i < len(probeResults) && probeResults[i].Err == nil && len(probeResults[i].Data) >= 2 {
-				towerBitmap = binary.BigEndian.Uint16(probeResults[i].Data[:2])
-				break
-			}
-		}
-
-		onlineBitmaps := make([]uint16, TopoTowers)
-		for t := 0; t < TopoTowers; t++ {
-			if (towerBitmap>>uint(t))&1 == 1 {
-				onlineBitmaps[t] = (1 << uint(TopoPacksPerTower)) - 1
-			}
-		}
-
-		// Step 4: Send bitmap and protection as batched section_data (these are computed groups)
-		bitmapGroup := GroupData{
-			Name: "Battery Topology",
-			Type: "bitmap",
-			Bitmap: &BitmapData{
-				Towers:           TopoTowers,
-				PacksPerTower:    TopoPacksPerTower,
-				Online:           onlineBitmaps,
-				DetectedTopology: detectedStr,
-				Mismatch:         mismatch,
-			},
-		}
-
-		// Read protection registers in batch (small set, 6 registers)
-		var protReads []broker.ReadRequest
-		for _, pp := range protectionProbes {
-			protReads = append(protReads, broker.ReadRequest{Addr: pp.Addr, Count: pp.Count})
-		}
-		protResults := h.broker.ReadBatch(readCtx, protReads)
-		protGroup := h.buildProtectionGroup(protectionProbes, protResults)
-
-		// Send computed groups as section_data for bitmap/protection widgets
-		h.results <- sectionResult{
-			section: "bms",
-			msg:     NewGroupedSectionData("bms", []GroupData{bitmapGroup, protGroup}, nil),
-		}
-
-		// Signal completion
-		h.results <- sectionResult{
-			section: "bms",
-			msg:     NewSectionComplete("bms"),
-		}
-	}()
-}

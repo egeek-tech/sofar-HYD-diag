@@ -400,7 +400,7 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 	// Dispatch to streaming read handlers (Phase 07: per-register streaming)
 	switch sectionName {
 	case "bms":
-		h.streamBMSRead(sec, readCtx)
+		h.streamBMSBatchRead(sec, readCtx)
 		return
 	case "battery":
 		h.streamBatteryBatchRead(sec, readCtx)
@@ -409,108 +409,6 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 
 	// Standard streaming read path for system, grid, eps, pv
 	h.streamStandardRead(sectionName, sec, readCtx)
-}
-
-
-
-// buildBMSGroupData builds GroupData for BMS info groups with special handling for
-// BMS system clock composition (0x9004+0x9005 -> DecodeBMSClock) and SW version composition.
-func (h *Hub) buildBMSGroupData(groups []register.ProbeGroup, probes []register.Probe, results []broker.Result) []GroupData {
-	groupDataSlice := make([]GroupData, 0, len(groups))
-	probeIdx := 0
-
-	for _, g := range groups {
-		gd := GroupData{
-			Name:   g.Name,
-			Layout: g.Layout,
-			Items:  make(map[string]string),
-		}
-
-		// Collect BMS clock registers for composition
-		var clockHi, clockLo uint16
-		var hasClockHi, hasClockLo bool
-
-		// Collect SW version components
-		var swChar string
-		var swMajor, swNonStd, swMinor uint16
-		var hasSWChar, hasSWMajor, hasSWNonStd, hasSWMinor bool
-
-		for _, p := range g.Probes {
-			if probeIdx >= len(results) {
-				break
-			}
-			r := results[probeIdx]
-			probeIdx++
-
-			if r.Err != nil {
-				continue
-			}
-
-			// Handle BMS clock composition: 0x9004 (hi) + 0x9005 (lo) -> DecodeBMSClock
-			switch p.Addr {
-			case 0x9004:
-				if len(r.Data) >= 2 {
-					clockHi = binary.BigEndian.Uint16(r.Data[:2])
-					hasClockHi = true
-				}
-				continue
-			case 0x9005:
-				if len(r.Data) >= 2 {
-					clockLo = binary.BigEndian.Uint16(r.Data[:2])
-					hasClockLo = true
-				}
-				continue
-			// Handle SW version composition: 0x9018 (char) + 0x9019 (major) + 0x901A (non-std) + 0x901B (minor)
-			case 0x9018:
-				swChar = FormatValue(p, r.Data)
-				hasSWChar = true
-				continue
-			case 0x9019:
-				if len(r.Data) >= 2 {
-					swMajor = binary.BigEndian.Uint16(r.Data[:2])
-					hasSWMajor = true
-				}
-				continue
-			case 0x901A:
-				if len(r.Data) >= 2 {
-					swNonStd = binary.BigEndian.Uint16(r.Data[:2])
-					hasSWNonStd = true
-				}
-				continue
-			case 0x901B:
-				if len(r.Data) >= 2 {
-					swMinor = binary.BigEndian.Uint16(r.Data[:2])
-					hasSWMinor = true
-				}
-				continue
-			case 0x900D:
-				// Topology: decode and show human-readable
-				if len(r.Data) >= 2 {
-					val := binary.BigEndian.Uint16(r.Data[:2])
-					pStr, pPack := register.DecodeTopology(val)
-					gd.Items[p.Name] = fmt.Sprintf("%d strings x %d packs (0x%04X)", pStr, pPack, val)
-				}
-				continue
-			}
-
-			gd.Items[p.Name] = FormatValue(p, r.Data)
-		}
-
-		// Compose BMS clock if both halves present
-		if hasClockHi && hasClockLo {
-			clockVal := uint32(clockHi)<<16 | uint32(clockLo)
-			gd.Items["System Clock"] = register.DecodeBMSClock(clockVal)
-		}
-
-		// Compose SW version if all components present
-		if hasSWChar && hasSWMajor && hasSWNonStd && hasSWMinor {
-			gd.Items["SW Version"] = fmt.Sprintf("%s%d.%d.%d", swChar, swMajor, swNonStd, swMinor)
-		}
-
-		groupDataSlice = append(groupDataSlice, gd)
-	}
-
-	return groupDataSlice
 }
 
 // buildProtectionGroup creates a GroupData with Type="protection" from BMS protection/alarm registers.
