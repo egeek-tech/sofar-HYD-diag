@@ -1171,19 +1171,29 @@ func TestSystemSectionFaultsActive(t *testing.T) {
 func TestSystemSectionTimeComposition(t *testing.T) {
 	mb := newMockBroker()
 
-	// Build mock results for system section
-	results := makeMockResultsForSection(register.SystemGroups, true)
-
-	// Set time register values: 2026-03-16 14:30:45
-	results[7] = broker.Result{Data: uint16Bytes(26), Err: nil}  // Year (offset from 2000)
-	results[8] = broker.Result{Data: uint16Bytes(3), Err: nil}   // Month
-	results[9] = broker.Result{Data: uint16Bytes(16), Err: nil}  // Day
-	results[10] = broker.Result{Data: uint16Bytes(14), Err: nil} // Hour
-	results[11] = broker.Result{Data: uint16Bytes(30), Err: nil} // Min
-	results[12] = broker.Result{Data: uint16Bytes(45), Err: nil} // Sec
-
+	// Build per-span mock data. The batch-span read path calls ReadRegisters(span.StartAddr, span.TotalCount)
+	// which checks registerResults first, so we populate per-span contiguous byte buffers.
+	mb.registerResults = make(map[uint16]broker.Result)
+	plan := register.AnalyzeBatchPlan(register.SystemGroups)
+	for _, span := range plan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			if pm.Probe.Name == "System time" && pm.ByteLength >= 12 {
+				// 2026-03-16 14:30:45
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 26)    // Year
+				binary.BigEndian.PutUint16(data[pm.ByteOffset+2:pm.ByteOffset+4], 3)   // Month
+				binary.BigEndian.PutUint16(data[pm.ByteOffset+4:pm.ByteOffset+6], 16)  // Day
+				binary.BigEndian.PutUint16(data[pm.ByteOffset+6:pm.ByteOffset+8], 14)  // Hour
+				binary.BigEndian.PutUint16(data[pm.ByteOffset+8:pm.ByteOffset+10], 30) // Min
+				binary.BigEndian.PutUint16(data[pm.ByteOffset+10:pm.ByteOffset+12], 45) // Sec
+			}
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+	// Also set batchResults for fault register reads (isFault section).
+	faultResults := makeMockResultsForSection(register.SystemGroups, true)
 	mb.mu.Lock()
-	mb.batchResults = results
+	mb.batchResults = faultResults
 	mb.mu.Unlock()
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -1197,30 +1207,41 @@ func TestSystemSectionTimeComposition(t *testing.T) {
 	// Streaming model: time composition sends a composed "System time" register_value
 	// after all 6 time registers are collected within the group.
 	// Individual time registers are NOT streamed.
-	allMsgs := drainClientMessages(send, 2*time.Second)
+	// Use raw JSON drain so we can unmarshal into RegisterValueMessage (OutboundMessage
+	// does not carry Name/Value fields for register_value messages).
+	rawMsgs := drainRawMessages(send, 2*time.Second)
 
 	// Look for composed "System time" register_value
 	foundComposed := false
-	for _, m := range allMsgs {
-		// RegisterValueMessage unmarshals into OutboundMessage with Type field
-		// but the "name" and "value" fields are in the JSON -- check raw
-		if m.Type == hub.MsgTypeRegisterValue {
-			// The OutboundMessage doesn't have Name/Value fields for register_value,
-			// but the Data map won't be populated either. We need to check the raw JSON.
-			// Since we can't easily re-extract, check that no individual time register messages appear
+	for _, raw := range rawMsgs {
+		var rv hub.RegisterValueMessage
+		if err := json.Unmarshal(raw, &rv); err != nil {
 			continue
 		}
+		if rv.Type == hub.MsgTypeRegisterValue && rv.Name == "System time" {
+			foundComposed = true
+			// Expected: ComposeSystemTime(26, 3, 16, 14, 30, 45) -> "14:30:45 16-03-2026"
+			want := "14:30:45 16-03-2026"
+			if rv.Value != want {
+				t.Errorf("System time value = %q, want %q", rv.Value, want)
+			}
+			break
+		}
 	}
-	_ = foundComposed
+	if !foundComposed {
+		t.Error("expected register_value message for composed 'System time'")
+	}
 
-	// Re-drain with raw JSON to check register names
-	// The time composition test needs to verify at the raw JSON level
-	// since OutboundMessage doesn't capture RegisterValueMessage fields.
-	// For now, verify that section_complete arrives (streaming works end-to-end).
+	// Also verify section_complete arrives (streaming works end-to-end).
 	foundComplete := false
-	for _, m := range allMsgs {
-		if m.Type == hub.MsgTypeSectionComplete {
+	for _, raw := range rawMsgs {
+		var m map[string]interface{}
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		if m["type"] == hub.MsgTypeSectionComplete {
 			foundComplete = true
+			break
 		}
 	}
 	if !foundComplete {
