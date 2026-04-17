@@ -1031,57 +1031,117 @@ func TestProbeGroupType(t *testing.T) {
 
 func TestBMSInfoGroups(t *testing.T) {
 	groups := BMSInfoGroups()
-	if len(groups) < 1 {
-		t.Fatal("BMSInfoGroups returned empty slice")
+	if len(groups) != 2 {
+		t.Fatalf("BMSInfoGroups returned %d groups, want 2", len(groups))
 	}
+
+	// Group 0: BMS Info with 18 probes
 	bmsInfo := groups[0]
 	if bmsInfo.Name != "BMS Info" {
 		t.Errorf("BMSInfoGroups[0].Name = %q, want %q", bmsInfo.Name, "BMS Info")
 	}
+	if len(bmsInfo.Probes) != 18 {
+		t.Errorf("BMSInfoGroups[0] probes = %d, want 18", len(bmsInfo.Probes))
+	}
 
-	// Check for system clock hi at 0x9004
-	foundClockHi := false
-	foundSN := false
+	// Check that 0x9004 is a bms_clock Composite probe
+	foundClock := false
 	for _, p := range bmsInfo.Probes {
 		if p.Addr == 0x9004 {
-			foundClockHi = true
+			foundClock = true
+			if p.Composite != "bms_clock" {
+				t.Errorf("probe 0x9004 Composite = %q, want %q", p.Composite, "bms_clock")
+			}
+			if p.Count != 2 {
+				t.Errorf("probe 0x9004 Count = %d, want 2", p.Count)
+			}
 		}
+	}
+	if !foundClock {
+		t.Error("BMSInfoGroups missing bms_clock probe at 0x9004")
+	}
+
+	// Check that 0x9018 is a bms_sw_version Composite probe
+	foundSW := false
+	for _, p := range bmsInfo.Probes {
+		if p.Addr == 0x9018 {
+			foundSW = true
+			if p.Composite != "bms_sw_version" {
+				t.Errorf("probe 0x9018 Composite = %q, want %q", p.Composite, "bms_sw_version")
+			}
+			if p.Count != 4 {
+				t.Errorf("probe 0x9018 Count = %d, want 4", p.Count)
+			}
+		}
+	}
+	if !foundSW {
+		t.Error("BMSInfoGroups missing bms_sw_version probe at 0x9018")
+	}
+
+	// Check SN probe
+	foundSN := false
+	for _, p := range bmsInfo.Probes {
 		if p.Addr == 0x9024 && p.Count == 10 && p.IsASCII {
 			foundSN = true
 		}
-	}
-	if !foundClockHi {
-		t.Error("BMSInfoGroups missing probe at 0x9004 (clock hi)")
 	}
 	if !foundSN {
 		t.Error("BMSInfoGroups missing SN probe at 0x9024 (Count 10, IsASCII)")
 	}
 
-	// Check key probes exist
-	expectedAddrs := []uint16{0x9004, 0x9005, 0x9006, 0x9007, 0x900B, 0x900C, 0x900D, 0x900E, 0x900F, 0x9010, 0x9011, 0x9012, 0x9013, 0x9024, 0x9018, 0x9019, 0x901A, 0x901B}
+	// Check BMS Info expected addresses (no more 0x9005, 0x9019, 0x901A, 0x901B)
+	expectedAddrs := []uint16{0x9004, 0x9006, 0x9007, 0x900B, 0x900C, 0x900D, 0x900E, 0x900F, 0x9010, 0x9011, 0x9012, 0x9013, 0x9018, 0x9024, 0x9022, 0x9023, 0x902F, 0x9030}
 	addrSet := make(map[uint16]bool)
 	for _, p := range bmsInfo.Probes {
 		addrSet[p.Addr] = true
 	}
 	for _, addr := range expectedAddrs {
 		if !addrSet[addr] {
-			t.Errorf("BMSInfoGroups missing probe at 0x%04X", addr)
+			t.Errorf("BMSInfoGroups BMS Info missing probe at 0x%04X", addr)
+		}
+	}
+
+	// Group 1: Protection with 6 probes
+	prot := groups[1]
+	if prot.Name != "Protection" {
+		t.Errorf("BMSInfoGroups[1].Name = %q, want %q", prot.Name, "Protection")
+	}
+	if prot.Type != "protection" {
+		t.Errorf("BMSInfoGroups[1].Type = %q, want %q", prot.Type, "protection")
+	}
+	if len(prot.Probes) != 6 {
+		t.Errorf("BMSInfoGroups[1] probes = %d, want 6", len(prot.Probes))
+	}
+	protExpected := []uint16{0x9014, 0x9015, 0x9016, 0x9017, 0x901C, 0x901D}
+	for i, addr := range protExpected {
+		if i < len(prot.Probes) && prot.Probes[i].Addr != addr {
+			t.Errorf("Protection[%d].Addr = 0x%04X, want 0x%04X", i, prot.Probes[i].Addr, addr)
 		}
 	}
 }
 
-func TestBMSProtectionProbes(t *testing.T) {
-	probes := BMSProtectionProbes()
-	if len(probes) != 6 {
-		t.Fatalf("BMSProtectionProbes len = %d, want 6", len(probes))
+func TestBMSProtectionInGroups(t *testing.T) {
+	groups := BMSInfoGroups()
+	if len(groups) < 2 {
+		t.Fatal("BMSInfoGroups returned fewer than 2 groups")
+	}
+	prot := groups[1]
+	if prot.Name != "Protection" {
+		t.Errorf("groups[1].Name = %q, want %q", prot.Name, "Protection")
+	}
+	if prot.Type != "protection" {
+		t.Errorf("groups[1].Type = %q, want %q", prot.Type, "protection")
+	}
+	if len(prot.Probes) != 6 {
+		t.Fatalf("Protection probes = %d, want 6", len(prot.Probes))
 	}
 	expectedAddrs := []uint16{0x9014, 0x9015, 0x9016, 0x9017, 0x901C, 0x901D}
 	for i, addr := range expectedAddrs {
-		if probes[i].Addr != addr {
-			t.Errorf("BMSProtectionProbes[%d].Addr = 0x%04X, want 0x%04X", i, probes[i].Addr, addr)
+		if prot.Probes[i].Addr != addr {
+			t.Errorf("Protection[%d].Addr = 0x%04X, want 0x%04X", i, prot.Probes[i].Addr, addr)
 		}
-		if probes[i].Count != 1 {
-			t.Errorf("BMSProtectionProbes[%d].Count = %d, want 1", i, probes[i].Count)
+		if prot.Probes[i].Count != 1 {
+			t.Errorf("Protection[%d].Count = %d, want 1", i, prot.Probes[i].Count)
 		}
 	}
 }
@@ -1170,6 +1230,35 @@ func TestBMSInfoGroupsIncludesOnlineBitmap(t *testing.T) {
 	}
 	if !found {
 		t.Error("BMSInfoGroups missing probe at 0x9022")
+	}
+}
+
+func TestBMSInfoGroupsBatchPlan(t *testing.T) {
+	groups := BMSInfoGroups()
+	plan := AnalyzeBatchPlan(groups)
+	if len(plan.Spans) != 3 {
+		t.Fatalf("AnalyzeBatchPlan spans = %d, want 3", len(plan.Spans))
+	}
+	// Span 0: 0x9004..0x901D (BMS Info + Protection contiguous block)
+	if plan.Spans[0].StartAddr != 0x9004 {
+		t.Errorf("Span[0].StartAddr = 0x%04X, want 0x9004", plan.Spans[0].StartAddr)
+	}
+	if plan.Spans[0].TotalCount != 26 {
+		t.Errorf("Span[0].TotalCount = %d, want 26", plan.Spans[0].TotalCount)
+	}
+	// Span 1: 0x9022..0x902D (Online Bitmap, Hibernation, SN block)
+	if plan.Spans[1].StartAddr != 0x9022 {
+		t.Errorf("Span[1].StartAddr = 0x%04X, want 0x9022", plan.Spans[1].StartAddr)
+	}
+	if plan.Spans[1].TotalCount != 12 {
+		t.Errorf("Span[1].TotalCount = %d, want 12", plan.Spans[1].TotalCount)
+	}
+	// Span 2: 0x902F..0x9030 (Max Discharge/Charge Current)
+	if plan.Spans[2].StartAddr != 0x902F {
+		t.Errorf("Span[2].StartAddr = 0x%04X, want 0x902F", plan.Spans[2].StartAddr)
+	}
+	if plan.Spans[2].TotalCount != 2 {
+		t.Errorf("Span[2].TotalCount = %d, want 2", plan.Spans[2].TotalCount)
 	}
 }
 

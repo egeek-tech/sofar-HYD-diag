@@ -48,13 +48,13 @@ func GenerateBatteryGroups(channels int) []ProbeGroup {
 
 // BMSInfoGroups returns ProbeGroup definitions for BMS global information.
 // From Sofar Modbus-G3 V1.38 section 5.10.1.
+// Returns 2 groups: BMS Info (18 probes) and Protection (6 probes).
 func BMSInfoGroups() []ProbeGroup {
 	return []ProbeGroup{
 		{
 			Name: "BMS Info",
 			Probes: []Probe{
-				{Name: "System Clock Hi", Addr: 0x9004, Count: 1},
-				{Name: "System Clock Lo", Addr: 0x9005, Count: 1},
+				{Name: "System Clock", Addr: 0x9004, Count: 2, Composite: "bms_clock"},
 				{Name: "CAN Protocol Ver", Addr: 0x9006, Count: 1},
 				{Name: "Manufacturer", Addr: 0x9007, Count: 4, IsASCII: true},
 				{Name: "BMS Version", Addr: 0x900B, Count: 1},
@@ -66,15 +66,24 @@ func BMSInfoGroups() []ProbeGroup {
 				{Name: "Avg Cell Temp", Addr: 0x9011, Count: 1, Signed: true, Unit: "\u00b0C", Scale: 0.1},
 				{Name: "SOC", Addr: 0x9012, Count: 1, Unit: "%", Scale: 1},
 				{Name: "Health Level", Addr: 0x9013, Count: 1, Unit: "%", Scale: 1},
-				{Name: "SW Version Char", Addr: 0x9018, Count: 1, IsASCII: true},
-				{Name: "SW Major", Addr: 0x9019, Count: 1},
-				{Name: "SW Non-standard", Addr: 0x901A, Count: 1},
-				{Name: "SW Minor", Addr: 0x901B, Count: 1},
+				{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"},
 				{Name: "SN", Addr: 0x9024, Count: 10, IsASCII: true},
 				{Name: "Online Bitmap", Addr: 0x9022, Count: 1},
-			{Name: "Hibernation State", Addr: 0x9023, Count: 1},
-			{Name: "Max Discharge Current", Addr: 0x902F, Count: 1, Signed: true, Unit: "A", Scale: 1},
-			{Name: "Max Charge Current", Addr: 0x9030, Count: 1, Signed: true, Unit: "A", Scale: 1},
+				{Name: "Hibernation State", Addr: 0x9023, Count: 1},
+				{Name: "Max Discharge Current", Addr: 0x902F, Count: 1, Signed: true, Unit: "A", Scale: 1},
+				{Name: "Max Charge Current", Addr: 0x9030, Count: 1, Signed: true, Unit: "A", Scale: 1},
+			},
+		},
+		{
+			Name: "Protection",
+			Type: "protection",
+			Probes: []Probe{
+				{Name: "Protection 0", Addr: 0x9014, Count: 1},
+				{Name: "Protection 1", Addr: 0x9015, Count: 1},
+				{Name: "Alarm 0", Addr: 0x9016, Count: 1},
+				{Name: "Alarm 1", Addr: 0x9017, Count: 1},
+				{Name: "Protection 2", Addr: 0x901C, Count: 1},
+				{Name: "Protection 3", Addr: 0x901D, Count: 1},
 			},
 		},
 	}
@@ -94,19 +103,6 @@ func InternalInfoGroups() []ProbeGroup {
 				{Name: "Rated power", Addr: 0x06ED, Count: 1, Unit: "kW", Scale: 0.1},
 			},
 		},
-	}
-}
-
-// BMSProtectionProbes returns a flat probe slice for the 6 BMS protection/alarm registers.
-// From Sofar Modbus-G3 V1.38 section 5.10.1.
-func BMSProtectionProbes() []Probe {
-	return []Probe{
-		{Name: "Protection 0", Addr: 0x9014, Count: 1},
-		{Name: "Protection 1", Addr: 0x9015, Count: 1},
-		{Name: "Alarm 0", Addr: 0x9016, Count: 1},
-		{Name: "Alarm 1", Addr: 0x9017, Count: 1},
-		{Name: "Protection 2", Addr: 0x901C, Count: 1},
-		{Name: "Protection 3", Addr: 0x901D, Count: 1},
 	}
 }
 
