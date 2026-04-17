@@ -87,6 +87,9 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 	h.readDelayMs = 500
 	h.packSettleMs = 1000
 	h.packSpanTracker = NewSpanTracker(DefaultDegradationThreshold, h.logger.With("component", "pack-tracker"))
+	// Initialize ctx/cancel so ClientCount and RunFunc are safe before Run().
+	// Run() replaces this with the caller-provided context.
+	h.ctx, h.cancel = context.WithCancel(context.Background())
 	return h
 }
 
@@ -159,6 +162,7 @@ func (h *Hub) RunFunc(fn func()) {
 
 // Run starts the hub event loop. Blocks until ctx is cancelled.
 func (h *Hub) Run(ctx context.Context) {
+	h.cancel() // cancel the placeholder context from NewHub
 	h.ctx, h.cancel = context.WithCancel(ctx)
 	defer h.cancel()
 
