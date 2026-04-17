@@ -3804,3 +3804,167 @@ func TestBatteryBatchRead_SpanFallback(t *testing.T) {
 		"all probes should have register_value messages even with span fallback")
 }
 
+// === Phase 25-02: Pack batch integration tests ===
+
+// setupPackBatchSpanTest creates a mockBroker configured for pack batch span reads.
+// Sets up span-level batch responses with known values (100 for all probes).
+// Returns the mock broker and the batch plan for assertion.
+func setupPackBatchSpanTest(t *testing.T) (*mockBroker, register.BatchPlan) {
+	t.Helper()
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+	mb.spanFailAddrs = make(map[uint16]error)
+
+	groups := register.PackProbeGroups()
+	plan := register.AnalyzeBatchPlan(groups)
+	require.NotEmpty(t, plan.Spans, "pack batch plan must have spans")
+
+	// Set up all spans to succeed at batch level with default probe value 100.
+	for _, span := range plan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			if pm.ByteLength >= 2 {
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 100)
+			}
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	return mb, plan
+}
+
+func TestPackBatchRead_SpanReads(t *testing.T) {
+	mb, plan := setupPackBatchSpanTest(t)
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe to BMS section so we receive pack messages.
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+	drainRawMessages(send, 2*time.Second)
+
+	// Trigger pack select (input=1, tower=1, pack=1).
+	h.Command(c, hub.InboundMessage{
+		Type:  hub.MsgTypeSelectPack,
+		Input: 1, Tower: 1, Pack: 1,
+	})
+
+	// Collect messages until section_complete.
+	msgs, idx := waitForMessageType(t, send, hub.MsgTypeSectionComplete, 5*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received")
+
+	// Count register_value messages (exclude schema + section_complete).
+	regCount := 0
+	for _, m := range msgs {
+		if m.Type == hub.MsgTypeRegisterValue {
+			regCount++
+		}
+	}
+
+	// Supported probes: spans 1 and 2 succeed. Spans 3 and 4 may fail (SpanTracker handles).
+	// At minimum, span 1 (57 regs worth of probes) + span 2 (4 regs) should produce values.
+	// Count probes in first two spans.
+	var expectedMin int
+	for i, span := range plan.Spans {
+		if i < 2 { // first two spans are supported
+			expectedMin += len(span.Probes)
+		}
+	}
+	require.GreaterOrEqual(t, regCount, expectedMin,
+		"expected at least %d register_value messages from supported spans, got %d", expectedMin, regCount)
+}
+
+func TestPackBatchRead_WriteAndSettle(t *testing.T) {
+	mb, _ := setupPackBatchSpanTest(t)
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe to BMS section so we receive pack messages.
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+	drainRawMessages(send, 2*time.Second)
+
+	// Trigger pack select for input=1, tower=2, pack=3.
+	h.Command(c, hub.InboundMessage{
+		Type:  hub.MsgTypeSelectPack,
+		Input: 1, Tower: 2, Pack: 3,
+	})
+
+	// Wait for section_complete to know the read finished.
+	waitForMessageType(t, send, hub.MsgTypeSectionComplete, 5*time.Second)
+
+	// Verify 0x9020 was written with the correct query word.
+	writes := mb.getWriteCalls()
+
+	require.NotEmpty(t, writes, "expected at least one WriteRegister call")
+	assert.Equal(t, uint16(0x9020), writes[0].Addr, "first write must be to 0x9020")
+
+	// Verify the query word encodes input=1, tower=2, pack=3.
+	expectedQuery := register.EncodePackQuery(1, 2, 3, hub.TopoTowers)
+	assert.Equal(t, expectedQuery, writes[0].Value,
+		"0x9020 write value should encode input=1 tower=2 pack=3")
+}
+
+func TestPackBatchRead_SpanDegradation(t *testing.T) {
+	mb, plan := setupPackBatchSpanTest(t)
+
+	// Find the span that starts at or covers 0x9104.
+	var failSpanAddr uint16
+	for _, span := range plan.Spans {
+		if span.StartAddr >= 0x9104 {
+			failSpanAddr = span.StartAddr
+			break
+		}
+	}
+	require.NotZero(t, failSpanAddr, "must find a span covering 0x9104+")
+
+	// Configure that span to fail at batch level.
+	mb.spanFailAddrs[failSpanAddr] = fmt.Errorf("illegal data address")
+	// Also make individual reads for probes in that span fail.
+	for _, span := range plan.Spans {
+		if span.StartAddr == failSpanAddr {
+			for _, pm := range span.Probes {
+				mb.registerResults[pm.Probe.Addr] = broker.Result{Err: fmt.Errorf("illegal data address")}
+			}
+			break
+		}
+	}
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Subscribe to BMS section so we receive pack messages.
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+	drainRawMessages(send, 2*time.Second)
+
+	// Run multiple pack reads to allow SpanTracker to degrade the span.
+	// Degradation threshold is 3 consecutive failures -> SpanDegraded.
+	// select_pack resets tracker (count=0), then read_cycles accumulate failures.
+	h.Command(c, hub.InboundMessage{
+		Type:  hub.MsgTypeSelectPack,
+		Input: 1, Tower: 1, Pack: 1,
+	})
+	collectRawMessages(t, send, 5*time.Second)
+	time.Sleep(100 * time.Millisecond)
+
+	for i := 0; i < 2; i++ {
+		h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "bms"})
+		collectRawMessages(t, send, 5*time.Second)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Verify the 0x9104 span is no longer in Normal state.
+	spanState := h.GetPackSpanState(failSpanAddr)
+	assert.NotEqual(t, hub.SpanNormal, spanState,
+		"span at 0x%04X should be degraded or skipped after repeated failures, got %v", failSpanAddr, spanState)
+}
+
