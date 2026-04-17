@@ -327,7 +327,13 @@ func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
 				currentChannels := countBatteryChannels(sec.Groups)
 				if detected != currentChannels {
 					// Channel count changed: rebuild with InternalInfoGroups (D-04, D-07).
-					newGroups := append(register.GenerateBatteryGroups(detected), register.InternalInfoGroups()...)
+					// Allocate a fresh slice to avoid mutating backing arrays of
+					// GenerateBatteryGroups or InternalInfoGroups (latent shared-array hazard).
+					battGroups := register.GenerateBatteryGroups(detected)
+					infoGroups := register.InternalInfoGroups()
+					newGroups := make([]register.ProbeGroup, 0, len(battGroups)+len(infoGroups))
+					newGroups = append(newGroups, battGroups...)
+					newGroups = append(newGroups, infoGroups...)
 					retrigger = true
 					select {
 					case h.funcs <- func() {
