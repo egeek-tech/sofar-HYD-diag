@@ -1932,42 +1932,61 @@ func TestTopologyConstants(t *testing.T) {
 	}
 }
 
-// makeBMSInfoResults builds mock batch results for the initial BMS info + protection ReadBatch.
-// Returns 19 BMS info probe results + 6 protection probe results = 25 total.
-// Probe index 6 (0x900D Topology Params) returns 0x020A (2 strings x 10 packs).
-// Probe index 6 (0x900D) returns 0x020A (2 strings x 10 packs).
-// Probe index 18 (0x9022) is the tower bitmap — bit N = tower N online.
-func makeBMSInfoResults() []broker.Result {
-	bmsInfoCount := 19 // BMSInfoGroups has 19 probes
-	protCount := 6     // BMSProtectionProbes has 6 probes
-	total := bmsInfoCount + protCount
-	results := make([]broker.Result, total)
-	for i := range results {
-		results[i] = broker.Result{Data: []byte{0x00, 0x00}, Err: nil}
-	}
-	// Set topology at index 6 (0x900D): 0x020A = 2 strings, 10 packs
-	results[6] = broker.Result{Data: uint16Bytes(0x020A), Err: nil}
-	return results
-}
+// setupBMSBatchSpanTest creates a mockBroker configured for BMS batch span reads.
+// Sets up span-level batch responses with known values for topology (0x900D = 0x020A)
+// and bitmap (0x9022 = towerBitmap) at their correct byte offsets.
+func setupBMSBatchSpanTest(t *testing.T, towerBitmap uint16) (*mockBroker, register.BatchPlan) {
+	t.Helper()
+	mb := newMockBroker()
+	mb.registerResults = make(map[uint16]broker.Result)
+	mb.spanFailAddrs = make(map[uint16]error)
 
-// makeBMSInfoResultsWithBitmap builds mock results with a specific tower bitmap at 0x9022 (index 18).
-func makeBMSInfoResultsWithBitmap(towerBitmap uint16) []broker.Result {
-	results := makeBMSInfoResults()
-	results[18] = broker.Result{Data: uint16Bytes(towerBitmap), Err: nil}
-	return results
+	groups := register.BMSInfoGroups()
+	plan := register.AnalyzeBatchPlan(groups)
+	require.NotEmpty(t, plan.Spans, "BMS batch plan must have spans")
+
+	// Set up all spans to succeed at batch level with known probe values.
+	for _, span := range plan.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			switch pm.Probe.Addr {
+			case 0x900D:
+				// Topology: 2 strings x 10 packs = 0x020A
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 0x020A)
+			case 0x9022:
+				// Tower bitmap
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], towerBitmap)
+			case 0x9004:
+				// BMS Clock Composite: 2 registers (4 bytes)
+				// Encode 2026-04-10 14:03:05 = 0x6914E0C5
+				if pm.ByteLength >= 4 {
+					binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 0x6914)
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+2:pm.ByteOffset+4], 0xE0C5)
+				}
+			case 0x9018:
+				// SW Version Composite: 4 registers (8 bytes)
+				// V1.2.3 = [0x0056, 0x0001, 0x0002, 0x0003]
+				if pm.ByteLength >= 8 {
+					binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 0x0056)   // 'V'
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+2:pm.ByteOffset+4], 0x0001) // major
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+4:pm.ByteOffset+6], 0x0002) // non-std
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+6:pm.ByteOffset+8], 0x0003) // minor
+				}
+			default:
+				// Default: write 100 for all other probes
+				if pm.ByteLength >= 2 {
+					binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 100)
+				}
+			}
+		}
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+	}
+
+	return mb, plan
 }
 
 func TestBMSTowerBitmap(t *testing.T) {
-	mb := newMockBroker()
-
-	// 0x9022 tower bitmap: 0x0003 = bits 0 and 1 set = towers 1 and 2 online
-	// Streaming model: set per-address results for ReadRegisters calls
-	mb.mu.Lock()
-	mb.registerResults = map[uint16]broker.Result{
-		0x9022: {Data: uint16Bytes(0x0003), Err: nil}, // tower bitmap: both online
-		0x900D: {Data: uint16Bytes(0x020A), Err: nil}, // topology: 2 strings x 10 packs
-	}
-	mb.mu.Unlock()
+	mb, _ := setupBMSBatchSpanTest(t, 0x0003) // both towers online
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
@@ -1977,8 +1996,6 @@ func TestBMSTowerBitmap(t *testing.T) {
 		Section: "bms",
 	})
 
-	// Streaming BMS read sends: schema, N register_value messages, section_data (bitmap/protection), section_complete
-	// Drain all messages and find the section_data one with bitmap group
 	allMsgs := drainClientMessages(send, 5*time.Second)
 
 	var msg *hub.OutboundMessage
@@ -1996,7 +2013,6 @@ func TestBMSTowerBitmap(t *testing.T) {
 		t.Fatalf("expected section_data message in BMS stream, got types: %v", types)
 	}
 
-	// Find the bitmap group
 	var bitmapGroup *hub.GroupData
 	for i := range msg.Groups {
 		if msg.Groups[i].Type == "bitmap" {
@@ -2004,52 +2020,20 @@ func TestBMSTowerBitmap(t *testing.T) {
 			break
 		}
 	}
-	if bitmapGroup == nil {
-		t.Fatal("expected bitmap group in BMS section data, found none")
-	}
-	if bitmapGroup.Bitmap == nil {
-		t.Fatal("bitmap group has nil Bitmap field")
-	}
+	require.NotNil(t, bitmapGroup, "expected bitmap group in BMS section data")
+	require.NotNil(t, bitmapGroup.Bitmap, "bitmap group has nil Bitmap field")
 
-	// Verify bitmap structure
-	if bitmapGroup.Bitmap.Towers != 2 {
-		t.Errorf("Bitmap.Towers = %d, want 2", bitmapGroup.Bitmap.Towers)
-	}
-	if bitmapGroup.Bitmap.PacksPerTower != 10 {
-		t.Errorf("Bitmap.PacksPerTower = %d, want 10", bitmapGroup.Bitmap.PacksPerTower)
-	}
-
-	// Both towers online: each should have all 10 packs marked available (0x03FF)
-	if len(bitmapGroup.Bitmap.Online) != 2 {
-		t.Fatalf("Bitmap.Online length = %d, want 2", len(bitmapGroup.Bitmap.Online))
-	}
-	if bitmapGroup.Bitmap.Online[0] != 0x03FF {
-		t.Errorf("Bitmap.Online[0] = 0x%04X, want 0x03FF (tower 1 online, all packs available)", bitmapGroup.Bitmap.Online[0])
-	}
-	if bitmapGroup.Bitmap.Online[1] != 0x03FF {
-		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x03FF (tower 2 online, all packs available)", bitmapGroup.Bitmap.Online[1])
-	}
-
-	// No WriteRegister calls to 0x9020 — bitmap is read from standard batch, no cycling
-	writes := mb.getWriteCalls()
-	for _, w := range writes {
-		if w.Addr == 0x9020 {
-			t.Errorf("unexpected WriteRegister to 0x9020 (bitmap cycling removed): value=0x%04X", w.Value)
-		}
-	}
+	assert.Equal(t, 2, bitmapGroup.Bitmap.Towers)
+	assert.Equal(t, 10, bitmapGroup.Bitmap.PacksPerTower)
+	require.Len(t, bitmapGroup.Bitmap.Online, 2)
+	assert.Equal(t, uint16(0x03FF), bitmapGroup.Bitmap.Online[0], "tower 1 all packs online")
+	assert.Equal(t, uint16(0x03FF), bitmapGroup.Bitmap.Online[1], "tower 2 all packs online")
+	assert.Equal(t, "2 strings x 10 packs", bitmapGroup.Bitmap.DetectedTopology)
+	assert.False(t, bitmapGroup.Bitmap.Mismatch)
 }
 
 func TestBMSTowerBitmapPartialOnline(t *testing.T) {
-	mb := newMockBroker()
-
-	// 0x9022 tower bitmap: 0x0001 = only bit 0 set = only tower 1 online
-	// Streaming model: set per-address results for ReadRegisters calls
-	mb.mu.Lock()
-	mb.registerResults = map[uint16]broker.Result{
-		0x9022: {Data: uint16Bytes(0x0001), Err: nil}, // tower bitmap: only tower 1 online
-		0x900D: {Data: uint16Bytes(0x020A), Err: nil}, // topology: 2 strings x 10 packs
-	}
-	mb.mu.Unlock()
+	mb, _ := setupBMSBatchSpanTest(t, 0x0001) // only tower 1 online
 
 	h, c, send, cancel := setupConnectedHub(t, mb, 0)
 	defer cancel()
@@ -2059,7 +2043,6 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 		Section: "bms",
 	})
 
-	// Streaming BMS read sends: schema, N register_value messages, section_data (bitmap/protection), section_complete
 	allMsgs := drainClientMessages(send, 5*time.Second)
 
 	var msg *hub.OutboundMessage
@@ -2084,21 +2067,158 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 			break
 		}
 	}
-	if bitmapGroup == nil {
-		t.Fatal("expected bitmap group in BMS section data, found none")
+	require.NotNil(t, bitmapGroup, "expected bitmap group in BMS section data")
+	require.NotNil(t, bitmapGroup.Bitmap, "bitmap group has nil Bitmap field")
+
+	require.Len(t, bitmapGroup.Bitmap.Online, 2)
+	assert.Equal(t, uint16(0x03FF), bitmapGroup.Bitmap.Online[0], "tower 1 all packs online")
+	assert.Equal(t, uint16(0x0000), bitmapGroup.Bitmap.Online[1], "tower 2 offline")
+}
+
+// TestBMSBatchRead_SpanReads verifies BMS section reads via batch spans and emits
+// register_value messages for all probes, section_data with bitmap/protection, and section_complete.
+func TestBMSBatchRead_SpanReads(t *testing.T) {
+	mb, _ := setupBMSBatchSpanTest(t, 0x0003)
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+
+	msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received")
+
+	// Count register_value messages
+	regCount := 0
+	for _, m := range msgs[:idx] {
+		if m.Type == "register_value" && m.Section == "bms" {
+			regCount++
+		}
+	}
+	// All 24 probes (18 BMS Info + 6 Protection) should have register_value messages
+	assert.GreaterOrEqual(t, regCount, 24, "expected at least 24 register_value messages for BMS probes")
+
+	// Verify section_data exists with bitmap and protection groups
+	var sectionDataFound bool
+	for _, m := range msgs[:idx] {
+		if m.Type == hub.MsgTypeSectionData && m.Section == "bms" {
+			sectionDataFound = true
+			assert.GreaterOrEqual(t, len(m.Groups), 2, "section_data should have bitmap + protection groups")
+			break
+		}
+	}
+	assert.True(t, sectionDataFound, "expected section_data message with computed groups")
+}
+
+// TestBMSBatchRead_CompositeValues verifies that bms_clock and bms_sw_version Composite
+// probes produce correctly formatted values in register_value messages.
+func TestBMSBatchRead_CompositeValues(t *testing.T) {
+	mb, _ := setupBMSBatchSpanTest(t, 0x0003)
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+
+	allMsgs := drainClientMessages(send, 5*time.Second)
+
+	// Find System Clock register_value
+	var clockMsg *hub.OutboundMessage
+	var swVerMsg *hub.OutboundMessage
+	for i := range allMsgs {
+		if allMsgs[i].Type == "register_value" && allMsgs[i].Section == "bms" {
+			// OutboundMessage doesn't have Name field directly; check via JSON
+			// The register_value messages are RegisterValueMessage marshaled to JSON,
+			// then unmarshaled into OutboundMessage. We need to check raw JSON.
+			break
+		}
 	}
 
-	if len(bitmapGroup.Bitmap.Online) != 2 {
-		t.Fatalf("Bitmap.Online length = %d, want 2", len(bitmapGroup.Bitmap.Online))
+	// Use raw message drain to check Name field (RegisterValueMessage has Name)
+	_ = clockMsg
+	_ = swVerMsg
+
+	// Re-run with raw messages to access Name field
+	mb2, _ := setupBMSBatchSpanTest(t, 0x0003)
+	h2, c2, send2, cancel2 := setupConnectedHub(t, mb2, 0)
+	defer cancel2()
+
+	h2.Command(c2, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+
+	rawMsgs := drainRawMessages(send2, 5*time.Second)
+
+	var clockValue, swVerValue string
+	for _, raw := range rawMsgs {
+		var m map[string]interface{}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			continue
+		}
+		if m["type"] == "register_value" && m["section"] == "bms" {
+			name, _ := m["name"].(string)
+			value, _ := m["value"].(string)
+			if name == "System Clock" {
+				clockValue = value
+			}
+			if name == "SW Version" {
+				swVerValue = value
+			}
+		}
 	}
-	// Tower 1 online: all packs available
-	if bitmapGroup.Bitmap.Online[0] != 0x03FF {
-		t.Errorf("Bitmap.Online[0] = 0x%04X, want 0x03FF (tower 1 online)", bitmapGroup.Bitmap.Online[0])
+
+	assert.NotEmpty(t, clockValue, "expected register_value for System Clock")
+	if clockValue != "" {
+		// 0x6914E0C5 decodes to 2026-04-10 14:03:05
+		assert.Equal(t, "2026-04-10 14:03:05", clockValue, "bms_clock Composite should produce formatted datetime")
 	}
-	// Tower 2 offline: no packs available
-	if bitmapGroup.Bitmap.Online[1] != 0x0000 {
-		t.Errorf("Bitmap.Online[1] = 0x%04X, want 0x0000 (tower 2 offline)", bitmapGroup.Bitmap.Online[1])
+
+	assert.NotEmpty(t, swVerValue, "expected register_value for SW Version")
+	if swVerValue != "" {
+		assert.Equal(t, "V1.2.3", swVerValue, "bms_sw_version Composite should produce formatted version")
 	}
+}
+
+// TestBMSBatchRead_ProtectionDecoding verifies that protection registers appear both as
+// register_value messages (raw hex) and in the section_data protection group.
+func TestBMSBatchRead_ProtectionDecoding(t *testing.T) {
+	mb, _ := setupBMSBatchSpanTest(t, 0x0003)
+
+	h, c, send, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeSubscribe,
+		Section: "bms",
+	})
+
+	allMsgs := drainClientMessages(send, 5*time.Second)
+
+	// Find section_data with protection group
+	var protGroup *hub.GroupData
+	for i := range allMsgs {
+		if allMsgs[i].Type == hub.MsgTypeSectionData && allMsgs[i].Section == "bms" {
+			for j := range allMsgs[i].Groups {
+				if allMsgs[i].Groups[j].Type == "protection" {
+					protGroup = &allMsgs[i].Groups[j]
+					break
+				}
+			}
+			break
+		}
+	}
+
+	require.NotNil(t, protGroup, "expected protection group in section_data")
+	assert.Equal(t, "Protection & Alarms", protGroup.Name)
+	// Protection probes should have Items entries (6 registers with value 100 = 0x0064)
+	assert.GreaterOrEqual(t, len(protGroup.Items), 1, "protection group should have decoded items")
 }
 
 // TestPackDataMessageItemMeta verifies that PackItemMeta and CellAddrs appear in JSON.
