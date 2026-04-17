@@ -54,7 +54,7 @@ type Hub struct {
 	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
 	readDelayMs        int           // configurable inter-read delay in milliseconds (D-04, default 500)
 	packSettleMs       int           // configurable pack settle time in milliseconds (D-04, default 1000)
-	packSkipRegisters  map[uint16]bool // per-register skip tracking for current pack (Phase 11, D-04)
+	packSpanTracker *SpanTracker // per-pack span degradation tracker (Phase 25, D-04)
 }
 
 // packSelection tracks the currently selected pack for auto-refresh re-triggering.
@@ -86,7 +86,7 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 	}
 	h.readDelayMs = 500
 	h.packSettleMs = 1000
-	h.packSkipRegisters = make(map[uint16]bool)
+	h.packSpanTracker = NewSpanTracker(DefaultDegradationThreshold, h.logger.With("component", "pack-tracker"))
 	return h
 }
 
@@ -265,6 +265,9 @@ func (h *Hub) handleStateEvent(evt broker.StateEvent) {
 				sec.SpanTracker.Reset()
 			}
 		}
+		if h.packSpanTracker != nil {
+			h.packSpanTracker.Reset()
+		}
 	case broker.StateDisconnected, broker.StateReconnecting:
 		h.connected = false
 		// Cancel all in-progress reads (D-13: disconnection stops reads)
@@ -374,7 +377,7 @@ func (h *Hub) handleReadCycle(c *Client, msg InboundMessage) {
 		readCtx, cancel := context.WithCancel(h.ctx)
 		sec.readCancel = cancel
 		sec.reading.Store(true)
-		h.streamPackRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client, readCtx)
+		h.streamPackBatchRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client, readCtx)
 		return
 	}
 	h.triggerSectionRead(msg.Section)
@@ -669,8 +672,8 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 	// Store selection for auto-refresh
 	h.selectedPack = &packSelection{input: input, tower: tower, pack: pack, client: cmd.Client}
 
-	// D-05: Reset unsupported register list on pack switch
-	h.packSkipRegisters = make(map[uint16]bool)
+	// D-05: Reset pack SpanTracker on pack switch (Phase 25, D-04)
+	h.packSpanTracker.Reset()
 
 	// Set up BMS section read context for pack streaming
 	sec, ok := h.sections["bms"]
@@ -682,7 +685,7 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 	sec.readCancel = cancel
 	sec.reading.Store(true)
 
-	h.streamPackRead(input, tower, pack, cmd.Client, readCtx)
+	h.streamPackBatchRead(input, tower, pack, cmd.Client, readCtx)
 }
 
 // sendPackError sends a pack_error message to a specific client.

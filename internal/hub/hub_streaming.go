@@ -505,24 +505,19 @@ func (h *Hub) buildPackSchema(input, tower, pack int, groups []register.ProbeGro
 	}
 }
 
-// streamPackRead reads pack registers group-by-group, accumulating results per group
-// and sending them as a batch when each group completes. This creates a per-group
-// streaming effect where all values in a group appear together in the UI (D-05, D-06).
-// Implements D-01 (streaming), D-04 (skip unsupported), D-05 (skip cleared in handleSelectPack).
-func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx context.Context) {
+// streamPackBatchRead reads pack registers using batch spans via the shared
+// readBatchSpans helper. Preserves the 0x9020 write + settle delay from the
+// legacy streamPackRead. Per D-01, pack-specific logic stays isolated.
+func (h *Hub) streamPackBatchRead(input, tower, pack int, client *Client, readCtx context.Context) {
 	groups := register.PackProbeGroups()
 	towersPerInput := TopoTowers
 	queryWord := register.EncodePackQuery(input, tower, pack, towersPerInput)
 	settleMs := h.packSettleMs
-	// WR-03 fix: deep-copy the map so the goroutine writes to an independent copy,
-	// avoiding a data race with handleSelectPack which replaces h.packSkipRegisters.
-	skipRegs := make(map[uint16]bool, len(h.packSkipRegisters))
-	for k, v := range h.packSkipRegisters {
-		skipRegs[k] = v
-	}
 
-	// Capture BMS section on hub goroutine before launching reader goroutine
-	// to avoid data race on h.sections map (CR-01).
+	// Capture SpanTracker reference on hub goroutine before launching reader
+	// goroutine to prevent data race with handleSelectPack (Pitfall 2).
+	packTracker := h.packSpanTracker
+
 	bmsSec := h.sections["bms"]
 	if bmsSec == nil {
 		return
@@ -531,7 +526,7 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 	go func() {
 		defer bmsSec.reading.Store(false)
 
-		// Step 1: Write 0x9020 to select pack
+		// Step 1: Write 0x9020 to select pack (same as legacy streamPackRead).
 		err := h.broker.WriteRegister(readCtx, 0x9020, queryWord)
 		if err != nil {
 			h.logger.Warn("pack select write failed, retrying", "error", err)
@@ -548,64 +543,31 @@ func (h *Hub) streamPackRead(input, tower, pack int, client *Client, readCtx con
 			}
 		}
 
-		// Step 2: Wait for settle time (context-aware)
+		// Step 2: Wait for settle time (context-aware).
 		select {
 		case <-time.After(time.Duration(settleMs) * time.Millisecond):
 		case <-readCtx.Done():
 			return
 		}
 
-		// Step 3: Send pack schema
+		// Step 3: Send pack schema.
 		schema := h.buildPackSchema(input, tower, pack, groups)
 		h.results <- sectionResult{section: "bms", msg: schema}
 
-		// Step 4: Read probes per group, accumulate results, send as batch (D-05)
-		for _, g := range groups {
-			var groupResults []sectionResult
-			for _, p := range g.Probes {
-				if readCtx.Err() != nil {
-					return
-				}
-				if skipRegs[p.Addr] {
-					continue
-				}
-
-				data, err := h.broker.ReadRegisters(readCtx, p.Addr, p.Count)
-				if err != nil {
-					// D-04: Track timeout/illegal address errors for skip
-					errStr := err.Error()
-					if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "0x02") || strings.Contains(errStr, "illegal") {
-						skipRegs[p.Addr] = true
-					}
-					if readCtx.Err() != nil {
-						return
-					}
-					groupResults = append(groupResults, sectionResult{
-						section: "bms",
-						msg:     NewRegisterValue("bms", g.Name, p.Name, "", errStr, p.Addr, ""),
-					})
-					continue
-				}
-
-				if readCtx.Err() != nil {
-					return
-				}
-				groupResults = append(groupResults, sectionResult{
-					section: "bms",
-					msg:     NewRegisterValue("bms", g.Name, p.Name, FormatValue(p, data), "", p.Addr, FormatRawValue(p, data)),
-				})
-			}
-			// D-05: Send all results for this group at once
-			for _, r := range groupResults {
-				h.results <- r
-			}
+		// Step 4: Build temporary Section and call readBatchSpans (D-02, D-03).
+		plan := register.AnalyzeBatchPlan(groups)
+		probes := flattenProbeGroups(groups)
+		tempSec := &Section{
+			BatchPlan:   plan,
+			SpanTracker: packTracker,
+			Probes:      probes,
 		}
-
+		_ = h.readBatchSpans("bms", tempSec, readCtx)
 		if readCtx.Err() != nil {
 			return
 		}
 
-		// Step 5: Send section_complete
+		// Step 5: section_complete.
 		h.results <- sectionResult{
 			section: "bms",
 			msg:     NewSectionComplete("bms"),
