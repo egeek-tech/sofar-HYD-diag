@@ -150,14 +150,9 @@ func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.C
 				"span_count", span.TotalCount,
 				"error", err,
 			)
-			allIndivFailed := h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
+			h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
 			if readCtx.Err() != nil {
 				return nil
-			}
-			if allIndivFailed && sec.SpanTracker != nil {
-				sec.SpanTracker.RecordIndividualFailure(span.StartAddr)
-			} else if !allIndivFailed && sec.SpanTracker != nil {
-				sec.SpanTracker.RecordSuccess(span.StartAddr)
 			}
 			continue
 		}
