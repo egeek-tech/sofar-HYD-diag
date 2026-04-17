@@ -2305,6 +2305,7 @@ function initCycleDelayDropdown() {
 function renderBitmapGroup(group) {
     var card = document.createElement('div');
     card.className = 'group-card';
+    card.setAttribute('data-computed-group', group.name);
 
     // Heading
     var heading = document.createElement('h3');
@@ -2432,6 +2433,7 @@ function renderBitmapGroup(group) {
 
 function renderProtectionGroup(group) {
     var card = document.createElement('div');
+    card.setAttribute('data-computed-group', group.name);
     var items = group.items || {};
     var keys = Object.keys(items);
 

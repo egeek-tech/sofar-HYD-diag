@@ -99,17 +99,26 @@ func (h *Hub) BuildPackSchema(input, tower, pack int, groups []register.ProbeGro
 	return h.buildPackSchema(input, tower, pack, groups)
 }
 
-// GetPackSkipRegisters returns a copy of the pack skip registers map.
+// GetPackSpanTracker returns the pack drill-down SpanTracker.
 // Thread-safe: routes the query through the hub event loop.
-func (h *Hub) GetPackSkipRegisters() map[uint16]bool {
-	var result map[uint16]bool
+func (h *Hub) GetPackSpanTracker() *SpanTracker {
+	var tracker *SpanTracker
 	h.RunFunc(func() {
-		result = make(map[uint16]bool, len(h.packSkipRegisters))
-		for k, v := range h.packSkipRegisters {
-			result[k] = v
+		tracker = h.packSpanTracker
+	})
+	return tracker
+}
+
+// GetPackSpanState returns the SpanState for a given span address in the pack SpanTracker.
+// Thread-safe: routes the query through the hub event loop.
+func (h *Hub) GetPackSpanState(startAddr uint16) SpanState {
+	var state SpanState
+	h.RunFunc(func() {
+		if h.packSpanTracker != nil {
+			state = h.packSpanTracker.State(startAddr)
 		}
 	})
-	return result
+	return state
 }
 
 // GetSectionReadOnce returns the readOnce flag for a named section.
