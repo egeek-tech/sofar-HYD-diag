@@ -85,6 +85,12 @@ func (h *Hub) readSpanIndividualFallbackAccum(sectionName string, span register.
 		var errStr, value, rawVal string
 		if indErr != nil {
 			errStr = indErr.Error()
+			// Record error in probeResults so post-processing (e.g. topology
+			// detection, tower bitmap) can distinguish a failed read from an
+			// untouched zero-value Result.
+			if idx, ok := addrToIdx[pm.Probe.Addr]; ok {
+				probeResults[idx] = broker.Result{Err: indErr}
+			}
 		} else {
 			allFailed = false
 			value = FormatValue(pm.Probe, indData)
