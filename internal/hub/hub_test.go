@@ -1423,6 +1423,46 @@ func TestConfigurePVChannels(t *testing.T) {
 	}
 }
 
+func TestConfigurePVBatchPlan(t *testing.T) {
+	mb := newMockBroker()
+	h, c, _, cancel := setupConnectedHub(t, mb, 0)
+	defer cancel()
+
+	// Get initial batch plan (default 2 channels)
+	initialPlan := h.GetSectionBatchPlan("pv")
+	initialRegs := 0
+	for _, span := range initialPlan.Spans {
+		initialRegs += int(span.TotalCount)
+	}
+
+	// Configure PV channels to 4
+	h.Command(c, hub.InboundMessage{
+		Type:    hub.MsgTypeConfigure,
+		Section: "pv",
+		Config:  &hub.ConfigPayload{Channels: 4},
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify BatchPlan was recomputed
+	plan := h.GetSectionBatchPlan("pv")
+	if len(plan.Spans) == 0 {
+		t.Fatal("expected non-empty batch plan after PV configure")
+	}
+
+	// Verify total register count increased (4 channels = more registers than 2)
+	totalRegs := 0
+	for _, span := range plan.Spans {
+		totalRegs += int(span.TotalCount)
+	}
+	if totalRegs <= initialRegs {
+		t.Errorf("expected more registers after channels 2->4, got %d (was %d)", totalRegs, initialRegs)
+	}
+	// 4 channels * 3 regs + 1 total PV = 13 registers minimum
+	if totalRegs < 13 {
+		t.Errorf("expected at least 13 registers for 4-channel PV, got %d", totalRegs)
+	}
+}
+
 func TestConfigureClampRange(t *testing.T) {
 	mb := newMockBroker()
 	h := hub.NewTestHub(mb)

@@ -596,6 +596,8 @@ func (h *Hub) handleConfigure(cmd ClientCommand) {
 
 		sec.Groups = newGroups
 		sec.Probes = flattenProbeGroups(newGroups)
+		sec.BatchPlan = register.AnalyzeBatchPlan(newGroups)
+		sec.SpanTracker.Reset()
 
 		h.logger.Info("pv section reconfigured", "channels", channels)
 
