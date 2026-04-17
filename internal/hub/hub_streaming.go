@@ -170,23 +170,7 @@ func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.C
 		// Normal or probing: attempt batch read.
 		data, err := h.broker.ReadRegisters(readCtx, span.StartAddr, span.TotalCount)
 		if err != nil {
-			if shouldProbe {
-				if sec.SpanTracker != nil {
-					sec.SpanTracker.RecordFailure(span.StartAddr)
-				}
-				h.logger.Warn("batch span failed, falling back to individual reads",
-					"section", sectionName,
-					"startAddr", fmt.Sprintf("0x%04X", span.StartAddr),
-					"span_count", span.TotalCount,
-					"error", err,
-				)
-				h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
-				if readCtx.Err() != nil {
-					return nil
-				}
-				continue
-			}
-
+			// Record failure for all states (normal, degraded probe, skipped probe).
 			if sec.SpanTracker != nil {
 				sec.SpanTracker.RecordFailure(span.StartAddr)
 			}
