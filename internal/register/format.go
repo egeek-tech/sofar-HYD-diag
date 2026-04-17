@@ -22,6 +22,27 @@ func FormatValue(p Probe, data []byte) string {
 		return ComposeSystemTime(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
 	}
 
+	if p.Composite == "bms_clock" {
+		if len(data) < 4 { // 2 registers * 2 bytes
+			return "<no data>"
+		}
+		hi := binary.BigEndian.Uint16(data[:2])
+		lo := binary.BigEndian.Uint16(data[2:4])
+		return DecodeBMSClock(uint32(hi)<<16 | uint32(lo))
+	}
+
+	if p.Composite == "bms_sw_version" {
+		if len(data) < 8 { // 4 registers * 2 bytes
+			return "<no data>"
+		}
+		charByte := data[1] // Low byte of first register (Modbus big-endian, ASCII in low byte)
+		char := string([]byte{charByte})
+		major := binary.BigEndian.Uint16(data[2:4])
+		nonStd := binary.BigEndian.Uint16(data[4:6])
+		minor := binary.BigEndian.Uint16(data[6:8])
+		return fmt.Sprintf("%s%d.%d.%d", char, major, nonStd, minor)
+	}
+
 	if p.IsASCII {
 		s := string(data)
 		if i := strings.IndexByte(s, 0); i >= 0 {
@@ -110,6 +131,28 @@ func FormatRawValue(p Probe, data []byte) string {
 		endAddr := p.Addr + p.Count - 1
 		return fmt.Sprintf("0x%04X-0x%04X | %d, %d, %d, %d, %d, %d",
 			p.Addr, endAddr, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+	}
+
+	if p.Composite == "bms_clock" {
+		if len(data) < 4 {
+			return ""
+		}
+		hi := binary.BigEndian.Uint16(data[:2])
+		lo := binary.BigEndian.Uint16(data[2:4])
+		endAddr := p.Addr + p.Count - 1
+		return fmt.Sprintf("0x%04X-0x%04X | %d, %d", p.Addr, endAddr, hi, lo)
+	}
+
+	if p.Composite == "bms_sw_version" {
+		if len(data) < 8 {
+			return ""
+		}
+		var vals [4]uint16
+		for i := 0; i < 4; i++ {
+			vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
+		}
+		endAddr := p.Addr + p.Count - 1
+		return fmt.Sprintf("0x%04X-0x%04X | %d, %d, %d, %d", p.Addr, endAddr, vals[0], vals[1], vals[2], vals[3])
 	}
 
 	if len(data) < 2 {

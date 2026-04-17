@@ -522,6 +522,66 @@ func TestFormatRawValueComposite(t *testing.T) {
 	}
 }
 
+func TestFormatValueBMSClock(t *testing.T) {
+	p := Probe{Name: "System Clock", Addr: 0x9004, Count: 2, Composite: "bms_clock"}
+	data := make([]byte, 4)
+	binary.BigEndian.PutUint16(data[0:2], 0x6914)
+	binary.BigEndian.PutUint16(data[2:4], 0xE0C5)
+	got := FormatValue(p, data)
+	want := "2026-04-10 14:03:05"
+	if got != want {
+		t.Errorf("FormatValue bms_clock = %q, want %q", got, want)
+	}
+}
+
+func TestFormatValueBMSClockNoData(t *testing.T) {
+	p := Probe{Name: "System Clock", Addr: 0x9004, Count: 2, Composite: "bms_clock"}
+	got := FormatValue(p, []byte{0x00, 0x01})
+	if got != "<no data>" {
+		t.Errorf("FormatValue bms_clock short data = %q, want %q", got, "<no data>")
+	}
+}
+
+func TestFormatValueBMSSWVersion(t *testing.T) {
+	p := Probe{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"}
+	data := []byte{0x00, 0x56, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03}
+	got := FormatValue(p, data)
+	want := "V1.2.3"
+	if got != want {
+		t.Errorf("FormatValue bms_sw_version = %q, want %q", got, want)
+	}
+}
+
+func TestFormatValueBMSSWVersionNoData(t *testing.T) {
+	p := Probe{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"}
+	got := FormatValue(p, []byte{0x00, 0x56, 0x00, 0x01})
+	if got != "<no data>" {
+		t.Errorf("FormatValue bms_sw_version short data = %q, want %q", got, "<no data>")
+	}
+}
+
+func TestFormatRawValueBMSClock(t *testing.T) {
+	p := Probe{Name: "System Clock", Addr: 0x9004, Count: 2, Composite: "bms_clock"}
+	data := make([]byte, 4)
+	binary.BigEndian.PutUint16(data[0:2], 0x6914)
+	binary.BigEndian.PutUint16(data[2:4], 0xE0C5)
+	got := FormatRawValue(p, data)
+	want := "0x9004-0x9005 | 26900, 57541"
+	if got != want {
+		t.Errorf("FormatRawValue bms_clock = %q, want %q", got, want)
+	}
+}
+
+func TestFormatRawValueBMSSWVersion(t *testing.T) {
+	p := Probe{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"}
+	data := []byte{0x00, 0x56, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03}
+	got := FormatRawValue(p, data)
+	want := "0x9018-0x901B | 86, 1, 2, 3"
+	if got != want {
+		t.Errorf("FormatRawValue bms_sw_version = %q, want %q", got, want)
+	}
+}
+
 // === Task 2 TDD tests: Fault bitmap decoder ===
 
 func TestFaultBitStruct(t *testing.T) {
