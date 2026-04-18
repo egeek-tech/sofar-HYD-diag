@@ -4008,3 +4008,134 @@ func TestPackBatchRead_SpanDegradation(t *testing.T) {
 		"span at 0x%04X should be degraded or skipped after repeated failures, got %v", failSpanAddr, spanState)
 }
 
+// === Phase 22-03: Battery reconnect reset integration test ===
+
+func TestBatteryBatchRead_ReconnectResetsChannels(t *testing.T) {
+	// UAT gap: After disconnect/reconnect, battery section should reset to 2-channel
+	// default so that the next read cycle re-detects channels via 0x066A.
+	mb, _ := setupBatterySpanTest(t)
+
+	// Override 0x066A to return 4 channels for initial detection.
+	preReadData4 := make([]byte, 2)
+	binary.BigEndian.PutUint16(preReadData4, 4)
+	mb.mu.Lock()
+	mb.registerResults[0x066A] = broker.Result{Data: preReadData4}
+	mb.mu.Unlock()
+
+	// Set up 4-channel span data so the auto-detected 4-channel plan can complete.
+	groups4 := append(register.GenerateBatteryGroups(4), register.InternalInfoGroups()...)
+	plan4 := register.AnalyzeBatchPlan(groups4)
+	for _, span := range plan4.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			if pm.ByteLength >= 2 {
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 200)
+			}
+		}
+		mb.mu.Lock()
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+		mb.mu.Unlock()
+	}
+
+	h := hub.NewTestHub(mb)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.Run(ctx)
+
+	// Connect
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	send := make(chan []byte, 512)
+	c := hub.NewTestClient(h, send)
+	h.Register(c)
+	time.Sleep(50 * time.Millisecond)
+
+	// Subscribe to battery — triggers read cycle that detects 4 channels.
+	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "battery"})
+	_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received after initial auto-detection")
+
+	// Verify section reconfigured to 4 channels.
+	groups := h.GetSectionGroups("battery")
+	channelCount := 0
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "Channel ") {
+			channelCount++
+		}
+	}
+	require.Equal(t, 4, channelCount, "should have 4 channels after initial auto-detection")
+
+	// Simulate disconnect + reconnect
+	mb.statesCh <- broker.StateEvent{State: broker.StateDisconnected}
+	time.Sleep(50 * time.Millisecond)
+	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
+	time.Sleep(50 * time.Millisecond)
+
+	// Drain state messages
+	drainClientMessages(send, 100*time.Millisecond)
+
+	// After reconnect, battery section should revert to 2-channel default.
+	groups = h.GetSectionGroups("battery")
+	channelCount = 0
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "Channel ") {
+			channelCount++
+		}
+	}
+	assert.Equal(t, 2, channelCount,
+		"battery section should reset to 2-channel default after reconnect")
+
+	// Verify BatchPlan matches 2-channel plan (not 4-channel).
+	groups2 := append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)
+	expectedPlan := register.AnalyzeBatchPlan(groups2)
+	actualPlan := h.GetSectionBatchPlan("battery")
+	assert.Equal(t, len(expectedPlan.Spans), len(actualPlan.Spans),
+		"BatchPlan span count should match 2-channel plan after reconnect")
+
+	// Verify SpanTracker was reset (all spans should be SpanNormal).
+	for _, span := range actualPlan.Spans {
+		state := h.GetSpanState("battery", span.StartAddr)
+		assert.Equal(t, hub.SpanNormal, state,
+			"span 0x%04X should be SpanNormal after reconnect reset", span.StartAddr)
+	}
+
+	// Now set up mock to return 1 channel on next 0x066A read.
+	preReadData1 := make([]byte, 2)
+	binary.BigEndian.PutUint16(preReadData1, 1)
+	mb.mu.Lock()
+	mb.registerResults[0x066A] = broker.Result{Data: preReadData1}
+	mb.mu.Unlock()
+
+	// Set up 1-channel span data.
+	groups1 := append(register.GenerateBatteryGroups(1), register.InternalInfoGroups()...)
+	plan1 := register.AnalyzeBatchPlan(groups1)
+	for _, span := range plan1.Spans {
+		data := make([]byte, int(span.TotalCount)*2)
+		for _, pm := range span.Probes {
+			if pm.ByteLength >= 2 {
+				binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 50)
+			}
+		}
+		mb.mu.Lock()
+		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
+		mb.mu.Unlock()
+	}
+
+	// Trigger a new read cycle — should auto-detect 1 channel from fresh state.
+	hub.SendReadCycle(h, c, "battery")
+	_, idx = waitForMessageType(t, send, "section_complete", 10*time.Second)
+	require.GreaterOrEqual(t, idx, 0, "section_complete not received after 1-channel re-detection")
+
+	// Verify section reconfigured to 1 channel (proving fresh auto-detection ran).
+	groups = h.GetSectionGroups("battery")
+	channelCount = 0
+	for _, g := range groups {
+		if strings.HasPrefix(g.Name, "Channel ") {
+			channelCount++
+		}
+	}
+	assert.Equal(t, 1, channelCount,
+		"battery section should re-detect to 1 channel after reconnect reset")
+}
+
