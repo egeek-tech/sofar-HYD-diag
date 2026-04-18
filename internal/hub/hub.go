@@ -285,6 +285,10 @@ func (h *Hub) handleStateEvent(evt broker.StateEvent) {
 			batSec.Probes = flattenProbeGroups(newGroups)
 			batSec.BatchPlan = register.AnalyzeBatchPlan(newGroups)
 			// SpanTracker already reset in the loop above
+			// Broadcast reset schema to battery subscribers so frontend
+			// shows 2-channel skeleton until auto-detection runs again.
+			schema := h.buildSectionSchema("battery", batSec)
+			h.broadcastResultToSection("battery", schema)
 		}
 	case broker.StateDisconnected, broker.StateReconnecting:
 		h.connected = false

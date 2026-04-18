@@ -299,6 +299,10 @@ func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
 						sec.Probes = flattenProbeGroups(newGroups)
 						sec.BatchPlan = register.AnalyzeBatchPlan(newGroups)
 						sec.SpanTracker.Reset() // D-05: reset since span addresses change
+						// Broadcast updated schema to all battery subscribers (bug fix:
+						// frontend was keeping stale N-channel skeleton after auto-detection).
+						schema := h.buildSectionSchema("battery", sec)
+						h.broadcastResultToSection("battery", schema)
 						h.logger.Info("battery section auto-detected channels", "channels", detected)
 						h.triggerSectionRead("battery")
 					}:
