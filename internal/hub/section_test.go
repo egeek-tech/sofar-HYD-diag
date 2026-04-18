@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"sofar-hyd-diag/internal/register"
 )
 
@@ -25,9 +27,7 @@ func TestToSnakeCase(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			got := toSnakeCase(tt.input)
-			if got != tt.want {
-				t.Errorf("toSnakeCase(%q) = %q, want %q", tt.input, got, tt.want)
-			}
+			assert.Equal(t, tt.want, got, "toSnakeCase(%q)", tt.input)
 		})
 	}
 }
@@ -39,21 +39,11 @@ func TestNewSection(t *testing.T) {
 	}
 	sec := newSection("test", probes, slog.Default())
 
-	if sec.Name != "test" {
-		t.Errorf("Name = %q, want %q", sec.Name, "test")
-	}
-	if len(sec.Probes) != 1 {
-		t.Errorf("len(Probes) = %d, want 1", len(sec.Probes))
-	}
-	if sec.SubscriberCount() != 0 {
-		t.Errorf("SubscriberCount() = %d, want 0", sec.SubscriberCount())
-	}
-	if len(sec.BatchPlan.Spans) != 0 {
-		t.Errorf("BatchPlan.Spans should be empty, got %d spans", len(sec.BatchPlan.Spans))
-	}
-	if sec.SpanTracker != nil {
-		t.Errorf("SpanTracker should be nil for newSection, got %v", sec.SpanTracker)
-	}
+	assert.Equal(t, "test", sec.Name)
+	assert.Len(t, sec.Probes, 1)
+	assert.Equal(t, 0, sec.SubscriberCount())
+	assert.Empty(t, sec.BatchPlan.Spans, "BatchPlan.Spans should be empty")
+	assert.Nil(t, sec.SpanTracker, "SpanTracker should be nil for newSection")
 }
 
 // TestRegisterSection verifies that RegisterSection adds a section to the hub's map.
@@ -66,18 +56,10 @@ func TestRegisterSection(t *testing.T) {
 	h.RegisterSection("test-sec", probes)
 
 	sec, ok := h.sections["test-sec"]
-	if !ok {
-		t.Fatal("section 'test-sec' not found in hub.sections")
-	}
-	if sec.Name != "test-sec" {
-		t.Errorf("section Name = %q, want %q", sec.Name, "test-sec")
-	}
-	if len(sec.Probes) != 1 {
-		t.Errorf("section probe count = %d, want 1", len(sec.Probes))
-	}
-	if sec.SubscriberCount() != 0 {
-		t.Errorf("SubscriberCount() = %d, want 0", sec.SubscriberCount())
-	}
+	require.True(t, ok, "section 'test-sec' not found in hub.sections")
+	assert.Equal(t, "test-sec", sec.Name)
+	assert.Len(t, sec.Probes, 1)
+	assert.Equal(t, 0, sec.SubscriberCount())
 }
 
 // TestBroadcastToSection verifies that broadcastToSection delivers messages to subscribers
@@ -113,17 +95,11 @@ func TestBroadcastToSection(t *testing.T) {
 	select {
 	case data := <-send:
 		var received OutboundMessage
-		if err := json.Unmarshal(data, &received); err != nil {
-			t.Fatalf("failed to unmarshal received message: %v", err)
-		}
-		if received.Type != "test" {
-			t.Errorf("received Type = %q, want %q", received.Type, "test")
-		}
-		if received.Data["k"] != "v" {
-			t.Errorf("received Data[k] = %q, want %q", received.Data["k"], "v")
-		}
+		require.NoError(t, json.Unmarshal(data, &received), "failed to unmarshal received message")
+		assert.Equal(t, "test", received.Type)
+		assert.Equal(t, "v", received.Data["k"])
 	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for broadcast message")
+		require.Fail(t, "timed out waiting for broadcast message")
 	}
 
 	// Test with nonexistent section -- should be a no-op, no panic

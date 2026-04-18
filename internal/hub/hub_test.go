@@ -242,15 +242,13 @@ func collectClientMessages(t *testing.T, send chan []byte, count int, timeout ti
 		select {
 		case raw, ok := <-send:
 			if !ok {
-				t.Fatalf("send channel closed after %d messages, wanted %d", len(msgs), count)
+				require.True(t, ok, "send channel closed after %d messages, wanted %d", len(msgs), count)
 			}
 			var msg hub.OutboundMessage
-			if err := json.Unmarshal(raw, &msg); err != nil {
-				t.Fatalf("unmarshal outbound message: %v", err)
-			}
+			require.NoError(t, json.Unmarshal(raw, &msg), "unmarshal outbound message")
 			msgs = append(msgs, msg)
 		case <-deadline:
-			t.Fatalf("timeout after %v: got %d messages, wanted %d", timeout, len(msgs), count)
+			require.Failf(t, "timeout", "timeout after %v: got %d messages, wanted %d", timeout, len(msgs), count)
 		}
 	}
 	return msgs
@@ -287,12 +285,10 @@ func waitForMessageType(t *testing.T, send chan []byte, msgType string, timeout 
 		select {
 		case raw, ok := <-send:
 			if !ok {
-				t.Fatalf("send channel closed before finding message type %q (got %d messages)", msgType, len(msgs))
+				require.True(t, ok, "send channel closed before finding message type %q (got %d messages)", msgType, len(msgs))
 			}
 			var msg hub.OutboundMessage
-			if err := json.Unmarshal(raw, &msg); err != nil {
-				t.Fatalf("unmarshal outbound message: %v", err)
-			}
+			require.NoError(t, json.Unmarshal(raw, &msg), "unmarshal outbound message")
 			msgs = append(msgs, msg)
 			if msg.Type == msgType {
 				return msgs, len(msgs) - 1
@@ -302,7 +298,7 @@ func waitForMessageType(t *testing.T, send chan []byte, msgType string, timeout 
 			for i, m := range msgs {
 				types[i] = m.Type
 			}
-			t.Fatalf("timeout waiting for %q after %v: got types %v", msgType, timeout, types)
+			require.Failf(t, "timeout", "timeout waiting for %q after %v: got types %v", msgType, timeout, types)
 		}
 	}
 }
@@ -392,16 +388,12 @@ func TestHubRegisterUnregister(t *testing.T) {
 	// Wait for registration to be processed
 	time.Sleep(20 * time.Millisecond)
 
-	if got := h.ClientCount(); got != 1 {
-		t.Fatalf("expected 1 client, got %d", got)
-	}
+	require.Equal(t, 1, h.ClientCount())
 
 	h.Unregister(c)
 	time.Sleep(20 * time.Millisecond)
 
-	if got := h.ClientCount(); got != 0 {
-		t.Fatalf("expected 0 clients, got %d", got)
-	}
+	require.Equal(t, 0, h.ClientCount())
 }
 
 func TestHubConnectCommand(t *testing.T) {
@@ -430,15 +422,9 @@ func TestHubConnectCommand(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	calls := mb.getReconfigureCalls()
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 Reconfigure call, got %d", len(calls))
-	}
-	if calls[0].Addr != "1.2.3.4:4192" {
-		t.Errorf("expected addr 1.2.3.4:4192, got %s", calls[0].Addr)
-	}
-	if calls[0].SlaveID != 1 {
-		t.Errorf("expected slaveID 1, got %d", calls[0].SlaveID)
-	}
+	require.Len(t, calls, 1)
+	assert.Equal(t, "1.2.3.4:4192", calls[0].Addr)
+	assert.Equal(t, byte(1), calls[0].SlaveID)
 }
 
 func TestHubDisconnectCommand(t *testing.T) {
@@ -460,9 +446,7 @@ func TestHubDisconnectCommand(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	if got := mb.getDisconnectCalls(); got != 1 {
-		t.Fatalf("expected 1 Disconnect call, got %d", got)
-	}
+	require.Equal(t, 1, mb.getDisconnectCalls())
 }
 
 func TestHubStateBroadcast(t *testing.T) {
@@ -492,20 +476,12 @@ func TestHubStateBroadcast(t *testing.T) {
 
 	// Both clients should receive the state broadcast
 	msgs1 := collectClientMessages(t, send1, 1, 200*time.Millisecond)
-	if msgs1[0].Type != hub.MsgTypeState {
-		t.Errorf("expected type %q, got %q", hub.MsgTypeState, msgs1[0].Type)
-	}
-	if msgs1[0].State != "connected" {
-		t.Errorf("expected state 'connected', got %q", msgs1[0].State)
-	}
+	assert.Equal(t, hub.MsgTypeState, msgs1[0].Type)
+	assert.Equal(t, "connected", msgs1[0].State)
 
 	msgs2 := collectClientMessages(t, send2, 1, 200*time.Millisecond)
-	if msgs2[0].Type != hub.MsgTypeState {
-		t.Errorf("expected type %q, got %q", hub.MsgTypeState, msgs2[0].Type)
-	}
-	if msgs2[0].State != "connected" {
-		t.Errorf("expected state 'connected', got %q", msgs2[0].State)
-	}
+	assert.Equal(t, hub.MsgTypeState, msgs2[0].Type)
+	assert.Equal(t, "connected", msgs2[0].State)
 }
 
 func TestClientWritePump(t *testing.T) {
@@ -529,9 +505,7 @@ func TestClientWritePump(t *testing.T) {
 	// Send a section_data message to the client via hub broadcast
 	msg := hub.NewSectionData("test", map[string]string{"test": "value"})
 	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Write directly to the client's send channel
 	send <- data
@@ -539,12 +513,8 @@ func TestClientWritePump(t *testing.T) {
 	// Read it back and verify
 	raw := <-send
 	var got hub.OutboundMessage
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got.Type != hub.MsgTypeSectionData {
-		t.Errorf("expected type %q, got %q", hub.MsgTypeSectionData, got.Type)
-	}
+	require.NoError(t, json.Unmarshal(raw, &got), "unmarshal")
+	assert.Equal(t, hub.MsgTypeSectionData, got.Type)
 }
 
 // === Section registry, read cycle management ===
@@ -592,18 +562,12 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 	msgs := drainUntilComplete(t, send, 2*time.Second)
 
 	// First message should be section_schema
-	if len(msgs) == 0 {
-		t.Fatal("expected at least one message after subscribe")
-	}
-	if msgs[0].Type != hub.MsgTypeSectionSchema {
-		t.Errorf("expected first message type %q, got %q", hub.MsgTypeSectionSchema, msgs[0].Type)
-	}
+	require.NotEmpty(t, msgs, "expected at least one message after subscribe")
+	assert.Equal(t, hub.MsgTypeSectionSchema, msgs[0].Type, "expected first message type to be section_schema")
 
 	// Last message should be section_complete
 	lastMsg := msgs[len(msgs)-1]
-	if lastMsg.Type != hub.MsgTypeSectionComplete {
-		t.Errorf("expected last message type %q, got %q", hub.MsgTypeSectionComplete, lastMsg.Type)
-	}
+	assert.Equal(t, hub.MsgTypeSectionComplete, lastMsg.Type, "expected last message type to be section_complete")
 
 	// Should have register_value messages in between
 	regCount := 0
@@ -612,14 +576,10 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 			regCount++
 		}
 	}
-	if regCount == 0 {
-		t.Error("expected register_value messages from streaming read")
-	}
+	assert.Greater(t, regCount, 0, "expected register_value messages from streaming read")
 
 	// Verify ReadRegisters/ReadBatch was called (mock routes ReadRegisters through ReadBatch)
-	if got := mb.getBatchCallCount(); got < 1 {
-		t.Errorf("expected at least 1 read call, got %d", got)
-	}
+	assert.GreaterOrEqual(t, mb.getBatchCallCount(), 1, "expected at least 1 read call")
 }
 
 func TestSingleSectionPerClient(t *testing.T) {
@@ -651,9 +611,7 @@ func TestSingleSectionPerClient(t *testing.T) {
 			foundError = true
 		}
 	}
-	if !foundError {
-		t.Error("expected section_error for unknown section")
-	}
+	assert.True(t, foundError, "expected section_error for unknown section")
 }
 
 func TestReadCycleMessage(t *testing.T) {
@@ -682,12 +640,8 @@ func TestReadCycleMessage(t *testing.T) {
 			completeCount++
 		}
 	}
-	if completeCount < 1 {
-		t.Errorf("expected at least 1 section_complete from read_cycle, got %d", completeCount)
-	}
-	if got := mb.getBatchCallCount(); got < 1 {
-		t.Errorf("expected at least 1 read call from read_cycle, got %d", got)
-	}
+	assert.GreaterOrEqual(t, completeCount, 1, "expected at least 1 section_complete from read_cycle")
+	assert.GreaterOrEqual(t, mb.getBatchCallCount(), 1, "expected at least 1 read call from read_cycle")
 }
 
 func TestSkipOverlappingReadCycle(t *testing.T) {
@@ -719,9 +673,7 @@ func TestSkipOverlappingReadCycle(t *testing.T) {
 
 	// Most read_cycles should be skipped due to sec.reading guard
 	got := mb.getBatchCallCount()
-	if got > 3 {
-		t.Errorf("expected overlapping read_cycles to be skipped, but got %d read calls", got)
-	}
+	assert.LessOrEqual(t, got, 3, "expected overlapping read_cycles to be skipped")
 }
 
 func TestReadsCancelledOnDisconnect(t *testing.T) {
@@ -756,9 +708,7 @@ func TestReadsCancelledOnDisconnect(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	got := mb.getBatchCallCount()
-	if got > 0 {
-		t.Errorf("expected no reads after disconnect, got %d", got)
-	}
+	assert.Equal(t, 0, got, "expected no reads after disconnect")
 }
 
 func TestReadsWorkAfterReconnect(t *testing.T) {
@@ -802,9 +752,7 @@ func TestReadsWorkAfterReconnect(t *testing.T) {
 			completeCount++
 		}
 	}
-	if completeCount < 1 {
-		t.Errorf("expected section_complete after reconnect read_cycle, got %d", completeCount)
-	}
+	assert.GreaterOrEqual(t, completeCount, 1, "expected section_complete after reconnect read_cycle")
 }
 
 func TestSectionErrorBroadcast(t *testing.T) {
@@ -836,9 +784,7 @@ func TestSectionErrorBroadcast(t *testing.T) {
 			foundError = true
 		}
 	}
-	if !foundError {
-		t.Error("expected at least one register_value message with error")
-	}
+	assert.True(t, foundError, "expected at least one register_value message with error")
 }
 
 func TestManualRefresh(t *testing.T) {
@@ -873,14 +819,10 @@ func TestManualRefresh(t *testing.T) {
 			foundComplete = true
 		}
 	}
-	if !foundComplete {
-		t.Error("expected section_complete message from manual refresh")
-	}
+	assert.True(t, foundComplete, "expected section_complete message from manual refresh")
 
 	// ReadRegisters routes through ReadBatch in mock
-	if got := mb.getBatchCallCount(); got < 1 {
-		t.Errorf("expected at least 1 read call for manual refresh, got %d", got)
-	}
+	assert.GreaterOrEqual(t, mb.getBatchCallCount(), 1, "expected at least 1 read call for manual refresh")
 }
 
 func TestNoBackendTimer(t *testing.T) {
@@ -908,9 +850,7 @@ func TestNoBackendTimer(t *testing.T) {
 			completeCount++
 		}
 	}
-	if completeCount > 0 {
-		t.Errorf("expected no autonomous reads (backend should have no timer), but got %d section_complete messages", completeCount)
-	}
+	assert.Equal(t, 0, completeCount, "expected no autonomous reads (backend should have no timer)")
 }
 
 func TestCancelReadOnSectionSwitch(t *testing.T) {
@@ -945,9 +885,7 @@ func TestCancelReadOnSectionSwitch(t *testing.T) {
 			systemComplete++
 		}
 	}
-	if systemComplete < 1 {
-		t.Errorf("expected section_complete for system after switch, got %d", systemComplete)
-	}
+	assert.GreaterOrEqual(t, systemComplete, 1, "expected section_complete for system after switch")
 }
 
 func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
@@ -975,9 +913,7 @@ func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
 	// Streaming model: section_schema is sent first (doesn't require connection),
 	// then section_error since not connected
 	msgs := drainClientMessages(send, 500*time.Millisecond)
-	if len(msgs) == 0 {
-		t.Fatal("expected messages after subscribing while disconnected")
-	}
+	require.NotEmpty(t, msgs, "expected messages after subscribing while disconnected")
 	foundError := false
 	for _, m := range msgs {
 		if m.Type == hub.MsgTypeSectionErr && m.Section == "battery" {
@@ -989,7 +925,7 @@ func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
 		for i, m := range msgs {
 			types[i] = m.Type
 		}
-		t.Errorf("expected section_error for battery, got types: %v", types)
+		assert.Fail(t, "expected section_error for battery", "got types: %v", types)
 	}
 }
 
@@ -1005,13 +941,9 @@ func TestGroupedSectionRegistered(t *testing.T) {
 
 	// Verify all 4 sections exist
 	for _, name := range []string{"system", "grid", "eps", "pv"} {
-		if !h.HasSection(name) {
-			t.Errorf("expected section %q to exist", name)
-		}
+		assert.True(t, h.HasSection(name), "expected section %q to exist", name)
 		groups := h.GetSectionGroups(name)
-		if groups == nil {
-			t.Errorf("expected section %q to have groups", name)
-		}
+		assert.NotNil(t, groups, "expected section %q to have groups", name)
 	}
 }
 
@@ -1024,9 +956,7 @@ func TestStatusSectionRemoved(t *testing.T) {
 	defer cancel()
 
 	// Verify "status" section does NOT exist (D-24: demo retired)
-	if h.HasSection("status") {
-		t.Error("expected 'status' section to NOT exist (D-24: demo retired)")
-	}
+	assert.False(t, h.HasSection("status"), "expected 'status' section to NOT exist (D-24: demo retired)")
 }
 
 func TestSystemSectionGroupedData(t *testing.T) {
@@ -1049,9 +979,7 @@ func TestSystemSectionGroupedData(t *testing.T) {
 	msgs, idx := waitForMessageType(t, send, hub.MsgTypeSectionSchema, 2*time.Second)
 	schema := msgs[idx]
 
-	if schema.Section != "system" {
-		t.Fatalf("expected section 'system', got %q", schema.Section)
-	}
+	require.Equal(t, "system", schema.Section)
 
 	// Drain remaining streaming messages
 	drainClientMessages(send, 2*time.Second)
@@ -1097,9 +1025,7 @@ func TestSystemSectionFaults(t *testing.T) {
 	}
 
 	// When all fault registers are zero, there should be no active faults.
-	if len(faultMsg.Faults) != 0 {
-		t.Errorf("expected 0 faults (all zeros), got %d", len(faultMsg.Faults))
-	}
+	assert.Empty(t, faultMsg.Faults, "expected 0 faults (all zeros)")
 }
 
 func TestSystemSectionFaultsActive(t *testing.T) {
@@ -1140,17 +1066,11 @@ func TestSystemSectionFaultsActive(t *testing.T) {
 			break
 		}
 	}
-	if faultMsg == nil {
-		t.Fatal("expected section_data message with fault data")
-	}
+	require.NotNil(t, faultMsg, "expected section_data message with fault data")
 
 	// Should have exactly 1 active fault
-	if len(faultMsg.Faults) != 1 {
-		t.Fatalf("expected 1 active fault, got %d", len(faultMsg.Faults))
-	}
-	if faultMsg.Faults[0].Name != "Grid over-voltage" {
-		t.Errorf("fault name = %q, want 'Grid over-voltage'", faultMsg.Faults[0].Name)
-	}
+	require.Len(t, faultMsg.Faults, 1)
+	assert.Equal(t, "Grid over-voltage", faultMsg.Faults[0].Name)
 }
 
 func TestSystemSectionTimeComposition(t *testing.T) {
@@ -1207,15 +1127,11 @@ func TestSystemSectionTimeComposition(t *testing.T) {
 			foundComposed = true
 			// Expected: ComposeSystemTime(26, 3, 16, 14, 30, 45) -> "14:30:45 16-03-2026"
 			want := "14:30:45 16-03-2026"
-			if rv.Value != want {
-				t.Errorf("System time value = %q, want %q", rv.Value, want)
-			}
+			assert.Equal(t, want, rv.Value, "System time value")
 			break
 		}
 	}
-	if !foundComposed {
-		t.Error("expected register_value message for composed 'System time'")
-	}
+	assert.True(t, foundComposed, "expected register_value message for composed 'System time'")
 
 	// Also verify section_complete arrives (streaming works end-to-end).
 	foundComplete := false
@@ -1229,9 +1145,7 @@ func TestSystemSectionTimeComposition(t *testing.T) {
 			break
 		}
 	}
-	if !foundComplete {
-		t.Error("expected section_complete message for system section")
-	}
+	assert.True(t, foundComplete, "expected section_complete message for system section")
 }
 
 func TestSystemSectionEnumLabel(t *testing.T) {
@@ -1262,16 +1176,12 @@ func TestSystemSectionEnumLabel(t *testing.T) {
 			continue
 		}
 		if rv.Type == hub.MsgTypeRegisterValue && rv.Name == "Running state" {
-			if rv.Value != "Grid-connected" {
-				t.Errorf("Running state value = %q, want 'Grid-connected'", rv.Value)
-			}
+			assert.Equal(t, "Grid-connected", rv.Value, "Running state value")
 			found = true
 			break
 		}
 	}
-	if !found {
-		t.Error("expected register_value message for 'Running state'")
-	}
+	assert.True(t, found, "expected register_value message for 'Running state'")
 }
 
 func TestGridSectionGroupedLayout(t *testing.T) {
@@ -1300,9 +1210,7 @@ func TestGridSectionGroupedLayout(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Fatal("expected section_schema message for grid")
-	}
+	require.True(t, found, "expected section_schema message for grid")
 
 	// Find "Phase R" group and check layout
 	var phaseR *hub.SchemaGroup
@@ -1312,12 +1220,8 @@ func TestGridSectionGroupedLayout(t *testing.T) {
 			break
 		}
 	}
-	if phaseR == nil {
-		t.Fatal("Phase R group not found in grid section schema")
-	}
-	if phaseR.Layout != "column" {
-		t.Errorf("Phase R layout = %q, want 'column'", phaseR.Layout)
-	}
+	require.NotNil(t, phaseR, "Phase R group not found in grid section schema")
+	assert.Equal(t, "column", phaseR.Layout, "Phase R layout")
 }
 
 func TestNonSystemNoFaults(t *testing.T) {
@@ -1338,9 +1242,7 @@ func TestNonSystemNoFaults(t *testing.T) {
 	for _, m := range allMsgs {
 		if m.Type == hub.MsgTypeSectionData && m.Section == "grid" {
 			// If a section_data is sent for grid, it should not have faults
-			if m.Faults != nil {
-				t.Errorf("expected nil faults for grid section, got %d faults", len(m.Faults))
-			}
+			assert.Nil(t, m.Faults, "expected nil faults for grid section")
 		}
 	}
 
@@ -1351,9 +1253,7 @@ func TestNonSystemNoFaults(t *testing.T) {
 			foundComplete = true
 		}
 	}
-	if !foundComplete {
-		t.Error("expected section_complete for grid section")
-	}
+	assert.True(t, foundComplete, "expected section_complete for grid section")
 }
 
 // === Task 2: Configure message tests ===
@@ -1391,20 +1291,14 @@ func TestConfigurePVChannels(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Fatal("expected section_schema message for pv")
-	}
+	require.True(t, found, "expected section_schema message for pv")
 
 	// Should have 5 groups: PV 1, PV 2, PV 3, PV 4, Total PV Power
-	if len(schema.Groups) != 5 {
-		t.Fatalf("expected 5 groups after configure(channels=4), got %d", len(schema.Groups))
-	}
+	require.Len(t, schema.Groups, 5, "expected 5 groups after configure(channels=4)")
 
 	expectedNames := []string{"PV 1", "PV 2", "PV 3", "PV 4", "Total PV Power"}
 	for i, name := range expectedNames {
-		if schema.Groups[i].Name != name {
-			t.Errorf("group[%d] name = %q, want %q", i, schema.Groups[i].Name, name)
-		}
+		assert.Equal(t, name, schema.Groups[i].Name, "group[%d] name", i)
 	}
 }
 
@@ -1430,22 +1324,16 @@ func TestConfigurePVBatchPlan(t *testing.T) {
 
 	// Verify BatchPlan was recomputed
 	plan := h.GetSectionBatchPlan("pv")
-	if len(plan.Spans) == 0 {
-		t.Fatal("expected non-empty batch plan after PV configure")
-	}
+	require.NotEmpty(t, plan.Spans, "expected non-empty batch plan after PV configure")
 
 	// Verify total register count increased (4 channels = more registers than 2)
 	totalRegs := 0
 	for _, span := range plan.Spans {
 		totalRegs += int(span.TotalCount)
 	}
-	if totalRegs <= initialRegs {
-		t.Errorf("expected more registers after channels 2->4, got %d (was %d)", totalRegs, initialRegs)
-	}
+	assert.Greater(t, totalRegs, initialRegs, "expected more registers after channels 2->4")
 	// 4 channels * 3 regs + 1 total PV = 13 registers minimum
-	if totalRegs < 13 {
-		t.Errorf("expected at least 13 registers for 4-channel PV, got %d", totalRegs)
-	}
+	assert.GreaterOrEqual(t, totalRegs, 13, "expected at least 13 registers for 4-channel PV")
 }
 
 func TestConfigureClampRange(t *testing.T) {
@@ -1479,9 +1367,7 @@ func TestConfigureClampRange(t *testing.T) {
 
 	groups := h.GetSectionGroups("pv")
 	// Should have 3 groups: PV 1, PV 2, Total PV Power (clamped to 2 channels)
-	if len(groups) != 3 {
-		t.Errorf("expected 3 groups after clamp(0->2), got %d", len(groups))
-	}
+	assert.Len(t, groups, 3, "expected 3 groups after clamp(0->2)")
 
 	// Configure with channels=20 (should clamp to 16)
 	h.Command(c, hub.InboundMessage{
@@ -1493,9 +1379,7 @@ func TestConfigureClampRange(t *testing.T) {
 
 	groups = h.GetSectionGroups("pv")
 	// Should have 17 groups: PV 1-16, Total PV Power (clamped to 16 channels)
-	if len(groups) != 17 {
-		t.Errorf("expected 17 groups after clamp(20->16), got %d", len(groups))
-	}
+	assert.Len(t, groups, 17, "expected 17 groups after clamp(20->16)")
 }
 
 func TestConfigureNonPVIgnored(t *testing.T) {
@@ -1522,9 +1406,7 @@ func TestConfigureNonPVIgnored(t *testing.T) {
 
 	// Grid groups should be unchanged (7 groups)
 	groups := h.GetSectionGroups("grid")
-	if len(groups) != 7 {
-		t.Errorf("expected 7 grid groups (unchanged), got %d", len(groups))
-	}
+	assert.Len(t, groups, 7, "expected 7 grid groups (unchanged)")
 }
 
 func TestConfigureTriggersReread(t *testing.T) {
@@ -1560,20 +1442,14 @@ func TestConfigureTriggersReread(t *testing.T) {
 			foundComplete = true
 		}
 	}
-	if !foundComplete {
-		t.Error("expected section_complete from configure re-read")
-	}
+	assert.True(t, foundComplete, "expected section_complete from configure re-read")
 
 	// Verify reads were triggered
-	if got := mb.getBatchCallCount(); got < 1 {
-		t.Errorf("expected at least 1 read call from configure re-read, got %d", got)
-	}
+	assert.GreaterOrEqual(t, mb.getBatchCallCount(), 1, "expected at least 1 read call from configure re-read")
 
 	// Verify the section now has 5 groups (4 PV + Total) via schema
 	groups := h.GetSectionGroups("pv")
-	if len(groups) != 5 {
-		t.Errorf("expected 5 groups after reconfigure, got %d", len(groups))
-	}
+	assert.Len(t, groups, 5, "expected 5 groups after reconfigure")
 }
 
 // === Phase 05 Plan 02: Pack selection and data retrieval tests ===
@@ -1662,14 +1538,14 @@ func collectPackErrorMessages(t *testing.T, send chan []byte, count int, timeout
 		select {
 		case raw, ok := <-send:
 			if !ok {
-				t.Fatalf("send channel closed after %d pack error messages, wanted %d", len(msgs), count)
+				require.True(t, ok, "send channel closed after %d pack error messages, wanted %d", len(msgs), count)
 			}
 			var msg hub.PackErrorMessage
 			if err := json.Unmarshal(raw, &msg); err == nil && msg.Type == hub.MsgTypePackError {
 				msgs = append(msgs, msg)
 			}
 		case <-deadline:
-			t.Fatalf("timeout after %v: got %d pack_error messages, wanted %d", timeout, len(msgs), count)
+			require.Failf(t, "timeout", "timeout after %v: got %d pack_error messages, wanted %d", timeout, len(msgs), count)
 		}
 	}
 	return msgs
@@ -1706,9 +1582,7 @@ func TestHandleSelectPack(t *testing.T) {
 
 	// Verify WriteRegister was called with addr 0x9020
 	writes := mb.getWriteCalls()
-	if len(writes) == 0 {
-		t.Fatal("expected WriteRegister to be called, got 0 calls")
-	}
+	require.NotEmpty(t, writes, "expected WriteRegister to be called")
 	foundWrite := false
 	for _, w := range writes {
 		if w.Addr == 0x9020 {
@@ -1716,15 +1590,11 @@ func TestHandleSelectPack(t *testing.T) {
 			break
 		}
 	}
-	if !foundWrite {
-		t.Errorf("expected WriteRegister call with addr=0x9020, got calls: %+v", writes)
-	}
+	assert.True(t, foundWrite, "expected WriteRegister call with addr=0x9020, got calls: %+v", writes)
 
 	// Phase 25: streamPackBatchRead uses readBatchSpans with 6 batch spans.
 	// Verify batch read calls were made (one per span).
-	if got := mb.getBatchCallCount(); got < 6 {
-		t.Errorf("expected at least 6 ReadRegisters calls (batch spans), got %d", got)
-	}
+	assert.GreaterOrEqual(t, mb.getBatchCallCount(), 6, "expected at least 6 ReadRegisters calls (batch spans)")
 }
 
 func TestPackDataMessageShape(t *testing.T) {
@@ -1808,28 +1678,18 @@ func TestPackDataMessageShape(t *testing.T) {
 		}
 	}
 
-	if hasPackData {
-		t.Error("received pack_data message (should use streaming)")
-	}
+	assert.False(t, hasPackData, "received pack_data message (should use streaming)")
 
 	// Verify schema
-	if schemaMsg == nil {
-		t.Fatal("no section_schema message received")
-	}
-	if schemaMsg.Section != "bms" {
-		t.Errorf("schema section = %q, want 'bms'", schemaMsg.Section)
-	}
-	if schemaMsg.PackContext == nil {
-		t.Fatal("schema missing pack_context")
-	}
-	if schemaMsg.PackContext.Input != 1 || schemaMsg.PackContext.Tower != 1 || schemaMsg.PackContext.Pack != 1 {
-		t.Errorf("pack_context = %+v, want input=1,tower=1,pack=1", schemaMsg.PackContext)
-	}
+	require.NotNil(t, schemaMsg, "no section_schema message received")
+	assert.Equal(t, "bms", schemaMsg.Section)
+	require.NotNil(t, schemaMsg.PackContext, "schema missing pack_context")
+	assert.Equal(t, 1, schemaMsg.PackContext.Input)
+	assert.Equal(t, 1, schemaMsg.PackContext.Tower)
+	assert.Equal(t, 1, schemaMsg.PackContext.Pack)
 
 	// Should have 5 groups in D-03 order
-	if len(schemaMsg.Groups) != 5 {
-		t.Fatalf("expected 5 schema groups, got %d", len(schemaMsg.Groups))
-	}
+	require.Len(t, schemaMsg.Groups, 5, "expected 5 schema groups")
 	expectedGroups := []struct {
 		name  string
 		gtype string
@@ -1841,22 +1701,14 @@ func TestPackDataMessageShape(t *testing.T) {
 		{"Pack Status", "pack_status"},
 	}
 	for i, eg := range expectedGroups {
-		if schemaMsg.Groups[i].Name != eg.name {
-			t.Errorf("group[%d] name = %q, want %q", i, schemaMsg.Groups[i].Name, eg.name)
-		}
-		if schemaMsg.Groups[i].Type != eg.gtype {
-			t.Errorf("group[%d] type = %q, want %q", i, schemaMsg.Groups[i].Type, eg.gtype)
-		}
+		assert.Equal(t, eg.name, schemaMsg.Groups[i].Name, "group[%d] name", i)
+		assert.Equal(t, eg.gtype, schemaMsg.Groups[i].Type, "group[%d] type", i)
 	}
 
 	// Verify we got register_value messages for pack probes
-	if regValueCount == 0 {
-		t.Error("no register_value messages received")
-	}
+	assert.Greater(t, regValueCount, 0, "no register_value messages received")
 
-	if !hasComplete {
-		t.Error("no section_complete message received")
-	}
+	assert.True(t, hasComplete, "no section_complete message received")
 }
 
 func TestPackErrorOnWriteTimeout(t *testing.T) {
@@ -1883,18 +1735,12 @@ func TestPackErrorOnWriteTimeout(t *testing.T) {
 	msgs := collectPackErrorMessages(t, send, 1, 5*time.Second)
 	msg := msgs[0]
 
-	if msg.Type != hub.MsgTypePackError {
-		t.Fatalf("expected type %q, got %q", hub.MsgTypePackError, msg.Type)
-	}
-	if msg.Section != "bms" {
-		t.Errorf("expected section 'bms', got %q", msg.Section)
-	}
-	if msg.Input != 1 || msg.Tower != 1 || msg.Pack != 1 {
-		t.Errorf("expected input=1,tower=1,pack=1, got %d,%d,%d", msg.Input, msg.Tower, msg.Pack)
-	}
-	if msg.Error == "" {
-		t.Error("expected non-empty error message")
-	}
+	require.Equal(t, hub.MsgTypePackError, msg.Type)
+	assert.Equal(t, "bms", msg.Section)
+	assert.Equal(t, 1, msg.Input)
+	assert.Equal(t, 1, msg.Tower)
+	assert.Equal(t, 1, msg.Pack)
+	assert.NotEmpty(t, msg.Error, "expected non-empty error message")
 }
 
 func TestEncodePackQueryInHandler(t *testing.T) {
@@ -1938,21 +1784,13 @@ func TestEncodePackQueryInHandler(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Errorf("expected WriteRegister(0x9020, 0x%04X), got calls: %+v", expectedValue, writes)
-	}
+	assert.True(t, found, "expected WriteRegister(0x9020, 0x%04X), got calls: %+v", expectedValue, writes)
 }
 
 func TestTopologyConstants(t *testing.T) {
-	if hub.TopoTowers != 2 {
-		t.Errorf("TopoTowers = %d, want 2", hub.TopoTowers)
-	}
-	if hub.TopoPacksPerTower != 10 {
-		t.Errorf("TopoPacksPerTower = %d, want 10", hub.TopoPacksPerTower)
-	}
-	if hub.TopoCellsPerPack != 16 {
-		t.Errorf("TopoCellsPerPack = %d, want 16", hub.TopoCellsPerPack)
-	}
+	assert.Equal(t, 2, hub.TopoTowers)
+	assert.Equal(t, 10, hub.TopoPacksPerTower)
+	assert.Equal(t, 16, hub.TopoCellsPerPack)
 }
 
 // setupBMSBatchSpanTest creates a mockBroker configured for BMS batch span reads.
@@ -2033,7 +1871,7 @@ func TestBMSTowerBitmap(t *testing.T) {
 		for i, m := range allMsgs {
 			types[i] = m.Type
 		}
-		t.Fatalf("expected section_data message in BMS stream, got types: %v", types)
+		require.Failf(t, "expected section_data message in BMS stream", "got types: %v", types)
 	}
 
 	var bitmapGroup *hub.GroupData
@@ -2080,7 +1918,7 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 		for i, m := range allMsgs {
 			types[i] = m.Type
 		}
-		t.Fatalf("expected section_data message in BMS stream, got types: %v", types)
+		require.Failf(t, "expected section_data message in BMS stream", "got types: %v", types)
 	}
 
 	var bitmapGroup *hub.GroupData
@@ -2267,40 +2105,24 @@ func TestPackDataMessageItemMeta(t *testing.T) {
 		},
 	}
 	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	s := string(data)
 	// Verify ItemMeta appears in JSON
-	if !strings.Contains(s, `"item_meta"`) {
-		t.Errorf("JSON missing item_meta: %s", s)
-	}
-	if !strings.Contains(s, `"register_addr":`) {
-		t.Errorf("JSON missing register_addr in item_meta: %s", s)
-	}
+	assert.Contains(t, s, `"item_meta"`, "JSON missing item_meta")
+	assert.Contains(t, s, `"register_addr":`, "JSON missing register_addr in item_meta")
 	// Verify CellAddrs appears
-	if !strings.Contains(s, `"cell_addrs"`) {
-		t.Errorf("JSON missing cell_addrs: %s", s)
-	}
+	assert.Contains(t, s, `"cell_addrs"`, "JSON missing cell_addrs")
 	// Verify 0x906C = 36972 decimal appears
-	if !strings.Contains(s, `36972`) {
-		t.Errorf("JSON missing register_addr value 36972 for SOC: %s", s)
-	}
+	assert.Contains(t, s, `36972`, "JSON missing register_addr value 36972 for SOC")
 }
 
 func TestNewRegisterValueJSON(t *testing.T) {
 	msg := hub.NewRegisterValue("system", "Info", "Inverter SN", "SA00T", "", 0x0445, "534F464152")
 	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	s := string(data)
-	if !strings.Contains(s, `"register_addr":1093`) {
-		t.Errorf("JSON missing register_addr: %s", s)
-	}
-	if !strings.Contains(s, `"raw_value":"534F464152"`) {
-		t.Errorf("JSON missing raw_value: %s", s)
-	}
+	assert.Contains(t, s, `"register_addr":1093`, "JSON missing register_addr")
+	assert.Contains(t, s, `"raw_value":"534F464152"`, "JSON missing raw_value")
 }
 
 func TestNewRegisterValueComposedJSON(t *testing.T) {
@@ -2321,38 +2143,22 @@ func TestPackSchemaContext(t *testing.T) {
 	schema := h.BuildPackSchema(1, 2, 3, groups)
 
 	// Verify section
-	if schema.Section != "bms" {
-		t.Errorf("schema.Section = %q, want %q", schema.Section, "bms")
-	}
+	assert.Equal(t, "bms", schema.Section)
 
 	// Verify 5 groups
-	if len(schema.Groups) != 5 {
-		t.Fatalf("schema has %d groups, want 5", len(schema.Groups))
-	}
+	require.Len(t, schema.Groups, 5)
 
 	// Verify JSON contains pack_context
 	data, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	s := string(data)
-	if !strings.Contains(s, `"pack_context"`) {
-		t.Errorf("JSON missing pack_context: %s", s)
-	}
-	if !strings.Contains(s, `"input":1`) {
-		t.Errorf("JSON missing input:1: %s", s)
-	}
-	if !strings.Contains(s, `"tower":2`) {
-		t.Errorf("JSON missing tower:2: %s", s)
-	}
-	if !strings.Contains(s, `"pack":3`) {
-		t.Errorf("JSON missing pack:3: %s", s)
-	}
+	assert.Contains(t, s, `"pack_context"`, "JSON missing pack_context")
+	assert.Contains(t, s, `"input":1`, "JSON missing input:1")
+	assert.Contains(t, s, `"tower":2`, "JSON missing tower:2")
+	assert.Contains(t, s, `"pack":3`, "JSON missing pack:3")
 
 	// Verify Cell Voltages group has cell_count > 0
-	if !strings.Contains(s, `"cell_count"`) {
-		t.Errorf("JSON missing cell_count: %s", s)
-	}
+	assert.Contains(t, s, `"cell_count"`, "JSON missing cell_count")
 }
 
 func TestPackSchemaGroupOrder(t *testing.T) {
@@ -2362,13 +2168,9 @@ func TestPackSchemaGroupOrder(t *testing.T) {
 	schema := h.BuildPackSchema(1, 1, 1, groups)
 
 	wantNames := []string{"Pack Info", "Cell Voltages", "Balance State", "Temperatures", "Pack Status"}
-	if len(schema.Groups) != len(wantNames) {
-		t.Fatalf("got %d groups, want %d", len(schema.Groups), len(wantNames))
-	}
+	require.Len(t, schema.Groups, len(wantNames))
 	for i, want := range wantNames {
-		if schema.Groups[i].Name != want {
-			t.Errorf("group[%d].Name = %q, want %q", i, schema.Groups[i].Name, want)
-		}
+		assert.Equal(t, want, schema.Groups[i].Name, "group[%d].Name", i)
 	}
 }
 
@@ -2467,9 +2269,7 @@ func TestPackStreamingMessages(t *testing.T) {
 	// Collect messages
 	rawMsgs := collectRawMessages(t, send, 5*time.Second)
 
-	if len(rawMsgs) == 0 {
-		t.Fatal("received no messages after select_pack")
-	}
+	require.NotEmpty(t, rawMsgs, "received no messages after select_pack")
 
 	// Parse messages and verify types
 	var hasSchema, hasRegValue, hasComplete bool
@@ -2484,9 +2284,8 @@ func TestPackStreamingMessages(t *testing.T) {
 		case "section_schema":
 			hasSchema = true
 			// Verify pack_context is present
-			if _, ok := generic["pack_context"]; !ok {
-				t.Error("section_schema missing pack_context")
-			}
+			_, ok := generic["pack_context"]
+			assert.True(t, ok, "section_schema missing pack_context")
 		case "register_value":
 			hasRegValue = true
 		case "section_complete":
@@ -2496,18 +2295,10 @@ func TestPackStreamingMessages(t *testing.T) {
 		}
 	}
 
-	if !hasSchema {
-		t.Error("no section_schema message received")
-	}
-	if !hasRegValue {
-		t.Error("no register_value messages received")
-	}
-	if !hasComplete {
-		t.Error("no section_complete message received")
-	}
-	if hasPackData {
-		t.Error("received pack_data message (should not be sent by streaming path)")
-	}
+	assert.True(t, hasSchema, "no section_schema message received")
+	assert.True(t, hasRegValue, "no register_value messages received")
+	assert.True(t, hasComplete, "no section_complete message received")
+	assert.False(t, hasPackData, "received pack_data message (should not be sent by streaming path)")
 }
 
 func TestPackSpanDegradation(t *testing.T) {
@@ -2584,9 +2375,7 @@ func TestPackSpanDegradation(t *testing.T) {
 
 	// Verify 0x9104 span is degraded after 3 batch failures
 	state := h.GetPackSpanState(0x9104)
-	if state == hub.SpanNormal {
-		t.Errorf("0x9104 span state = %v, want degraded or skipped after 3 failures", state)
-	}
+	assert.NotEqual(t, hub.SpanNormal, state, "0x9104 span state should be degraded or skipped after 3 failures")
 
 	// The next read_cycle uses the degraded path: individual reads succeed,
 	// which calls RecordSuccess and recovers the span. Verify individual fallback
@@ -2606,9 +2395,7 @@ func TestPackSpanDegradation(t *testing.T) {
 			}
 		}
 	}
-	if count9104 != 1 {
-		t.Errorf("degraded span: got %d register_value for 0x9104, want 1 (individual fallback)", count9104)
-	}
+	assert.Equal(t, 1, count9104, "degraded span: want 1 register_value for 0x9104 (individual fallback)")
 }
 
 func TestPackSpanResetOnSwitch(t *testing.T) {
@@ -2677,9 +2464,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 
 	// Verify 0x9104 span is degraded
 	state := h.GetPackSpanState(0x9104)
-	if state == hub.SpanNormal {
-		t.Fatalf("0x9104 span state = %v, want degraded after 3 failures", state)
-	}
+	require.NotEqual(t, hub.SpanNormal, state, "0x9104 span state should be degraded after 3 failures")
 
 	// Now fix 0x9104 span: remove from spanFailAddrs and restore full span data
 	mb.mu.Lock()
@@ -2698,9 +2483,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 
 	// Verify 0x9104 span is back to normal after pack switch reset
 	state = h.GetPackSpanState(0x9104)
-	if state != hub.SpanNormal {
-		t.Errorf("0x9104 span state = %v after pack switch, want SpanNormal (reset)", state)
-	}
+	assert.Equal(t, hub.SpanNormal, state, "0x9104 span state after pack switch should be SpanNormal (reset)")
 }
 
 // === Phase 25: Pack batch read tests ===
@@ -3037,9 +2820,7 @@ func TestBatchStreamingMessages(t *testing.T) {
 
 	// Collect messages until section_complete (from the subscribe-triggered read)
 	msgs, completeIdx := waitForMessageType(t, send, "section_complete", 10*time.Second)
-	if completeIdx < 0 {
-		t.Fatal("never received section_complete")
-	}
+	require.GreaterOrEqual(t, completeIdx, 0, "never received section_complete")
 
 	// Count register_value messages
 	regValCount := 0
@@ -3054,9 +2835,7 @@ func TestBatchStreamingMessages(t *testing.T) {
 	for _, g := range register.GridGroups {
 		totalGridProbes += len(g.Probes)
 	}
-	if regValCount != totalGridProbes {
-		t.Errorf("register_value count = %d, want %d (total grid probes)", regValCount, totalGridProbes)
-	}
+	assert.Equal(t, totalGridProbes, regValCount, "register_value count should match total grid probes")
 }
 
 func TestBatchSpanFallback(t *testing.T) {
@@ -3066,9 +2845,7 @@ func TestBatchSpanFallback(t *testing.T) {
 
 	// Get the grid batch plan to find a span to fail
 	gridPlan := register.AnalyzeBatchPlan(register.GridGroups)
-	if len(gridPlan.Spans) == 0 {
-		t.Fatal("no spans in grid batch plan")
-	}
+	require.NotEmpty(t, gridPlan.Spans, "no spans in grid batch plan")
 	failSpan := gridPlan.Spans[0]
 
 	// Make the batch span read fail (keyed by span StartAddr)
@@ -3108,9 +2885,7 @@ func TestBatchSpanFallback(t *testing.T) {
 	h.Command(client, hub.InboundMessage{Type: "subscribe", Section: "grid"})
 
 	msgs, completeIdx := waitForMessageType(t, send, "section_complete", 10*time.Second)
-	if completeIdx < 0 {
-		t.Fatal("never received section_complete")
-	}
+	require.GreaterOrEqual(t, completeIdx, 0, "never received section_complete")
 
 	// Verify register_value messages arrived for the failed span's probes (via fallback)
 	regValCount := 0
@@ -3125,9 +2900,7 @@ func TestBatchSpanFallback(t *testing.T) {
 	for _, g := range register.GridGroups {
 		totalGridProbes += len(g.Probes)
 	}
-	if regValCount != totalGridProbes {
-		t.Errorf("register_value count after fallback = %d, want %d", regValCount, totalGridProbes)
-	}
+	assert.Equal(t, totalGridProbes, regValCount, "register_value count after fallback")
 }
 
 func TestBatchProgressiveStreaming(t *testing.T) {
@@ -3178,20 +2951,12 @@ func TestBatchProgressiveStreaming(t *testing.T) {
 		}
 	}
 
-	if firstRegVal == -1 {
-		t.Fatal("no register_value messages received")
-	}
-	if sectionComplete == -1 {
-		t.Fatal("no section_complete received")
-	}
+	require.NotEqual(t, -1, firstRegVal, "no register_value messages received")
+	require.NotEqual(t, -1, sectionComplete, "no section_complete received")
 	// register_value messages must come BEFORE section_complete (progressive update)
-	if lastRegVal >= sectionComplete {
-		t.Errorf("last register_value at index %d but section_complete at %d; values should precede completion", lastRegVal, sectionComplete)
-	}
+	assert.Less(t, lastRegVal, sectionComplete, "last register_value should precede section_complete")
 	// First register_value should appear early (not bunched at the end)
-	if firstRegVal > sectionComplete/2 {
-		t.Errorf("first register_value at index %d of %d total; expected progressive delivery", firstRegVal, len(msgs))
-	}
+	assert.LessOrEqual(t, firstRegVal, sectionComplete/2, "first register_value should appear early (progressive delivery)")
 }
 
 func TestBatchTimingLog(t *testing.T) {
@@ -3225,9 +2990,7 @@ func TestBatchTimingLog(t *testing.T) {
 
 	// If timing log panics or breaks the flow, section_complete would not arrive
 	msgs, completeIdx := waitForMessageType(t, send, "section_complete", 10*time.Second)
-	if completeIdx < 0 {
-		t.Fatal("section_complete not received -- timing log may have broken the flow")
-	}
+	require.GreaterOrEqual(t, completeIdx, 0, "section_complete not received -- timing log may have broken the flow")
 
 	// Verify at least one register_value was sent
 	hasRegVal := false
@@ -3237,9 +3000,7 @@ func TestBatchTimingLog(t *testing.T) {
 			break
 		}
 	}
-	if !hasRegVal {
-		t.Error("no register_value messages for eps section")
-	}
+	assert.True(t, hasRegVal, "no register_value messages for eps section")
 }
 
 // === Phase 22: SpanTracker integration tests ===
@@ -3664,7 +3425,7 @@ autoDetectDrain:
 				}
 			}
 		case <-deadline:
-			t.Fatal("timeout waiting for section_complete after auto-detection")
+			require.Fail(t, "timeout waiting for section_complete after auto-detection")
 		}
 	}
 
@@ -3753,7 +3514,7 @@ drainLoop:
 				}
 			}
 		case <-deadline:
-			t.Fatal("timeout waiting for section_complete in output equivalence test")
+			require.Fail(t, "timeout waiting for section_complete in output equivalence test")
 		}
 	}
 	require.NotEmpty(t, rawMsgs, "should receive messages from battery read")
