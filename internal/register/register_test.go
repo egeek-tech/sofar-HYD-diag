@@ -2071,3 +2071,37 @@ func TestConfigurationGroups(t *testing.T) {
 		t.Errorf("Safety group count = %d, want >= 5", safetyCount)
 	}
 }
+
+// TestInternalInfoGroups verifies InternalInfoGroups returns the expected structure:
+// exactly 1 group named "Internal Info" with 5 probes at known addresses.
+func TestInternalInfoGroups(t *testing.T) {
+	groups := InternalInfoGroups()
+	if len(groups) != 1 {
+		t.Fatalf("InternalInfoGroups() returned %d groups, want 1", len(groups))
+	}
+
+	g := groups[0]
+	if g.Name != "Internal Info" {
+		t.Errorf("group name = %q, want %q", g.Name, "Internal Info")
+	}
+	if len(g.Probes) != 5 {
+		t.Fatalf("probe count = %d, want 5", len(g.Probes))
+	}
+
+	// First probe: "Total BUS voltage" at 0x06CC
+	if g.Probes[0].Name != "Total BUS voltage" {
+		t.Errorf("first probe name = %q, want %q", g.Probes[0].Name, "Total BUS voltage")
+	}
+	if g.Probes[0].Addr != 0x06CC {
+		t.Errorf("first probe addr = 0x%04X, want 0x06CC", g.Probes[0].Addr)
+	}
+
+	// Last probe: "Rated power" at 0x06ED
+	last := g.Probes[len(g.Probes)-1]
+	if last.Name != "Rated power" {
+		t.Errorf("last probe name = %q, want %q", last.Name, "Rated power")
+	}
+	if last.Addr != 0x06ED {
+		t.Errorf("last probe addr = 0x%04X, want 0x06ED", last.Addr)
+	}
+}
