@@ -226,16 +226,6 @@ func (m *mockBroker) resetBatchCallCount() {
 	m.batchCallCount = 0
 }
 
-// setSpanFail marks an address to fail only for batch reads (count > 1).
-func (m *mockBroker) setSpanFail(addr uint16, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.spanFailAddrs == nil {
-		m.spanFailAddrs = make(map[uint16]error)
-	}
-	m.spanFailAddrs[addr] = err
-}
-
 // clearSpanFail removes a span failure so batch reads succeed again.
 func (m *mockBroker) clearSpanFail(addr uint16) {
 	m.mu.Lock()
@@ -383,11 +373,6 @@ func uint16Bytes(v uint16) []byte {
 	b := make([]byte, 2)
 	binary.BigEndian.PutUint16(b, v)
 	return b
-}
-
-// makeFaultBatchData creates multi-register fault batch data (count*2 bytes, all zeros).
-func makeFaultBatchData(count uint16) []byte {
-	return make([]byte, int(count)*2)
 }
 
 func TestHubRegisterUnregister(t *testing.T) {
@@ -1665,29 +1650,6 @@ func makePackTemps58Data() []byte {
 		binary.BigEndian.PutUint16(data[i*2:(i+1)*2], 275) // 27.5C
 	}
 	return data
-}
-
-// collectPackDataMessages reads raw JSON from the send channel and attempts to unmarshal
-// as PackDataMessage. Returns all successfully parsed pack_data messages.
-func collectPackDataMessages(t *testing.T, send chan []byte, count int, timeout time.Duration) []hub.PackDataMessage {
-	t.Helper()
-	var msgs []hub.PackDataMessage
-	deadline := time.After(timeout)
-	for len(msgs) < count {
-		select {
-		case raw, ok := <-send:
-			if !ok {
-				t.Fatalf("send channel closed after %d pack messages, wanted %d", len(msgs), count)
-			}
-			var msg hub.PackDataMessage
-			if err := json.Unmarshal(raw, &msg); err == nil && msg.Type == hub.MsgTypePackData {
-				msgs = append(msgs, msg)
-			}
-		case <-deadline:
-			t.Fatalf("timeout after %v: got %d pack_data messages, wanted %d", timeout, len(msgs), count)
-		}
-	}
-	return msgs
 }
 
 // collectPackErrorMessages reads raw JSON from the send channel and attempts to unmarshal

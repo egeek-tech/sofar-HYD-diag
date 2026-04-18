@@ -24,7 +24,7 @@ func ReadHoldingRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte, s
 	binary.BigEndian.PutUint16(req[8:10], startAddr)
 	binary.BigEndian.PutUint16(req[10:12], quantity)
 
-	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	if _, err := conn.Write(req); err != nil {
 		return nil, fmt.Errorf("write: %w", err)
 	}
@@ -32,7 +32,7 @@ func ReadHoldingRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte, s
 	// Read response, matching transaction ID to skip stale responses
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		conn.SetReadDeadline(deadline)
+		_ = conn.SetReadDeadline(deadline)
 		mbap := make([]byte, 7)
 		if _, err := ReadFull(conn, mbap); err != nil {
 			return nil, fmt.Errorf("timeout: %w", err)
@@ -98,7 +98,7 @@ func WriteMultipleRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte,
 	req[12] = 2                                // byte count = 2
 	binary.BigEndian.PutUint16(req[13:15], value)
 
-	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -106,7 +106,7 @@ func WriteMultipleRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte,
 	// Read response, matching transaction ID (skip stale responses)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		conn.SetReadDeadline(deadline)
+		_ = conn.SetReadDeadline(deadline)
 		mbap := make([]byte, 7)
 		if _, err := ReadFull(conn, mbap); err != nil {
 			return fmt.Errorf("read MBAP: %w", err)

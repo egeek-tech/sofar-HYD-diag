@@ -22,12 +22,12 @@ func ReadHoldingRegistersRTU(conn net.Conn, logger *slog.Logger, slaveID byte, s
 	crc := CRC16(req)
 	req = append(req, byte(crc&0xFF), byte(crc>>8))
 
-	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	if _, err := conn.Write(req); err != nil {
 		return nil, fmt.Errorf("write: %w", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	header := make([]byte, 3)
 	n, err := ReadFull(conn, header)
 	if err != nil {
@@ -79,12 +79,12 @@ func WriteSingleRegisterRTU(conn net.Conn, logger *slog.Logger, slaveID byte, re
 	crc := CRC16(req)
 	req = append(req, byte(crc&0xFF), byte(crc>>8))
 
-	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	resp := make([]byte, 8)
 	if _, err := ReadFull(conn, resp); err != nil {
 		return fmt.Errorf("read response: %w", err)

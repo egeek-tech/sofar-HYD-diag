@@ -257,7 +257,7 @@ func (b *Broker) abortRead() {
 	b.connMu.Lock()
 	defer b.connMu.Unlock()
 	if b.conn != nil {
-		b.conn.SetReadDeadline(time.Now())
+		_ = b.conn.SetReadDeadline(time.Now())
 	}
 }
 
@@ -489,7 +489,7 @@ func (b *Broker) executeReconfigure(_ context.Context, req ReconfigureRequest) e
 	// Close existing connection if any
 	b.connMu.Lock()
 	if b.conn != nil {
-		b.conn.Close()
+		_ = b.conn.Close()
 		b.conn = nil
 	}
 	b.connMu.Unlock()
@@ -520,7 +520,7 @@ func (b *Broker) executeDisconnect() {
 	b.aborting.Store(false)
 	b.connMu.Lock()
 	if b.conn != nil {
-		b.conn.Close()
+		_ = b.conn.Close()
 		b.conn = nil
 	}
 	b.connMu.Unlock()
@@ -582,7 +582,7 @@ func (b *Broker) handleError(err error) {
 	b.logger.Error("modbus operation failed", "error", err)
 	b.connMu.Lock()
 	if b.conn != nil {
-		b.conn.Close()
+		_ = b.conn.Close()
 		b.conn = nil
 	}
 	b.connMu.Unlock()
@@ -597,7 +597,7 @@ func (b *Broker) handleError(err error) {
 func (b *Broker) cleanup() {
 	b.connMu.Lock()
 	if b.conn != nil {
-		b.conn.Close()
+		_ = b.conn.Close()
 		b.conn = nil
 	}
 	b.connMu.Unlock()

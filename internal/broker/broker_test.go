@@ -50,7 +50,8 @@ func mockModbusServer(t *testing.T, listener net.Listener, numRequests int, regi
 		slaveID := req[6]
 		funcCode := req[7]
 
-		if funcCode == 0x03 {
+		switch funcCode {
+		case 0x03:
 			// Build read response
 			resp := buildReadResponse(txID, slaveID, registerValue)
 			conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
@@ -58,7 +59,7 @@ func mockModbusServer(t *testing.T, listener net.Listener, numRequests int, regi
 				t.Logf("mockModbusServer: write response %d error: %v", i, err)
 				return
 			}
-		} else if funcCode == 0x10 {
+		case 0x10:
 			// Build write response (echo first 12 bytes of PDU)
 			resp := buildWriteResponse(txID, slaveID, req[8:10], req[10:12])
 			conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
