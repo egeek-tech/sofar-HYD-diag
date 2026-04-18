@@ -838,3 +838,133 @@ func TestBrokerRetrySuccess(t *testing.T) {
 		t.Errorf("expected 0xBEEF, got 0x%04X", val)
 	}
 }
+
+// TestBrokerAddress verifies the Address getter returns the constructor value.
+func TestBrokerAddress(t *testing.T) {
+	b := broker.New(discardLogger(), "192.168.1.100:4192", 1, false)
+	got := b.Address()
+	if got != "192.168.1.100:4192" {
+		t.Errorf("Address() = %q, want %q", got, "192.168.1.100:4192")
+	}
+}
+
+// TestBrokerSetDelayRuntime verifies that SetDelayRuntime updates the inter-read delay
+// observable by measuring time between consecutive reads.
+func TestBrokerSetDelayRuntime(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().String()
+
+	// Mock server handles 2 read requests
+	go mockModbusServer(t, listener, 2, 0x1234)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(10 * time.Millisecond) // start fast
+	go b.Run(ctx)
+	defer b.Close()
+
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	// Update delay to 200ms at runtime
+	if err := b.SetDelayRuntime(ctx, 200*time.Millisecond); err != nil {
+		t.Fatalf("SetDelayRuntime failed: %v", err)
+	}
+
+	// First read
+	start := time.Now()
+	_, err = b.ReadRegisters(ctx, 0x0404, 1)
+	if err != nil {
+		t.Fatalf("first read failed: %v", err)
+	}
+
+	// Second read -- should be delayed by >= 200ms
+	_, err = b.ReadRegisters(ctx, 0x0484, 1)
+	if err != nil {
+		t.Fatalf("second read failed: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	// The two reads together should take at least 200ms (the inter-read delay)
+	if elapsed < 200*time.Millisecond {
+		t.Errorf("elapsed time %v is less than expected 200ms inter-read delay", elapsed)
+	}
+}
+
+// mockWriteServer accepts a connection and handles a single Modbus TCP write (0x10) request.
+func mockWriteServer(t *testing.T, listener net.Listener) {
+	t.Helper()
+
+	conn, err := listener.Accept()
+	if err != nil {
+		t.Logf("mockWriteServer: accept error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+	// Read 15-byte Modbus TCP write request (MBAP 7 + PDU 8)
+	req := make([]byte, 15)
+	n, err := readAll(conn, req)
+	if err != nil {
+		t.Logf("mockWriteServer: read error (got %d bytes): %v", n, err)
+		return
+	}
+
+	txID := binary.BigEndian.Uint16(req[0:2])
+	slaveID := req[6]
+	funcCode := req[7]
+
+	if funcCode != 0x10 {
+		t.Logf("mockWriteServer: unexpected function code 0x%02X, want 0x10", funcCode)
+		return
+	}
+
+	// Build write response
+	resp := buildWriteResponse(txID, slaveID, req[8:10], req[10:12])
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write(resp); err != nil {
+		t.Logf("mockWriteServer: write response error: %v", err)
+	}
+}
+
+// TestBrokerWriteRegister verifies that WriteRegister sends a write command through the
+// broker and receives a success response. This exercises both WriteRegister (public API)
+// and executeWrite (internal implementation).
+func TestBrokerWriteRegister(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().String()
+
+	go mockWriteServer(t, listener)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(10 * time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	if err := b.Reconfigure(ctx, addr, 1); err != nil {
+		t.Fatalf("Reconfigure failed: %v", err)
+	}
+
+	err = b.WriteRegister(ctx, 0x9020, 0x0100)
+	if err != nil {
+		t.Fatalf("WriteRegister failed: %v", err)
+	}
+}

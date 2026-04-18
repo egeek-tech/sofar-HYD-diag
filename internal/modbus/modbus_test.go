@@ -343,3 +343,139 @@ func TestReadHoldingRegistersRTU_CRCMismatch(t *testing.T) {
 		t.Errorf("error = %q, want it to contain 'CRC mismatch'", err.Error())
 	}
 }
+
+// TestConnect verifies Connect succeeds against a real listener and fails against a closed port.
+func TestConnect(t *testing.T) {
+	// Success case: connect to a real listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	conn, err := Connect(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("Connect to listener failed: %v", err)
+	}
+	if conn == nil {
+		t.Fatal("Connect returned nil conn without error")
+	}
+	conn.Close()
+
+	// Failure case: connect to a port that refuses connections
+	_, err = Connect("127.0.0.1:1")
+	if err == nil {
+		t.Fatal("expected error connecting to port 1, got nil")
+	}
+}
+
+// TestDiscardLogger verifies DiscardLogger returns a functional logger that does not panic.
+func TestDiscardLogger(t *testing.T) {
+	logger := DiscardLogger()
+	if logger == nil {
+		t.Fatal("DiscardLogger() returned nil")
+	}
+	// Should not panic
+	logger.Info("test message", "key", "value")
+}
+
+// TestWriteSingleRegisterRTU uses net.Pipe to mock a Modbus RTU server.
+// Client writes value 0x0100 to register 0x9020. Server verifies the request including CRC,
+// and responds with a valid echo response.
+func TestWriteSingleRegisterRTU(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	client.SetDeadline(time.Now().Add(5 * time.Second))
+	server.SetDeadline(time.Now().Add(5 * time.Second))
+
+	logger := discardLogger()
+
+	go func() {
+		// Read the 8-byte RTU request (6 data + 2 CRC)
+		req := make([]byte, 8)
+		if _, err := ReadFull(server, req); err != nil {
+			t.Errorf("server read request: %v", err)
+			return
+		}
+
+		// Verify request fields
+		if req[0] != 0x01 {
+			t.Errorf("slaveID = 0x%02X, want 0x01", req[0])
+		}
+		if req[1] != 0x06 {
+			t.Errorf("function code = 0x%02X, want 0x06", req[1])
+		}
+		regAddr := binary.BigEndian.Uint16(req[2:4])
+		if regAddr != 0x9020 {
+			t.Errorf("regAddr = 0x%04X, want 0x9020", regAddr)
+		}
+		value := binary.BigEndian.Uint16(req[4:6])
+		if value != 0x0100 {
+			t.Errorf("value = 0x%04X, want 0x0100", value)
+		}
+
+		// Verify CRC of the request
+		reqData := req[:6]
+		reqCRC := uint16(req[6]) | uint16(req[7])<<8
+		calcCRC := CRC16(reqData)
+		if reqCRC != calcCRC {
+			t.Errorf("request CRC = 0x%04X, want 0x%04X", reqCRC, calcCRC)
+		}
+
+		// Build echo response: same 6 data bytes + correct CRC (8 bytes total)
+		respData := req[:6]
+		crc := CRC16(respData)
+		resp := make([]byte, 8)
+		copy(resp[:6], respData)
+		resp[6] = byte(crc & 0xFF)
+		resp[7] = byte(crc >> 8)
+
+		server.Write(resp)
+	}()
+
+	err := WriteSingleRegisterRTU(client, logger, 0x01, 0x9020, 0x0100)
+	if err != nil {
+		t.Fatalf("WriteSingleRegisterRTU error: %v", err)
+	}
+}
+
+// TestWriteSingleRegisterRTU_Exception verifies that an RTU exception response
+// (function code with 0x80 bit set) returns an error containing "exception".
+func TestWriteSingleRegisterRTU_Exception(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	client.SetDeadline(time.Now().Add(5 * time.Second))
+	server.SetDeadline(time.Now().Add(5 * time.Second))
+
+	logger := discardLogger()
+
+	go func() {
+		// Read the 8-byte RTU request
+		req := make([]byte, 8)
+		if _, err := ReadFull(server, req); err != nil {
+			t.Errorf("server read request: %v", err)
+			return
+		}
+
+		// Build exception response: slaveID + (funcCode|0x80) + errorCode + padding to 8 bytes
+		resp := make([]byte, 8)
+		resp[0] = 0x01 // slaveID
+		resp[1] = 0x86 // function 0x06 | 0x80
+		resp[2] = 0x02 // error code: illegal data address
+		// Remaining bytes are padding (function reads exactly 8 bytes)
+
+		server.Write(resp)
+	}()
+
+	err := WriteSingleRegisterRTU(client, logger, 0x01, 0x9020, 0x0100)
+	if err == nil {
+		t.Fatal("expected error for exception response, got nil")
+	}
+	if !strings.Contains(err.Error(), "exception") {
+		t.Errorf("error = %q, want it to contain 'exception'", err.Error())
+	}
+}
