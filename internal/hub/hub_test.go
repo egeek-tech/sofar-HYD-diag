@@ -1866,13 +1866,14 @@ func TestBMSTowerBitmap(t *testing.T) {
 			break
 		}
 	}
-	if msg == nil {
-		types := make([]string, len(allMsgs))
-		for i, m := range allMsgs {
-			types[i] = m.Type
-		}
-		require.Failf(t, "expected section_data message in BMS stream", "got types: %v", types)
-	}
+	require.NotNilf(t, msg, "expected section_data message in BMS stream, got types: %v",
+		func() []string {
+			types := make([]string, len(allMsgs))
+			for i, m := range allMsgs {
+				types[i] = m.Type
+			}
+			return types
+		}())
 
 	var bitmapGroup *hub.GroupData
 	for i := range msg.Groups {
@@ -1913,13 +1914,14 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 			break
 		}
 	}
-	if msg == nil {
-		types := make([]string, len(allMsgs))
-		for i, m := range allMsgs {
-			types[i] = m.Type
-		}
-		require.Failf(t, "expected section_data message in BMS stream", "got types: %v", types)
-	}
+	require.NotNilf(t, msg, "expected section_data message in BMS stream, got types: %v",
+		func() []string {
+			types := make([]string, len(allMsgs))
+			for i, m := range allMsgs {
+				types[i] = m.Type
+			}
+			return types
+		}())
 
 	var bitmapGroup *hub.GroupData
 	for i := range msg.Groups {
