@@ -272,6 +272,20 @@ func (h *Hub) handleStateEvent(evt broker.StateEvent) {
 		if h.packSpanTracker != nil {
 			h.packSpanTracker.Reset()
 		}
+		// Reset battery section to 2-channel default on reconnect.
+		// streamBatteryBatchRead will re-detect actual channel count via 0x066A
+		// on the next read cycle (UAT gap: channel config was stale after reconnect).
+		if batSec, ok := h.sections["battery"]; ok {
+			battGroups := register.GenerateBatteryGroups(2)
+			infoGroups := register.InternalInfoGroups()
+			newGroups := make([]register.ProbeGroup, 0, len(battGroups)+len(infoGroups))
+			newGroups = append(newGroups, battGroups...)
+			newGroups = append(newGroups, infoGroups...)
+			batSec.Groups = newGroups
+			batSec.Probes = flattenProbeGroups(newGroups)
+			batSec.BatchPlan = register.AnalyzeBatchPlan(newGroups)
+			// SpanTracker already reset in the loop above
+		}
 	case broker.StateDisconnected, broker.StateReconnecting:
 		h.connected = false
 		// Cancel all in-progress reads (D-13: disconnection stops reads)
