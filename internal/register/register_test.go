@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFormatValueASCII(t *testing.T) {
 	p := Probe{Name: "Test SN", Addr: 0x0445, Count: 10, IsASCII: true}
 	data := []byte("AMASS\x00\x00\x00")
 	got := FormatValue(p, data)
-	want := "AMASS"
-	if got != want {
-		t.Errorf("FormatValue ASCII = %q, want %q", got, want)
-	}
+	assert.Equal(t, "AMASS", got)
 }
 
 func TestFormatValueUnsignedScaled(t *testing.T) {
@@ -23,10 +23,7 @@ func TestFormatValueUnsignedScaled(t *testing.T) {
 	data := make([]byte, 2)
 	binary.BigEndian.PutUint16(data, 5288)
 	got := FormatValue(p, data)
-	want := "528.80 V"
-	if got != want {
-		t.Errorf("FormatValue unsigned scaled = %q, want %q", got, want)
-	}
+	assert.Equal(t, "528.80 V", got)
 }
 
 func TestFormatValueSignedNegative(t *testing.T) {
@@ -36,10 +33,7 @@ func TestFormatValueSignedNegative(t *testing.T) {
 	neg83 := int16(-83)
 	binary.BigEndian.PutUint16(data, uint16(neg83))
 	got := FormatValue(p, data)
-	want := "-0.83 kW"
-	if got != want {
-		t.Errorf("FormatValue signed negative = %q, want %q", got, want)
-	}
+	assert.Equal(t, "-0.83 kW", got)
 }
 
 func TestFormatValueNoScale(t *testing.T) {
@@ -48,20 +42,14 @@ func TestFormatValueNoScale(t *testing.T) {
 	data := make([]byte, 2)
 	binary.BigEndian.PutUint16(data, 164)
 	got := FormatValue(p, data)
-	want := "164 (0x00A4)"
-	if got != want {
-		t.Errorf("FormatValue no scale = %q, want %q", got, want)
-	}
+	assert.Equal(t, "164 (0x00A4)", got)
 }
 
 func TestFormatValueShortData(t *testing.T) {
 	p := Probe{Name: "Short"}
 	data := []byte{0x01}
 	got := FormatValue(p, data)
-	want := "<no data>"
-	if got != want {
-		t.Errorf("FormatValue short data = %q, want %q", got, want)
-	}
+	assert.Equal(t, "<no data>", got)
 }
 
 func TestFormatValueSignedNoUnit(t *testing.T) {
@@ -70,10 +58,7 @@ func TestFormatValueSignedNoUnit(t *testing.T) {
 	neg42 := int16(-42)
 	binary.BigEndian.PutUint16(data, uint16(neg42))
 	got := FormatValue(p, data)
-	want := "-42"
-	if got != want {
-		t.Errorf("FormatValue signed no unit = %q, want %q", got, want)
-	}
+	assert.Equal(t, "-42", got)
 }
 
 // === Task 1 TDD RED tests ===
@@ -86,15 +71,9 @@ func TestProbeGroupStruct(t *testing.T) {
 		},
 		Layout: "column",
 	}
-	if pg.Name != "Test Group" {
-		t.Errorf("ProbeGroup.Name = %q, want %q", pg.Name, "Test Group")
-	}
-	if len(pg.Probes) != 1 {
-		t.Errorf("ProbeGroup.Probes len = %d, want 1", len(pg.Probes))
-	}
-	if pg.Layout != "column" {
-		t.Errorf("ProbeGroup.Layout = %q, want %q", pg.Layout, "column")
-	}
+	assert.Equal(t, "Test Group", pg.Name)
+	assert.Len(t, pg.Probes, 1)
+	assert.Equal(t, "column", pg.Layout)
 }
 
 func TestRunningStateEnum(t *testing.T) {
@@ -111,52 +90,33 @@ func TestRunningStateEnum(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got, ok := RunningStateEnum[tt.val]
-		if !ok {
-			t.Errorf("RunningStateEnum[%d] not found", tt.val)
+		if !assert.True(t, ok, "RunningStateEnum[%d] not found", tt.val) {
 			continue
 		}
-		if got != tt.want {
-			t.Errorf("RunningStateEnum[%d] = %q, want %q", tt.val, got, tt.want)
-		}
+		assert.Equal(t, tt.want, got, "RunningStateEnum[%d]", tt.val)
 	}
 	// Verify all 12 entries exist (0-11)
-	if len(RunningStateEnum) != 12 {
-		t.Errorf("RunningStateEnum len = %d, want 12", len(RunningStateEnum))
-	}
+	assert.Len(t, RunningStateEnum, 12)
 }
 
 func TestSystemGroups(t *testing.T) {
-	if len(SystemGroups) != 6 {
-		t.Fatalf("SystemGroups len = %d, want 6", len(SystemGroups))
-	}
+	require.Len(t, SystemGroups, 6)
 
 	expectedNames := []string{"Identity", "Firmware", "Status", "Firmware (Extended)", "Temperatures", "Protection"}
 	for i, want := range expectedNames {
-		if SystemGroups[i].Name != want {
-			t.Errorf("SystemGroups[%d].Name = %q, want %q", i, SystemGroups[i].Name, want)
-		}
+		assert.Equal(t, want, SystemGroups[i].Name, "SystemGroups[%d].Name", i)
 	}
 
 	// Identity: Inverter SN at 0x0445, Count 10, IsASCII
 	identity := SystemGroups[0]
-	if len(identity.Probes) < 1 {
-		t.Fatal("Identity group has no probes")
-	}
-	if identity.Probes[0].Addr != 0x0445 {
-		t.Errorf("Identity SN addr = 0x%04X, want 0x0445", identity.Probes[0].Addr)
-	}
-	if identity.Probes[0].Count != 10 {
-		t.Errorf("Identity SN count = %d, want 10", identity.Probes[0].Count)
-	}
-	if !identity.Probes[0].IsASCII {
-		t.Error("Identity SN IsASCII should be true")
-	}
+	require.NotEmpty(t, identity.Probes, "Identity group has no probes")
+	assert.Equal(t, uint16(0x0445), identity.Probes[0].Addr, "Identity SN addr")
+	assert.Equal(t, uint16(10), identity.Probes[0].Count, "Identity SN count")
+	assert.True(t, identity.Probes[0].IsASCII, "Identity SN IsASCII should be true")
 
 	// Firmware: 5 probes
 	firmware := SystemGroups[1]
-	if len(firmware.Probes) != 5 {
-		t.Fatalf("Firmware group probes = %d, want 5", len(firmware.Probes))
-	}
+	require.Len(t, firmware.Probes, 5, "Firmware group probes")
 	fwExpected := []struct {
 		name  string
 		addr  uint16
@@ -169,52 +129,28 @@ func TestSystemGroups(t *testing.T) {
 		{"Safety cert version", 0x045B, 2},
 	}
 	for i, fw := range fwExpected {
-		if firmware.Probes[i].Name != fw.name {
-			t.Errorf("Firmware[%d].Name = %q, want %q", i, firmware.Probes[i].Name, fw.name)
-		}
-		if firmware.Probes[i].Addr != fw.addr {
-			t.Errorf("Firmware[%d].Addr = 0x%04X, want 0x%04X", i, firmware.Probes[i].Addr, fw.addr)
-		}
-		if firmware.Probes[i].Count != fw.count {
-			t.Errorf("Firmware[%d].Count = %d, want %d", i, firmware.Probes[i].Count, fw.count)
-		}
+		assert.Equal(t, fw.name, firmware.Probes[i].Name, "Firmware[%d].Name", i)
+		assert.Equal(t, fw.addr, firmware.Probes[i].Addr, "Firmware[%d].Addr", i)
+		assert.Equal(t, fw.count, firmware.Probes[i].Count, "Firmware[%d].Count", i)
 	}
 
 	// Status: Running state with Enum at 0x0404, grid wait time, power gen time, plus synthetic System time
 	status := SystemGroups[2]
-	if status.Probes[0].Addr != 0x0404 {
-		t.Errorf("Status running state addr = 0x%04X, want 0x0404", status.Probes[0].Addr)
-	}
-	if status.Probes[0].Enum == nil {
-		t.Error("Status running state Enum should not be nil")
-	}
-	if len(status.Probes) != 4 {
-		t.Errorf("Status probes = %d, want 4 (running state + wait time + gen time + System time)", len(status.Probes))
-	}
-	if status.Probes[3].Name != "System time" {
-		t.Errorf("Status[3].Name = %q, want %q", status.Probes[3].Name, "System time")
-	}
-	if status.Probes[3].Addr != 0x042C {
-		t.Errorf("Status[3].Addr = 0x%04X, want 0x042C", status.Probes[3].Addr)
-	}
-	if status.Probes[3].Count != 6 {
-		t.Errorf("Status[3].Count = %d, want 6 (Composite system_time probe)", status.Probes[3].Count)
-	}
-	if status.Probes[3].Composite != "system_time" {
-		t.Errorf("Status[3].Composite = %q, want %q", status.Probes[3].Composite, "system_time")
-	}
+	assert.Equal(t, uint16(0x0404), status.Probes[0].Addr, "Status running state addr")
+	assert.NotNil(t, status.Probes[0].Enum, "Status running state Enum should not be nil")
+	assert.Len(t, status.Probes, 4, "Status probes (running state + wait time + gen time + System time)")
+	assert.Equal(t, "System time", status.Probes[3].Name, "Status[3].Name")
+	assert.Equal(t, uint16(0x042C), status.Probes[3].Addr, "Status[3].Addr")
+	assert.Equal(t, uint16(6), status.Probes[3].Count, "Status[3].Count (Composite system_time probe)")
+	assert.Equal(t, "system_time", status.Probes[3].Composite, "Status[3].Composite")
 
 	// Firmware (Extended): BOOT versions + safety versions
 	fwExt := SystemGroups[3]
-	if fwExt.Name != "Firmware (Extended)" {
-		t.Errorf("SystemGroups[3].Name = %q, want %q", fwExt.Name, "Firmware (Extended)")
-	}
+	assert.Equal(t, "Firmware (Extended)", fwExt.Name)
 
 	// Temperatures: 4 probes, all S16
 	temps := SystemGroups[4]
-	if len(temps.Probes) != 4 {
-		t.Fatalf("Temperatures probes = %d, want 4", len(temps.Probes))
-	}
+	require.Len(t, temps.Probes, 4, "Temperatures probes")
 	tempExpected := []struct {
 		name string
 		addr uint16
@@ -225,50 +161,30 @@ func TestSystemGroups(t *testing.T) {
 		{"Module temp", 0x0420},
 	}
 	for i, te := range tempExpected {
-		if temps.Probes[i].Name != te.name {
-			t.Errorf("Temps[%d].Name = %q, want %q", i, temps.Probes[i].Name, te.name)
-		}
-		if temps.Probes[i].Addr != te.addr {
-			t.Errorf("Temps[%d].Addr = 0x%04X, want 0x%04X", i, temps.Probes[i].Addr, te.addr)
-		}
-		if !temps.Probes[i].Signed {
-			t.Errorf("Temps[%d].Signed should be true", i)
-		}
+		assert.Equal(t, te.name, temps.Probes[i].Name, "Temps[%d].Name", i)
+		assert.Equal(t, te.addr, temps.Probes[i].Addr, "Temps[%d].Addr", i)
+		assert.True(t, temps.Probes[i].Signed, "Temps[%d].Signed should be true", i)
 	}
 
 	// Protection: Insulation impedance (0x042B) and Fan speed (0x043E)
 	protection := SystemGroups[5]
-	if len(protection.Probes) != 2 {
-		t.Fatalf("Protection probes = %d, want 2", len(protection.Probes))
-	}
-	if protection.Probes[0].Addr != 0x042B {
-		t.Errorf("Protection[0].Addr = 0x%04X, want 0x042B", protection.Probes[0].Addr)
-	}
-	if protection.Probes[1].Addr != 0x043E {
-		t.Errorf("Protection[1].Addr = 0x%04X, want 0x043E", protection.Probes[1].Addr)
-	}
+	require.Len(t, protection.Probes, 2, "Protection probes")
+	assert.Equal(t, uint16(0x042B), protection.Probes[0].Addr, "Protection[0].Addr")
+	assert.Equal(t, uint16(0x043E), protection.Probes[1].Addr, "Protection[1].Addr")
 }
 
 func TestGridGroups(t *testing.T) {
-	if len(GridGroups) != 7 {
-		t.Fatalf("GridGroups len = %d, want 7", len(GridGroups))
-	}
+	require.Len(t, GridGroups, 7)
 
 	expectedNames := []string{"General", "Phase R", "Phase S", "Phase T", "PCC Power", "Line Voltages", "Load"}
 	for i, want := range expectedNames {
-		if GridGroups[i].Name != want {
-			t.Errorf("GridGroups[%d].Name = %q, want %q", i, GridGroups[i].Name, want)
-		}
+		assert.Equal(t, want, GridGroups[i].Name, "GridGroups[%d].Name", i)
 	}
 
 	// Phase R: column layout, 5 probes
 	phaseR := GridGroups[1]
-	if phaseR.Layout != "column" {
-		t.Errorf("Phase R layout = %q, want %q", phaseR.Layout, "column")
-	}
-	if len(phaseR.Probes) != 5 {
-		t.Fatalf("Phase R probes = %d, want 5", len(phaseR.Probes))
-	}
+	assert.Equal(t, "column", phaseR.Layout, "Phase R layout")
+	require.Len(t, phaseR.Probes, 5, "Phase R probes")
 	rExpected := []struct {
 		name  string
 		addr  uint16
@@ -281,156 +197,78 @@ func TestGridGroups(t *testing.T) {
 		{"Power factor", 0x0491, 0.001},
 	}
 	for i, re := range rExpected {
-		if phaseR.Probes[i].Name != re.name {
-			t.Errorf("Phase R[%d].Name = %q, want %q", i, phaseR.Probes[i].Name, re.name)
-		}
-		if phaseR.Probes[i].Addr != re.addr {
-			t.Errorf("Phase R[%d].Addr = 0x%04X, want 0x%04X", i, phaseR.Probes[i].Addr, re.addr)
-		}
-		if phaseR.Probes[i].Scale != re.scale {
-			t.Errorf("Phase R[%d].Scale = %f, want %f", i, phaseR.Probes[i].Scale, re.scale)
-		}
+		assert.Equal(t, re.name, phaseR.Probes[i].Name, "Phase R[%d].Name", i)
+		assert.Equal(t, re.addr, phaseR.Probes[i].Addr, "Phase R[%d].Addr", i)
+		assert.Equal(t, re.scale, phaseR.Probes[i].Scale, "Phase R[%d].Scale", i)
 	}
 	// Power factor has no Unit
-	if phaseR.Probes[4].Unit != "" {
-		t.Errorf("Phase R power factor Unit = %q, want empty", phaseR.Probes[4].Unit)
-	}
+	assert.Empty(t, phaseR.Probes[4].Unit, "Phase R power factor Unit")
 
 	// Phase S: column layout, Voltage at 0x0498
 	phaseS := GridGroups[2]
-	if phaseS.Layout != "column" {
-		t.Errorf("Phase S layout = %q, want %q", phaseS.Layout, "column")
-	}
-	if phaseS.Probes[0].Addr != 0x0498 {
-		t.Errorf("Phase S voltage addr = 0x%04X, want 0x0498", phaseS.Probes[0].Addr)
-	}
-	if phaseS.Probes[1].Addr != 0x0499 {
-		t.Errorf("Phase S current addr = 0x%04X, want 0x0499", phaseS.Probes[1].Addr)
-	}
-	if phaseS.Probes[2].Addr != 0x049A {
-		t.Errorf("Phase S active power addr = 0x%04X, want 0x049A", phaseS.Probes[2].Addr)
-	}
-	if phaseS.Probes[3].Addr != 0x049B {
-		t.Errorf("Phase S reactive power addr = 0x%04X, want 0x049B", phaseS.Probes[3].Addr)
-	}
-	if phaseS.Probes[4].Addr != 0x049C {
-		t.Errorf("Phase S power factor addr = 0x%04X, want 0x049C", phaseS.Probes[4].Addr)
-	}
+	assert.Equal(t, "column", phaseS.Layout, "Phase S layout")
+	assert.Equal(t, uint16(0x0498), phaseS.Probes[0].Addr, "Phase S voltage addr")
+	assert.Equal(t, uint16(0x0499), phaseS.Probes[1].Addr, "Phase S current addr")
+	assert.Equal(t, uint16(0x049A), phaseS.Probes[2].Addr, "Phase S active power addr")
+	assert.Equal(t, uint16(0x049B), phaseS.Probes[3].Addr, "Phase S reactive power addr")
+	assert.Equal(t, uint16(0x049C), phaseS.Probes[4].Addr, "Phase S power factor addr")
 
 	// Phase T: Voltage at 0x04A3
 	phaseT := GridGroups[3]
-	if phaseT.Layout != "column" {
-		t.Errorf("Phase T layout = %q, want %q", phaseT.Layout, "column")
-	}
-	if phaseT.Probes[0].Addr != 0x04A3 {
-		t.Errorf("Phase T voltage addr = 0x%04X, want 0x04A3", phaseT.Probes[0].Addr)
-	}
+	assert.Equal(t, "column", phaseT.Layout, "Phase T layout")
+	assert.Equal(t, uint16(0x04A3), phaseT.Probes[0].Addr, "Phase T voltage addr")
 
 	// Load: External power gen (0x04AE), Total load power (0x04AF), Total power factor (0x04BD S16 Scale 0.001), Generation efficiency (0x04BF)
 	load := GridGroups[6]
-	if len(load.Probes) != 4 {
-		t.Fatalf("Load probes = %d, want 4", len(load.Probes))
-	}
-	if load.Probes[0].Addr != 0x04AE {
-		t.Errorf("Load external power gen addr = 0x%04X, want 0x04AE", load.Probes[0].Addr)
-	}
-	if load.Probes[1].Addr != 0x04AF {
-		t.Errorf("Load total load power addr = 0x%04X, want 0x04AF", load.Probes[1].Addr)
-	}
-	if load.Probes[2].Addr != 0x04BD {
-		t.Errorf("Load total power factor addr = 0x%04X, want 0x04BD", load.Probes[2].Addr)
-	}
-	if !load.Probes[2].Signed {
-		t.Error("Load total power factor should be signed")
-	}
-	if load.Probes[2].Scale != 0.001 {
-		t.Errorf("Load total power factor scale = %f, want 0.001", load.Probes[2].Scale)
-	}
-	if load.Probes[3].Addr != 0x04BF {
-		t.Errorf("Load generation efficiency addr = 0x%04X, want 0x04BF", load.Probes[3].Addr)
-	}
+	require.Len(t, load.Probes, 4, "Load probes")
+	assert.Equal(t, uint16(0x04AE), load.Probes[0].Addr, "Load external power gen addr")
+	assert.Equal(t, uint16(0x04AF), load.Probes[1].Addr, "Load total load power addr")
+	assert.Equal(t, uint16(0x04BD), load.Probes[2].Addr, "Load total power factor addr")
+	assert.True(t, load.Probes[2].Signed, "Load total power factor should be signed")
+	assert.Equal(t, 0.001, load.Probes[2].Scale, "Load total power factor scale")
+	assert.Equal(t, uint16(0x04BF), load.Probes[3].Addr, "Load generation efficiency addr")
 }
 
 func TestEPSGroups(t *testing.T) {
-	if len(EPSGroups) != 5 {
-		t.Fatalf("EPSGroups len = %d, want 5", len(EPSGroups))
-	}
+	require.Len(t, EPSGroups, 5)
 
 	expectedNames := []string{"General", "Phase R", "Phase S", "Phase T", "Emergency Load"}
 	for i, want := range expectedNames {
-		if EPSGroups[i].Name != want {
-			t.Errorf("EPSGroups[%d].Name = %q, want %q", i, EPSGroups[i].Name, want)
-		}
+		assert.Equal(t, want, EPSGroups[i].Name, "EPSGroups[%d].Name", i)
 	}
 
 	// General: 4 probes
 	general := EPSGroups[0]
-	if len(general.Probes) != 4 {
-		t.Fatalf("EPS General probes = %d, want 4", len(general.Probes))
-	}
-	if general.Probes[0].Addr != 0x0504 {
-		t.Errorf("EPS load active power addr = 0x%04X, want 0x0504", general.Probes[0].Addr)
-	}
-	if general.Probes[1].Addr != 0x0505 {
-		t.Errorf("EPS load reactive power addr = 0x%04X, want 0x0505", general.Probes[1].Addr)
-	}
-	if general.Probes[2].Addr != 0x0506 {
-		t.Errorf("EPS load apparent power addr = 0x%04X, want 0x0506", general.Probes[2].Addr)
-	}
-	if general.Probes[3].Addr != 0x0507 {
-		t.Errorf("EPS output freq addr = 0x%04X, want 0x0507", general.Probes[3].Addr)
-	}
+	require.Len(t, general.Probes, 4, "EPS General probes")
+	assert.Equal(t, uint16(0x0504), general.Probes[0].Addr, "EPS load active power addr")
+	assert.Equal(t, uint16(0x0505), general.Probes[1].Addr, "EPS load reactive power addr")
+	assert.Equal(t, uint16(0x0506), general.Probes[2].Addr, "EPS load apparent power addr")
+	assert.Equal(t, uint16(0x0507), general.Probes[3].Addr, "EPS output freq addr")
 
 	// Phase R: column layout, 2 probes
 	phaseR := EPSGroups[1]
-	if phaseR.Layout != "column" {
-		t.Errorf("EPS Phase R layout = %q, want %q", phaseR.Layout, "column")
-	}
-	if phaseR.Probes[0].Addr != 0x050A {
-		t.Errorf("EPS Phase R output voltage addr = 0x%04X, want 0x050A", phaseR.Probes[0].Addr)
-	}
-	if phaseR.Probes[1].Addr != 0x050B {
-		t.Errorf("EPS Phase R load current addr = 0x%04X, want 0x050B", phaseR.Probes[1].Addr)
-	}
-	if !phaseR.Probes[1].Signed {
-		t.Error("EPS Phase R load current should be signed")
-	}
+	assert.Equal(t, "column", phaseR.Layout, "EPS Phase R layout")
+	assert.Equal(t, uint16(0x050A), phaseR.Probes[0].Addr, "EPS Phase R output voltage addr")
+	assert.Equal(t, uint16(0x050B), phaseR.Probes[1].Addr, "EPS Phase R load current addr")
+	assert.True(t, phaseR.Probes[1].Signed, "EPS Phase R load current should be signed")
 
 	// Phase S: 0x0512/0x0513
 	phaseS := EPSGroups[2]
-	if phaseS.Layout != "column" {
-		t.Errorf("EPS Phase S layout = %q, want %q", phaseS.Layout, "column")
-	}
-	if phaseS.Probes[0].Addr != 0x0512 {
-		t.Errorf("EPS Phase S output voltage addr = 0x%04X, want 0x0512", phaseS.Probes[0].Addr)
-	}
-	if phaseS.Probes[1].Addr != 0x0513 {
-		t.Errorf("EPS Phase S load current addr = 0x%04X, want 0x0513", phaseS.Probes[1].Addr)
-	}
+	assert.Equal(t, "column", phaseS.Layout, "EPS Phase S layout")
+	assert.Equal(t, uint16(0x0512), phaseS.Probes[0].Addr, "EPS Phase S output voltage addr")
+	assert.Equal(t, uint16(0x0513), phaseS.Probes[1].Addr, "EPS Phase S load current addr")
 
 	// Phase T: 0x051A/0x051B
 	phaseT := EPSGroups[3]
-	if phaseT.Probes[0].Addr != 0x051A {
-		t.Errorf("EPS Phase T output voltage addr = 0x%04X, want 0x051A", phaseT.Probes[0].Addr)
-	}
-	if phaseT.Probes[1].Addr != 0x051B {
-		t.Errorf("EPS Phase T load current addr = 0x%04X, want 0x051B", phaseT.Probes[1].Addr)
-	}
+	assert.Equal(t, uint16(0x051A), phaseT.Probes[0].Addr, "EPS Phase T output voltage addr")
+	assert.Equal(t, uint16(0x051B), phaseT.Probes[1].Addr, "EPS Phase T load current addr")
 
 	// Emergency Load: voltages at 0x0510, 0x0518, 0x0520
 	emerg := EPSGroups[4]
-	if len(emerg.Probes) != 3 {
-		t.Fatalf("Emergency Load probes = %d, want 3", len(emerg.Probes))
-	}
-	if emerg.Probes[0].Addr != 0x0510 {
-		t.Errorf("Emergency Load R addr = 0x%04X, want 0x0510", emerg.Probes[0].Addr)
-	}
-	if emerg.Probes[1].Addr != 0x0518 {
-		t.Errorf("Emergency Load S addr = 0x%04X, want 0x0518", emerg.Probes[1].Addr)
-	}
-	if emerg.Probes[2].Addr != 0x0520 {
-		t.Errorf("Emergency Load T addr = 0x%04X, want 0x0520", emerg.Probes[2].Addr)
-	}
+	require.Len(t, emerg.Probes, 3, "Emergency Load probes")
+	assert.Equal(t, uint16(0x0510), emerg.Probes[0].Addr, "Emergency Load R addr")
+	assert.Equal(t, uint16(0x0518), emerg.Probes[1].Addr, "Emergency Load S addr")
+	assert.Equal(t, uint16(0x0520), emerg.Probes[2].Addr, "Emergency Load T addr")
 }
 
 func TestFormatValueEnum(t *testing.T) {
@@ -444,17 +282,12 @@ func TestFormatValueEnum(t *testing.T) {
 	data := make([]byte, 2)
 	binary.BigEndian.PutUint16(data, 2)
 	got := FormatValue(p, data)
-	if got != "Grid-connected" {
-		t.Errorf("FormatValue enum value 2 = %q, want %q", got, "Grid-connected")
-	}
+	assert.Equal(t, "Grid-connected", got, "FormatValue enum value 2")
 
 	// Unknown value falls back to raw format
 	binary.BigEndian.PutUint16(data, 99)
 	got = FormatValue(p, data)
-	want := "99 (0x0063)"
-	if got != want {
-		t.Errorf("FormatValue enum unknown value 99 = %q, want %q", got, want)
-	}
+	assert.Equal(t, "99 (0x0063)", got, "FormatValue enum unknown value 99")
 }
 
 func TestFormatValueScaleNoUnit(t *testing.T) {
@@ -463,23 +296,15 @@ func TestFormatValueScaleNoUnit(t *testing.T) {
 	data := make([]byte, 2)
 	binary.BigEndian.PutUint16(data, uint16(int16(990)))
 	got := FormatValue(p, data)
-	if got != "0.990" {
-		t.Errorf("FormatValue scale no unit = %q, want %q", got, "0.990")
-	}
+	assert.Equal(t, "0.990", got)
 }
 
 func TestComposeSystemTime(t *testing.T) {
 	got := ComposeSystemTime(26, 4, 10, 14, 30, 5)
-	want := "14:30:05 10-04-2026"
-	if got != want {
-		t.Errorf("ComposeSystemTime = %q, want %q", got, want)
-	}
+	assert.Equal(t, "14:30:05 10-04-2026", got)
 
 	got = ComposeSystemTime(0, 1, 1, 0, 0, 0)
-	want = "00:00:00 01-01-2000"
-	if got != want {
-		t.Errorf("ComposeSystemTime zero = %q, want %q", got, want)
-	}
+	assert.Equal(t, "00:00:00 01-01-2000", got)
 }
 
 func TestFormatValueComposite(t *testing.T) {
@@ -492,18 +317,13 @@ func TestFormatValueComposite(t *testing.T) {
 	binary.BigEndian.PutUint16(data[8:10], 30) // min
 	binary.BigEndian.PutUint16(data[10:12], 45) // sec
 	got := FormatValue(p, data)
-	want := "10:30:45 14-04-2026"
-	if got != want {
-		t.Errorf("FormatValue Composite = %q, want %q", got, want)
-	}
+	assert.Equal(t, "10:30:45 14-04-2026", got)
 }
 
 func TestFormatValueCompositeNoData(t *testing.T) {
 	p := Probe{Name: "System time", Addr: 0x042C, Count: 6, Composite: "system_time"}
 	got := FormatValue(p, []byte{0x00, 0x01})
-	if got != "<no data>" {
-		t.Errorf("FormatValue Composite short data = %q, want %q", got, "<no data>")
-	}
+	assert.Equal(t, "<no data>", got)
 }
 
 func TestFormatRawValueComposite(t *testing.T) {
@@ -516,10 +336,7 @@ func TestFormatRawValueComposite(t *testing.T) {
 	binary.BigEndian.PutUint16(data[8:10], 30)
 	binary.BigEndian.PutUint16(data[10:12], 45)
 	got := FormatRawValue(p, data)
-	want := "0x042C-0x0431 | 26, 4, 14, 10, 30, 45"
-	if got != want {
-		t.Errorf("FormatRawValue Composite = %q, want %q", got, want)
-	}
+	assert.Equal(t, "0x042C-0x0431 | 26, 4, 14, 10, 30, 45", got)
 }
 
 func TestFormatValueBMSClock(t *testing.T) {
@@ -528,36 +345,26 @@ func TestFormatValueBMSClock(t *testing.T) {
 	binary.BigEndian.PutUint16(data[0:2], 0x6914)
 	binary.BigEndian.PutUint16(data[2:4], 0xE0C5)
 	got := FormatValue(p, data)
-	want := "2026-04-10 14:03:05"
-	if got != want {
-		t.Errorf("FormatValue bms_clock = %q, want %q", got, want)
-	}
+	assert.Equal(t, "2026-04-10 14:03:05", got)
 }
 
 func TestFormatValueBMSClockNoData(t *testing.T) {
 	p := Probe{Name: "System Clock", Addr: 0x9004, Count: 2, Composite: "bms_clock"}
 	got := FormatValue(p, []byte{0x00, 0x01})
-	if got != "<no data>" {
-		t.Errorf("FormatValue bms_clock short data = %q, want %q", got, "<no data>")
-	}
+	assert.Equal(t, "<no data>", got)
 }
 
 func TestFormatValueBMSSWVersion(t *testing.T) {
 	p := Probe{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"}
 	data := []byte{0x00, 0x56, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03}
 	got := FormatValue(p, data)
-	want := "V1.2.3"
-	if got != want {
-		t.Errorf("FormatValue bms_sw_version = %q, want %q", got, want)
-	}
+	assert.Equal(t, "V1.2.3", got)
 }
 
 func TestFormatValueBMSSWVersionNoData(t *testing.T) {
 	p := Probe{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"}
 	got := FormatValue(p, []byte{0x00, 0x56, 0x00, 0x01})
-	if got != "<no data>" {
-		t.Errorf("FormatValue bms_sw_version short data = %q, want %q", got, "<no data>")
-	}
+	assert.Equal(t, "<no data>", got)
 }
 
 func TestFormatRawValueBMSClock(t *testing.T) {
@@ -566,57 +373,35 @@ func TestFormatRawValueBMSClock(t *testing.T) {
 	binary.BigEndian.PutUint16(data[0:2], 0x6914)
 	binary.BigEndian.PutUint16(data[2:4], 0xE0C5)
 	got := FormatRawValue(p, data)
-	want := "0x9004-0x9005 | 26900, 57541"
-	if got != want {
-		t.Errorf("FormatRawValue bms_clock = %q, want %q", got, want)
-	}
+	assert.Equal(t, "0x9004-0x9005 | 26900, 57541", got)
 }
 
 func TestFormatRawValueBMSSWVersion(t *testing.T) {
 	p := Probe{Name: "SW Version", Addr: 0x9018, Count: 4, Composite: "bms_sw_version"}
 	data := []byte{0x00, 0x56, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03}
 	got := FormatRawValue(p, data)
-	want := "0x9018-0x901B | 86, 1, 2, 3"
-	if got != want {
-		t.Errorf("FormatRawValue bms_sw_version = %q, want %q", got, want)
-	}
+	assert.Equal(t, "0x9018-0x901B | 86, 1, 2, 3", got)
 }
 
 // === Task 2 TDD tests: Fault bitmap decoder ===
 
 func TestFaultBitStruct(t *testing.T) {
 	fb := FaultBit{Addr: 0x0405, Bit: 0, Desc: "Grid over-voltage"}
-	if fb.Addr != 0x0405 {
-		t.Errorf("FaultBit.Addr = 0x%04X, want 0x0405", fb.Addr)
-	}
-	if fb.Bit != 0 {
-		t.Errorf("FaultBit.Bit = %d, want 0", fb.Bit)
-	}
-	if fb.Desc != "Grid over-voltage" {
-		t.Errorf("FaultBit.Desc = %q, want %q", fb.Desc, "Grid over-voltage")
-	}
+	assert.Equal(t, uint16(0x0405), fb.Addr)
+	assert.Equal(t, uint8(0), fb.Bit)
+	assert.Equal(t, "Grid over-voltage", fb.Desc)
 }
 
 func TestFaultTableSize(t *testing.T) {
-	if len(FaultTable) < 200 {
-		t.Errorf("FaultTable len = %d, want > 200", len(FaultTable))
-	}
+	assert.Greater(t, len(FaultTable), 200, "FaultTable len")
 }
 
 func TestFaultTableFirstEntry(t *testing.T) {
-	if len(FaultTable) == 0 {
-		t.Fatal("FaultTable is empty")
-	}
+	require.NotEmpty(t, FaultTable, "FaultTable is empty")
 	first := FaultTable[0]
-	if first.Addr != 0x0405 {
-		t.Errorf("FaultTable[0].Addr = 0x%04X, want 0x0405", first.Addr)
-	}
-	if first.Bit != 0 {
-		t.Errorf("FaultTable[0].Bit = %d, want 0", first.Bit)
-	}
-	if first.Desc != "Grid over-voltage" {
-		t.Errorf("FaultTable[0].Desc = %q, want %q", first.Desc, "Grid over-voltage")
-	}
+	assert.Equal(t, uint16(0x0405), first.Addr)
+	assert.Equal(t, uint8(0), first.Bit)
+	assert.Equal(t, "Grid over-voltage", first.Desc)
 }
 
 func TestFaultTableLeakageCurrent(t *testing.T) {
@@ -627,27 +412,15 @@ func TestFaultTableLeakageCurrent(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Error("FaultTable missing entry for 0x0405 bit 4 'Leakage current faults'")
-	}
+	assert.True(t, found, "FaultTable missing entry for 0x0405 bit 4 'Leakage current faults'")
 }
 
 func TestFaultRegisters(t *testing.T) {
-	if len(FaultRegisters) != 2 {
-		t.Fatalf("FaultRegisters len = %d, want 2", len(FaultRegisters))
-	}
-	if FaultRegisters[0].Addr != 0x0405 {
-		t.Errorf("FaultRegisters[0].Addr = 0x%04X, want 0x0405", FaultRegisters[0].Addr)
-	}
-	if FaultRegisters[0].Count != 18 {
-		t.Errorf("FaultRegisters[0].Count = %d, want 18", FaultRegisters[0].Count)
-	}
-	if FaultRegisters[1].Addr != 0x0432 {
-		t.Errorf("FaultRegisters[1].Addr = 0x%04X, want 0x0432", FaultRegisters[1].Addr)
-	}
-	if FaultRegisters[1].Count != 12 {
-		t.Errorf("FaultRegisters[1].Count = %d, want 12", FaultRegisters[1].Count)
-	}
+	require.Len(t, FaultRegisters, 2)
+	assert.Equal(t, uint16(0x0405), FaultRegisters[0].Addr, "FaultRegisters[0].Addr")
+	assert.Equal(t, uint16(18), FaultRegisters[0].Count, "FaultRegisters[0].Count")
+	assert.Equal(t, uint16(0x0432), FaultRegisters[1].Addr, "FaultRegisters[1].Addr")
+	assert.Equal(t, uint16(12), FaultRegisters[1].Count, "FaultRegisters[1].Count")
 }
 
 func TestDecodeFaultsEmpty(t *testing.T) {
@@ -656,9 +429,7 @@ func TestDecodeFaultsEmpty(t *testing.T) {
 		0x0406: 0x0000,
 	}
 	faults := DecodeFaults(faultData)
-	if len(faults) != 0 {
-		t.Errorf("DecodeFaults all zeros returned %d faults, want 0", len(faults))
-	}
+	assert.Empty(t, faults, "DecodeFaults all zeros")
 }
 
 func TestDecodeFaultsSingleBit(t *testing.T) {
@@ -666,12 +437,8 @@ func TestDecodeFaultsSingleBit(t *testing.T) {
 		0x0405: 0x0001, // bit 0 set
 	}
 	faults := DecodeFaults(faultData)
-	if len(faults) != 1 {
-		t.Fatalf("DecodeFaults single bit returned %d faults, want 1", len(faults))
-	}
-	if faults[0] != "Grid over-voltage" {
-		t.Errorf("DecodeFaults single bit = %q, want %q", faults[0], "Grid over-voltage")
-	}
+	require.Len(t, faults, 1)
+	assert.Equal(t, "Grid over-voltage", faults[0])
 }
 
 func TestDecodeFaultsMultipleBits(t *testing.T) {
@@ -679,15 +446,9 @@ func TestDecodeFaultsMultipleBits(t *testing.T) {
 		0x0405: 0x0003, // bits 0+1 set
 	}
 	faults := DecodeFaults(faultData)
-	if len(faults) != 2 {
-		t.Fatalf("DecodeFaults two bits returned %d faults, want 2", len(faults))
-	}
-	if faults[0] != "Grid over-voltage" {
-		t.Errorf("DecodeFaults[0] = %q, want %q", faults[0], "Grid over-voltage")
-	}
-	if faults[1] != "Grid under-voltage" {
-		t.Errorf("DecodeFaults[1] = %q, want %q", faults[1], "Grid under-voltage")
-	}
+	require.Len(t, faults, 2)
+	assert.Equal(t, "Grid over-voltage", faults[0])
+	assert.Equal(t, "Grid under-voltage", faults[1])
 }
 
 func TestDecodeFaultsUnknownRegister(t *testing.T) {
@@ -695,128 +456,66 @@ func TestDecodeFaultsUnknownRegister(t *testing.T) {
 		0xFFFF: 0xFFFF, // register not in table
 	}
 	faults := DecodeFaults(faultData)
-	if len(faults) != 0 {
-		t.Errorf("DecodeFaults unknown register returned %d faults, want 0", len(faults))
-	}
+	assert.Empty(t, faults, "DecodeFaults unknown register")
 }
 
 // === Task 2 TDD tests: Dynamic PV group generator ===
 
 func TestGeneratePVGroups2(t *testing.T) {
 	groups := GeneratePVGroups(2)
-	if len(groups) != 3 {
-		t.Fatalf("GeneratePVGroups(2) len = %d, want 3", len(groups))
-	}
+	require.Len(t, groups, 3)
 
 	// PV 1
-	if groups[0].Name != "PV 1" {
-		t.Errorf("groups[0].Name = %q, want %q", groups[0].Name, "PV 1")
-	}
-	if groups[0].Layout != "column" {
-		t.Errorf("groups[0].Layout = %q, want %q", groups[0].Layout, "column")
-	}
-	if len(groups[0].Probes) != 3 {
-		t.Fatalf("PV 1 probes = %d, want 3", len(groups[0].Probes))
-	}
-	if groups[0].Probes[0].Addr != 0x0584 {
-		t.Errorf("PV 1 voltage addr = 0x%04X, want 0x0584", groups[0].Probes[0].Addr)
-	}
-	if groups[0].Probes[0].Scale != 0.1 {
-		t.Errorf("PV 1 voltage scale = %f, want 0.1", groups[0].Probes[0].Scale)
-	}
-	if groups[0].Probes[0].Unit != "V" {
-		t.Errorf("PV 1 voltage unit = %q, want %q", groups[0].Probes[0].Unit, "V")
-	}
-	if groups[0].Probes[1].Addr != 0x0585 {
-		t.Errorf("PV 1 current addr = 0x%04X, want 0x0585", groups[0].Probes[1].Addr)
-	}
-	if !groups[0].Probes[1].Signed {
-		t.Error("PV 1 current should be signed")
-	}
-	if groups[0].Probes[1].Scale != 0.01 {
-		t.Errorf("PV 1 current scale = %f, want 0.01", groups[0].Probes[1].Scale)
-	}
-	if groups[0].Probes[1].Unit != "A" {
-		t.Errorf("PV 1 current unit = %q, want %q", groups[0].Probes[1].Unit, "A")
-	}
-	if groups[0].Probes[2].Addr != 0x0586 {
-		t.Errorf("PV 1 power addr = 0x%04X, want 0x0586", groups[0].Probes[2].Addr)
-	}
-	if groups[0].Probes[2].Scale != 0.01 {
-		t.Errorf("PV 1 power scale = %f, want 0.01", groups[0].Probes[2].Scale)
-	}
-	if groups[0].Probes[2].Unit != "kW" {
-		t.Errorf("PV 1 power unit = %q, want %q", groups[0].Probes[2].Unit, "kW")
-	}
+	assert.Equal(t, "PV 1", groups[0].Name)
+	assert.Equal(t, "column", groups[0].Layout)
+	require.Len(t, groups[0].Probes, 3, "PV 1 probes")
+	assert.Equal(t, uint16(0x0584), groups[0].Probes[0].Addr, "PV 1 voltage addr")
+	assert.Equal(t, 0.1, groups[0].Probes[0].Scale, "PV 1 voltage scale")
+	assert.Equal(t, "V", groups[0].Probes[0].Unit, "PV 1 voltage unit")
+	assert.Equal(t, uint16(0x0585), groups[0].Probes[1].Addr, "PV 1 current addr")
+	assert.True(t, groups[0].Probes[1].Signed, "PV 1 current should be signed")
+	assert.Equal(t, 0.01, groups[0].Probes[1].Scale, "PV 1 current scale")
+	assert.Equal(t, "A", groups[0].Probes[1].Unit, "PV 1 current unit")
+	assert.Equal(t, uint16(0x0586), groups[0].Probes[2].Addr, "PV 1 power addr")
+	assert.Equal(t, 0.01, groups[0].Probes[2].Scale, "PV 1 power scale")
+	assert.Equal(t, "kW", groups[0].Probes[2].Unit, "PV 1 power unit")
 
 	// PV 2
-	if groups[1].Name != "PV 2" {
-		t.Errorf("groups[1].Name = %q, want %q", groups[1].Name, "PV 2")
-	}
-	if groups[1].Probes[0].Addr != 0x0587 {
-		t.Errorf("PV 2 voltage addr = 0x%04X, want 0x0587", groups[1].Probes[0].Addr)
-	}
-	if groups[1].Probes[1].Addr != 0x0588 {
-		t.Errorf("PV 2 current addr = 0x%04X, want 0x0588", groups[1].Probes[1].Addr)
-	}
-	if groups[1].Probes[2].Addr != 0x0589 {
-		t.Errorf("PV 2 power addr = 0x%04X, want 0x0589", groups[1].Probes[2].Addr)
-	}
+	assert.Equal(t, "PV 2", groups[1].Name)
+	assert.Equal(t, uint16(0x0587), groups[1].Probes[0].Addr, "PV 2 voltage addr")
+	assert.Equal(t, uint16(0x0588), groups[1].Probes[1].Addr, "PV 2 current addr")
+	assert.Equal(t, uint16(0x0589), groups[1].Probes[2].Addr, "PV 2 power addr")
 
 	// Total PV Power
-	if groups[2].Name != "Total PV Power" {
-		t.Errorf("groups[2].Name = %q, want %q", groups[2].Name, "Total PV Power")
-	}
-	if groups[2].Layout != "" {
-		t.Errorf("Total PV Power layout = %q, want empty", groups[2].Layout)
-	}
+	assert.Equal(t, "Total PV Power", groups[2].Name)
+	assert.Empty(t, groups[2].Layout, "Total PV Power layout")
 }
 
 func TestGeneratePVGroups16(t *testing.T) {
 	groups := GeneratePVGroups(16)
-	if len(groups) != 17 {
-		t.Fatalf("GeneratePVGroups(16) len = %d, want 17", len(groups))
-	}
+	require.Len(t, groups, 17)
 	// PV 16 voltage at 0x05B1
 	pv16 := groups[15]
-	if pv16.Name != "PV 16" {
-		t.Errorf("groups[15].Name = %q, want %q", pv16.Name, "PV 16")
-	}
-	if pv16.Probes[0].Addr != 0x05B1 {
-		t.Errorf("PV 16 voltage addr = 0x%04X, want 0x05B1", pv16.Probes[0].Addr)
-	}
+	assert.Equal(t, "PV 16", pv16.Name)
+	assert.Equal(t, uint16(0x05B1), pv16.Probes[0].Addr, "PV 16 voltage addr")
 }
 
 func TestGeneratePVGroupsTotalPower(t *testing.T) {
 	groups := GeneratePVGroups(4)
 	total := groups[len(groups)-1]
-	if total.Name != "Total PV Power" {
-		t.Errorf("Total group name = %q, want %q", total.Name, "Total PV Power")
-	}
-	if len(total.Probes) != 1 {
-		t.Fatalf("Total PV Power probes = %d, want 1", len(total.Probes))
-	}
-	if total.Probes[0].Addr != 0x05C4 {
-		t.Errorf("Total PV Power addr = 0x%04X, want 0x05C4", total.Probes[0].Addr)
-	}
-	if total.Probes[0].Scale != 0.1 {
-		t.Errorf("Total PV Power scale = %f, want 0.1", total.Probes[0].Scale)
-	}
-	if total.Probes[0].Unit != "kW" {
-		t.Errorf("Total PV Power unit = %q, want %q", total.Probes[0].Unit, "kW")
-	}
+	assert.Equal(t, "Total PV Power", total.Name)
+	require.Len(t, total.Probes, 1, "Total PV Power probes")
+	assert.Equal(t, uint16(0x05C4), total.Probes[0].Addr, "Total PV Power addr")
+	assert.Equal(t, 0.1, total.Probes[0].Scale, "Total PV Power scale")
+	assert.Equal(t, "kW", total.Probes[0].Unit, "Total PV Power unit")
 }
 
 func TestGeneratePVGroupsColumnLayout(t *testing.T) {
 	groups := GeneratePVGroups(3)
 	for i := 0; i < 3; i++ {
-		if groups[i].Layout != "column" {
-			t.Errorf("PV %d layout = %q, want %q", i+1, groups[i].Layout, "column")
-		}
+		assert.Equal(t, "column", groups[i].Layout, "PV %d layout", i+1)
 	}
-	if groups[3].Layout != "" {
-		t.Errorf("Total PV Power layout = %q, want empty", groups[3].Layout)
-	}
+	assert.Empty(t, groups[3].Layout, "Total PV Power layout")
 }
 
 // === Phase 04 Task 1 TDD tests: U32, BatteryStateEnum, GenerateBatteryGroups ===
@@ -828,10 +527,7 @@ func TestFormatValueU32(t *testing.T) {
 	binary.BigEndian.PutUint16(data[:2], 0)     // high word
 	binary.BigEndian.PutUint16(data[2:4], 23900) // low word
 	got := FormatValue(p, data)
-	want := "239.00 kWh"
-	if got != want {
-		t.Errorf("FormatValue U32 = %q, want %q", got, want)
-	}
+	assert.Equal(t, "239.00 kWh", got)
 }
 
 func TestFormatValueU32Large(t *testing.T) {
@@ -841,10 +537,7 @@ func TestFormatValueU32Large(t *testing.T) {
 	binary.BigEndian.PutUint16(data[:2], 18)
 	binary.BigEndian.PutUint16(data[2:4], 54919)
 	got := FormatValue(p, data)
-	want := "123456.70 kWh"
-	if got != want {
-		t.Errorf("FormatValue U32 large = %q, want %q", got, want)
-	}
+	assert.Equal(t, "123456.70 kWh", got)
 }
 
 func TestFormatValueU32NoScale(t *testing.T) {
@@ -854,10 +547,7 @@ func TestFormatValueU32NoScale(t *testing.T) {
 	binary.BigEndian.PutUint16(data[:2], 0)
 	binary.BigEndian.PutUint16(data[2:4], 42)
 	got := FormatValue(p, data)
-	want := "42 (0x0000002A)"
-	if got != want {
-		t.Errorf("FormatValue U32 no scale = %q, want %q", got, want)
-	}
+	assert.Equal(t, "42 (0x0000002A)", got)
 }
 
 func TestFormatValueU32Signed(t *testing.T) {
@@ -867,20 +557,14 @@ func TestFormatValueU32Signed(t *testing.T) {
 	binary.BigEndian.PutUint16(data[:2], 0xFFFF)
 	binary.BigEndian.PutUint16(data[2:4], 0xFF9C)
 	got := FormatValue(p, data)
-	want := "-1.00 W"
-	if got != want {
-		t.Errorf("FormatValue U32 signed = %q, want %q", got, want)
-	}
+	assert.Equal(t, "-1.00 W", got)
 }
 
 func TestFormatValueU32ShortData(t *testing.T) {
 	p := Probe{Name: "Short", U32: true}
 	data := []byte{0x00, 0x01} // only 2 bytes, need 4
 	got := FormatValue(p, data)
-	want := "<no data>"
-	if got != want {
-		t.Errorf("FormatValue U32 short data = %q, want %q", got, want)
-	}
+	assert.Equal(t, "<no data>", got)
 }
 
 func TestBatteryStateEnum(t *testing.T) {
@@ -891,98 +575,60 @@ func TestBatteryStateEnum(t *testing.T) {
 		4: "Fault",
 		5: "Loss reduction",
 	}
-	if len(BatteryStateEnum) != 5 {
-		t.Errorf("BatteryStateEnum len = %d, want 5", len(BatteryStateEnum))
-	}
+	assert.Len(t, BatteryStateEnum, 5)
 	for k, v := range expected {
 		got, ok := BatteryStateEnum[k]
-		if !ok {
-			t.Errorf("BatteryStateEnum[%d] not found", k)
+		if !assert.True(t, ok, "BatteryStateEnum[%d] not found", k) {
 			continue
 		}
-		if got != v {
-			t.Errorf("BatteryStateEnum[%d] = %q, want %q", k, got, v)
-		}
+		assert.Equal(t, v, got, "BatteryStateEnum[%d]", k)
 	}
 }
 
 func TestGenerateBatteryGroups2(t *testing.T) {
 	groups := GenerateBatteryGroups(2)
 	// 2 channel groups + 1 global stats = 3
-	if len(groups) != 3 {
-		t.Fatalf("GenerateBatteryGroups(2) len = %d, want 3", len(groups))
-	}
+	require.Len(t, groups, 3)
 
 	// Channel 1
 	ch1 := groups[0]
-	if ch1.Name != "Channel 1" {
-		t.Errorf("groups[0].Name = %q, want %q", ch1.Name, "Channel 1")
-	}
-	if ch1.Layout != "column" {
-		t.Errorf("groups[0].Layout = %q, want %q", ch1.Layout, "column")
-	}
-	if len(ch1.Probes) != 10 {
-		t.Fatalf("Channel 1 probes = %d, want 10", len(ch1.Probes))
-	}
+	assert.Equal(t, "Channel 1", ch1.Name)
+	assert.Equal(t, "column", ch1.Layout)
+	require.Len(t, ch1.Probes, 10, "Channel 1 probes")
 	// First 7 probes: pack info at base 0x0604
-	if ch1.Probes[0].Addr != 0x0604 {
-		t.Errorf("Ch1 voltage addr = 0x%04X, want 0x0604", ch1.Probes[0].Addr)
-	}
+	assert.Equal(t, uint16(0x0604), ch1.Probes[0].Addr, "Ch1 voltage addr")
 
 	// Channel 2
 	ch2 := groups[1]
-	if ch2.Name != "Channel 2" {
-		t.Errorf("groups[1].Name = %q, want %q", ch2.Name, "Channel 2")
-	}
-	if len(ch2.Probes) != 10 {
-		t.Fatalf("Channel 2 probes = %d, want 10", len(ch2.Probes))
-	}
+	assert.Equal(t, "Channel 2", ch2.Name)
+	require.Len(t, ch2.Probes, 10, "Channel 2 probes")
 	// Channel 2 base = 0x0604 + 7*(2-1) = 0x060B
-	if ch2.Probes[0].Addr != 0x060B {
-		t.Errorf("Ch2 voltage addr = 0x%04X, want 0x060B", ch2.Probes[0].Addr)
-	}
+	assert.Equal(t, uint16(0x060B), ch2.Probes[0].Addr, "Ch2 voltage addr")
 
 	// Each channel has 10 probes (7 pack info + charge limit + discharge limit + state)
 	// State probe should have BatteryStateEnum
 	stateProbe := ch1.Probes[9]
-	if stateProbe.Enum == nil {
-		t.Error("Channel 1 state probe Enum should not be nil")
-	}
+	assert.NotNil(t, stateProbe.Enum, "Channel 1 state probe Enum should not be nil")
 
 	// Global Stats
 	global := groups[2]
-	if global.Name != "Global Stats" {
-		t.Errorf("groups[2].Name = %q, want %q", global.Name, "Global Stats")
-	}
-	if global.Layout != "" {
-		t.Errorf("Global Stats layout = %q, want empty", global.Layout)
-	}
-	if len(global.Probes) != 5 {
-		t.Fatalf("Global Stats probes = %d, want 5", len(global.Probes))
-	}
-	if global.Probes[0].Addr != 0x0667 {
-		t.Errorf("Global Stats charge/discharge addr = 0x%04X, want 0x0667", global.Probes[0].Addr)
-	}
-	if global.Probes[4].Addr != 0x066B {
-		t.Errorf("Global Stats total capacity addr = 0x%04X, want 0x066B", global.Probes[4].Addr)
-	}
+	assert.Equal(t, "Global Stats", global.Name)
+	assert.Empty(t, global.Layout, "Global Stats layout")
+	require.Len(t, global.Probes, 5, "Global Stats probes")
+	assert.Equal(t, uint16(0x0667), global.Probes[0].Addr, "Global Stats charge/discharge addr")
+	assert.Equal(t, uint16(0x066B), global.Probes[4].Addr, "Global Stats total capacity addr")
 }
 
 func TestGenerateBatteryGroups1(t *testing.T) {
 	groups := GenerateBatteryGroups(1)
 	// 1 channel group + 1 global stats = 2
-	if len(groups) != 2 {
-		t.Fatalf("GenerateBatteryGroups(1) len = %d, want 2", len(groups))
-	}
+	require.Len(t, groups, 2)
 	// State probe should have BatteryStateEnum
 	ch1 := groups[0]
 	stateProbe := ch1.Probes[9]
-	if stateProbe.Enum == nil {
-		t.Error("Channel 1 state probe Enum should not be nil")
-	}
-	if _, ok := stateProbe.Enum[1]; !ok {
-		t.Error("State probe Enum missing key 1 (Charging)")
-	}
+	assert.NotNil(t, stateProbe.Enum, "Channel 1 state probe Enum should not be nil")
+	_, ok := stateProbe.Enum[1]
+	assert.True(t, ok, "State probe Enum missing key 1 (Charging)")
 }
 
 func TestGenerateBatteryGroupsAddresses(t *testing.T) {
@@ -991,92 +637,58 @@ func TestGenerateBatteryGroupsAddresses(t *testing.T) {
 	ch2 := groups[1]
 
 	// Channel 1 pack info: voltage=0x0604
-	if ch1.Probes[0].Addr != 0x0604 {
-		t.Errorf("Ch1 voltage = 0x%04X, want 0x0604", ch1.Probes[0].Addr)
-	}
+	assert.Equal(t, uint16(0x0604), ch1.Probes[0].Addr, "Ch1 voltage")
 	// Channel 2 pack info: voltage=0x060B
-	if ch2.Probes[0].Addr != 0x060B {
-		t.Errorf("Ch2 voltage = 0x%04X, want 0x060B", ch2.Probes[0].Addr)
-	}
+	assert.Equal(t, uint16(0x060B), ch2.Probes[0].Addr, "Ch2 voltage")
 	// Channel 1 charge limit: 0x0644
-	if ch1.Probes[7].Addr != 0x0644 {
-		t.Errorf("Ch1 charge limit = 0x%04X, want 0x0644", ch1.Probes[7].Addr)
-	}
+	assert.Equal(t, uint16(0x0644), ch1.Probes[7].Addr, "Ch1 charge limit")
 	// Channel 1 discharge limit: 0x0645
-	if ch1.Probes[8].Addr != 0x0645 {
-		t.Errorf("Ch1 discharge limit = 0x%04X, want 0x0645", ch1.Probes[8].Addr)
-	}
+	assert.Equal(t, uint16(0x0645), ch1.Probes[8].Addr, "Ch1 discharge limit")
 	// Channel 1 state: 0x0646
-	if ch1.Probes[9].Addr != 0x0646 {
-		t.Errorf("Ch1 state = 0x%04X, want 0x0646", ch1.Probes[9].Addr)
-	}
+	assert.Equal(t, uint16(0x0646), ch1.Probes[9].Addr, "Ch1 state")
 	// Channel 2 charge limit: 0x0648
-	if ch2.Probes[7].Addr != 0x0648 {
-		t.Errorf("Ch2 charge limit = 0x%04X, want 0x0648", ch2.Probes[7].Addr)
-	}
+	assert.Equal(t, uint16(0x0648), ch2.Probes[7].Addr, "Ch2 charge limit")
 	// Channel 2 state: 0x064A
-	if ch2.Probes[9].Addr != 0x064A {
-		t.Errorf("Ch2 state = 0x%04X, want 0x064A", ch2.Probes[9].Addr)
-	}
+	assert.Equal(t, uint16(0x064A), ch2.Probes[9].Addr, "Ch2 state")
 }
 
 // === Phase 04 Task 2 TDD tests: ProbeGroup Type, BMSInfoGroups, BMSProtectionProbes, StatisticsGroups, DecodeBMSClock, DecodeTopology ===
 
 func TestProbeGroupType(t *testing.T) {
 	pg := ProbeGroup{Name: "Protection", Type: "bitmap"}
-	if pg.Type != "bitmap" {
-		t.Errorf("ProbeGroup.Type = %q, want %q", pg.Type, "bitmap")
-	}
+	assert.Equal(t, "bitmap", pg.Type)
 }
 
 func TestBMSInfoGroups(t *testing.T) {
 	groups := BMSInfoGroups()
-	if len(groups) != 2 {
-		t.Fatalf("BMSInfoGroups returned %d groups, want 2", len(groups))
-	}
+	require.Len(t, groups, 2)
 
 	// Group 0: BMS Info with 18 probes
 	bmsInfo := groups[0]
-	if bmsInfo.Name != "BMS Info" {
-		t.Errorf("BMSInfoGroups[0].Name = %q, want %q", bmsInfo.Name, "BMS Info")
-	}
-	if len(bmsInfo.Probes) != 18 {
-		t.Errorf("BMSInfoGroups[0] probes = %d, want 18", len(bmsInfo.Probes))
-	}
+	assert.Equal(t, "BMS Info", bmsInfo.Name)
+	assert.Len(t, bmsInfo.Probes, 18, "BMSInfoGroups[0] probes")
 
 	// Check that 0x9004 is a bms_clock Composite probe
 	foundClock := false
 	for _, p := range bmsInfo.Probes {
 		if p.Addr == 0x9004 {
 			foundClock = true
-			if p.Composite != "bms_clock" {
-				t.Errorf("probe 0x9004 Composite = %q, want %q", p.Composite, "bms_clock")
-			}
-			if p.Count != 2 {
-				t.Errorf("probe 0x9004 Count = %d, want 2", p.Count)
-			}
+			assert.Equal(t, "bms_clock", p.Composite, "probe 0x9004 Composite")
+			assert.Equal(t, uint16(2), p.Count, "probe 0x9004 Count")
 		}
 	}
-	if !foundClock {
-		t.Error("BMSInfoGroups missing bms_clock probe at 0x9004")
-	}
+	assert.True(t, foundClock, "BMSInfoGroups missing bms_clock probe at 0x9004")
 
 	// Check that 0x9018 is a bms_sw_version Composite probe
 	foundSW := false
 	for _, p := range bmsInfo.Probes {
 		if p.Addr == 0x9018 {
 			foundSW = true
-			if p.Composite != "bms_sw_version" {
-				t.Errorf("probe 0x9018 Composite = %q, want %q", p.Composite, "bms_sw_version")
-			}
-			if p.Count != 4 {
-				t.Errorf("probe 0x9018 Count = %d, want 4", p.Count)
-			}
+			assert.Equal(t, "bms_sw_version", p.Composite, "probe 0x9018 Composite")
+			assert.Equal(t, uint16(4), p.Count, "probe 0x9018 Count")
 		}
 	}
-	if !foundSW {
-		t.Error("BMSInfoGroups missing bms_sw_version probe at 0x9018")
-	}
+	assert.True(t, foundSW, "BMSInfoGroups missing bms_sw_version probe at 0x9018")
 
 	// Check SN probe
 	foundSN := false
@@ -1085,9 +697,7 @@ func TestBMSInfoGroups(t *testing.T) {
 			foundSN = true
 		}
 	}
-	if !foundSN {
-		t.Error("BMSInfoGroups missing SN probe at 0x9024 (Count 10, IsASCII)")
-	}
+	assert.True(t, foundSN, "BMSInfoGroups missing SN probe at 0x9024 (Count 10, IsASCII)")
 
 	// Check BMS Info expected addresses (no more 0x9005, 0x9019, 0x901A, 0x901B)
 	expectedAddrs := []uint16{0x9004, 0x9006, 0x9007, 0x900B, 0x900C, 0x900D, 0x900E, 0x900F, 0x9010, 0x9011, 0x9012, 0x9013, 0x9018, 0x9024, 0x9022, 0x9023, 0x902F, 0x9030}
@@ -1096,100 +706,65 @@ func TestBMSInfoGroups(t *testing.T) {
 		addrSet[p.Addr] = true
 	}
 	for _, addr := range expectedAddrs {
-		if !addrSet[addr] {
-			t.Errorf("BMSInfoGroups BMS Info missing probe at 0x%04X", addr)
-		}
+		assert.True(t, addrSet[addr], "BMSInfoGroups BMS Info missing probe at 0x%04X", addr)
 	}
 
 	// Group 1: Protection with 6 probes
 	prot := groups[1]
-	if prot.Name != "Protection" {
-		t.Errorf("BMSInfoGroups[1].Name = %q, want %q", prot.Name, "Protection")
-	}
-	if prot.Type != "protection" {
-		t.Errorf("BMSInfoGroups[1].Type = %q, want %q", prot.Type, "protection")
-	}
-	if len(prot.Probes) != 6 {
-		t.Errorf("BMSInfoGroups[1] probes = %d, want 6", len(prot.Probes))
-	}
+	assert.Equal(t, "Protection", prot.Name)
+	assert.Equal(t, "protection", prot.Type)
+	assert.Len(t, prot.Probes, 6, "BMSInfoGroups[1] probes")
 	protExpected := []uint16{0x9014, 0x9015, 0x9016, 0x9017, 0x901C, 0x901D}
 	for i, addr := range protExpected {
-		if i < len(prot.Probes) && prot.Probes[i].Addr != addr {
-			t.Errorf("Protection[%d].Addr = 0x%04X, want 0x%04X", i, prot.Probes[i].Addr, addr)
+		if i < len(prot.Probes) {
+			assert.Equal(t, addr, prot.Probes[i].Addr, "Protection[%d].Addr", i)
 		}
 	}
 }
 
 func TestBMSProtectionInGroups(t *testing.T) {
 	groups := BMSInfoGroups()
-	if len(groups) < 2 {
-		t.Fatal("BMSInfoGroups returned fewer than 2 groups")
-	}
+	require.True(t, len(groups) >= 2, "BMSInfoGroups returned fewer than 2 groups")
 	prot := groups[1]
-	if prot.Name != "Protection" {
-		t.Errorf("groups[1].Name = %q, want %q", prot.Name, "Protection")
-	}
-	if prot.Type != "protection" {
-		t.Errorf("groups[1].Type = %q, want %q", prot.Type, "protection")
-	}
-	if len(prot.Probes) != 6 {
-		t.Fatalf("Protection probes = %d, want 6", len(prot.Probes))
-	}
+	assert.Equal(t, "Protection", prot.Name)
+	assert.Equal(t, "protection", prot.Type)
+	require.Len(t, prot.Probes, 6, "Protection probes")
 	expectedAddrs := []uint16{0x9014, 0x9015, 0x9016, 0x9017, 0x901C, 0x901D}
 	for i, addr := range expectedAddrs {
-		if prot.Probes[i].Addr != addr {
-			t.Errorf("Protection[%d].Addr = 0x%04X, want 0x%04X", i, prot.Probes[i].Addr, addr)
-		}
-		if prot.Probes[i].Count != 1 {
-			t.Errorf("Protection[%d].Count = %d, want 1", i, prot.Probes[i].Count)
-		}
+		assert.Equal(t, addr, prot.Probes[i].Addr, "Protection[%d].Addr", i)
+		assert.Equal(t, uint16(1), prot.Probes[i].Count, "Protection[%d].Count", i)
 	}
 }
 
 func TestStatisticsGroups(t *testing.T) {
 	groups := StatisticsGroups()
-	if len(groups) != 2 {
-		t.Fatalf("StatisticsGroups len = %d, want 2", len(groups))
-	}
+	require.Len(t, groups, 2)
 
 	expectedNames := []string{"Today", "Total"}
 	for i, want := range expectedNames {
-		if groups[i].Name != want {
-			t.Errorf("StatisticsGroups[%d].Name = %q, want %q", i, groups[i].Name, want)
-		}
+		assert.Equal(t, want, groups[i].Name, "StatisticsGroups[%d].Name", i)
 	}
 
 	// Each group has 6 probes, all U32=true, Count=2
 	for i, g := range groups {
-		if len(g.Probes) != 6 {
-			t.Errorf("StatisticsGroups[%d] probes = %d, want 6", i, len(g.Probes))
+		if !assert.Len(t, g.Probes, 6, "StatisticsGroups[%d] probes", i) {
 			continue
 		}
 		for j, p := range g.Probes {
-			if !p.U32 {
-				t.Errorf("StatisticsGroups[%d].Probes[%d].U32 = false, want true", i, j)
-			}
-			if p.Count != 2 {
-				t.Errorf("StatisticsGroups[%d].Probes[%d].Count = %d, want 2", i, j, p.Count)
-			}
-			if p.Unit != "kWh" {
-				t.Errorf("StatisticsGroups[%d].Probes[%d].Unit = %q, want %q", i, j, p.Unit, "kWh")
-			}
+			assert.True(t, p.U32, "StatisticsGroups[%d].Probes[%d].U32", i, j)
+			assert.Equal(t, uint16(2), p.Count, "StatisticsGroups[%d].Probes[%d].Count", i, j)
+			assert.Equal(t, "kWh", p.Unit, "StatisticsGroups[%d].Probes[%d].Unit", i, j)
 		}
 	}
 
 	// Today scale = 0.01
 	for j, p := range groups[0].Probes {
-		if p.Scale != 0.01 {
-			t.Errorf("Today.Probes[%d].Scale = %f, want 0.01", j, p.Scale)
-		}
+		assert.Equal(t, 0.01, p.Scale, "Today.Probes[%d].Scale", j)
 	}
 
 	// Total scale = 0.1
 	for j, p := range groups[1].Probes {
-		if p.Scale != 0.1 {
-			t.Errorf("Total.Probes[%d].Scale = %f, want 0.1", j, p.Scale)
-		}
+		assert.Equal(t, 0.1, p.Scale, "Total.Probes[%d].Scale", j)
 	}
 }
 
@@ -1197,21 +772,15 @@ func TestStatisticsAddresses(t *testing.T) {
 	groups := StatisticsGroups()
 
 	// Today starts at 0x0684
-	if groups[0].Probes[0].Addr != 0x0684 {
-		t.Errorf("Today gen addr = 0x%04X, want 0x0684", groups[0].Probes[0].Addr)
-	}
+	assert.Equal(t, uint16(0x0684), groups[0].Probes[0].Addr, "Today gen addr")
 	// Total starts at 0x0686
-	if groups[1].Probes[0].Addr != 0x0686 {
-		t.Errorf("Total gen addr = 0x%04X, want 0x0686", groups[1].Probes[0].Addr)
-	}
+	assert.Equal(t, uint16(0x0686), groups[1].Probes[0].Addr, "Total gen addr")
 
 	// Stride 4 between metrics within each group
 	// Today: gen=0x0684, consumption=0x0688, bought=0x068C, sold=0x0690, bat_charge=0x0694, bat_discharge=0x0698
 	todayExpected := []uint16{0x0684, 0x0688, 0x068C, 0x0690, 0x0694, 0x0698}
 	for i, addr := range todayExpected {
-		if groups[0].Probes[i].Addr != addr {
-			t.Errorf("Today.Probes[%d].Addr = 0x%04X, want 0x%04X", i, groups[0].Probes[i].Addr, addr)
-		}
+		assert.Equal(t, addr, groups[0].Probes[i].Addr, "Today.Probes[%d].Addr", i)
 	}
 }
 
@@ -1222,64 +791,39 @@ func TestBMSInfoGroupsIncludesOnlineBitmap(t *testing.T) {
 		for _, p := range g.Probes {
 			if p.Addr == 0x9022 {
 				found = true
-				if p.Name != "Online Bitmap" {
-					t.Errorf("expected name 'Online Bitmap', got %q", p.Name)
-				}
+				assert.Equal(t, "Online Bitmap", p.Name)
 			}
 		}
 	}
-	if !found {
-		t.Error("BMSInfoGroups missing probe at 0x9022")
-	}
+	assert.True(t, found, "BMSInfoGroups missing probe at 0x9022")
 }
 
 func TestBMSInfoGroupsBatchPlan(t *testing.T) {
 	groups := BMSInfoGroups()
 	plan := AnalyzeBatchPlan(groups)
-	if len(plan.Spans) != 3 {
-		t.Fatalf("AnalyzeBatchPlan spans = %d, want 3", len(plan.Spans))
-	}
+	require.Len(t, plan.Spans, 3)
 	// Span 0: 0x9004..0x901D (BMS Info + Protection contiguous block)
-	if plan.Spans[0].StartAddr != 0x9004 {
-		t.Errorf("Span[0].StartAddr = 0x%04X, want 0x9004", plan.Spans[0].StartAddr)
-	}
-	if plan.Spans[0].TotalCount != 26 {
-		t.Errorf("Span[0].TotalCount = %d, want 26", plan.Spans[0].TotalCount)
-	}
+	assert.Equal(t, uint16(0x9004), plan.Spans[0].StartAddr, "Span[0].StartAddr")
+	assert.Equal(t, uint16(26), plan.Spans[0].TotalCount, "Span[0].TotalCount")
 	// Span 1: 0x9022..0x902D (Online Bitmap, Hibernation, SN block)
-	if plan.Spans[1].StartAddr != 0x9022 {
-		t.Errorf("Span[1].StartAddr = 0x%04X, want 0x9022", plan.Spans[1].StartAddr)
-	}
-	if plan.Spans[1].TotalCount != 12 {
-		t.Errorf("Span[1].TotalCount = %d, want 12", plan.Spans[1].TotalCount)
-	}
+	assert.Equal(t, uint16(0x9022), plan.Spans[1].StartAddr, "Span[1].StartAddr")
+	assert.Equal(t, uint16(12), plan.Spans[1].TotalCount, "Span[1].TotalCount")
 	// Span 2: 0x902F..0x9030 (Max Discharge/Charge Current)
-	if plan.Spans[2].StartAddr != 0x902F {
-		t.Errorf("Span[2].StartAddr = 0x%04X, want 0x902F", plan.Spans[2].StartAddr)
-	}
-	if plan.Spans[2].TotalCount != 2 {
-		t.Errorf("Span[2].TotalCount = %d, want 2", plan.Spans[2].TotalCount)
-	}
+	assert.Equal(t, uint16(0x902F), plan.Spans[2].StartAddr, "Span[2].StartAddr")
+	assert.Equal(t, uint16(2), plan.Spans[2].TotalCount, "Span[2].TotalCount")
 }
 
 func TestDecodeBMSClock(t *testing.T) {
 	// Encode 2026-04-10 14:03:05
 	var val uint32 = 0x6914E0C5
 	got := DecodeBMSClock(val)
-	want := "2026-04-10 14:03:05"
-	if got != want {
-		t.Errorf("DecodeBMSClock(0x%08X) = %q, want %q", val, got, want)
-	}
+	assert.Equal(t, "2026-04-10 14:03:05", got)
 }
 
 func TestDecodeTopology(t *testing.T) {
 	parallelStrings, packsPerString := DecodeTopology(0x020A)
-	if parallelStrings != 2 {
-		t.Errorf("DecodeTopology parallelStrings = %d, want 2", parallelStrings)
-	}
-	if packsPerString != 10 {
-		t.Errorf("DecodeTopology packsPerString = %d, want 10", packsPerString)
-	}
+	assert.Equal(t, 2, parallelStrings, "DecodeTopology parallelStrings")
+	assert.Equal(t, 10, packsPerString, "DecodeTopology packsPerString")
 }
 
 // === Phase 05 Plan 01: Pack probe definitions, bitmap tables, EncodePackQuery, DecodeBalanceState ===
@@ -1300,24 +844,19 @@ func TestEncodePackQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := EncodePackQuery(tt.input, tt.tower, tt.pack, tt.towersPerInput)
-			if got != tt.want {
-				t.Errorf("EncodePackQuery(%d,%d,%d,%d) = 0x%04X, want 0x%04X",
-					tt.input, tt.tower, tt.pack, tt.towersPerInput, got, tt.want)
-			}
+			assert.Equal(t, tt.want, got,
+				"EncodePackQuery(%d,%d,%d,%d)", tt.input, tt.tower, tt.pack, tt.towersPerInput)
 		})
 	}
 }
 
 func TestPackRTProbes(t *testing.T) {
 	probes := PackRTProbes()
-	if len(probes) < 30 {
-		t.Errorf("PackRTProbes returned %d probes, want >= 30", len(probes))
-	}
+	assert.GreaterOrEqual(t, len(probes), 30, "PackRTProbes count")
 
 	// First probe should be Pack ID at 0x9044
-	if probes[0].Name != "Pack ID" || probes[0].Addr != 0x9044 {
-		t.Errorf("first probe = {%q, 0x%04X}, want {\"Pack ID\", 0x9044}", probes[0].Name, probes[0].Addr)
-	}
+	assert.Equal(t, "Pack ID", probes[0].Name, "first probe name")
+	assert.Equal(t, uint16(0x9044), probes[0].Addr, "first probe addr")
 
 	// Build lookup by name for specific checks
 	byName := make(map[string]Probe)
@@ -1326,65 +865,34 @@ func TestPackRTProbes(t *testing.T) {
 	}
 
 	// Serial Number: ASCII, 10 registers
-	if p, ok := byName["Serial Number"]; !ok {
-		t.Error("missing Serial Number probe")
-	} else {
-		if p.Addr != 0x9047 {
-			t.Errorf("Serial Number Addr = 0x%04X, want 0x9047", p.Addr)
-		}
-		if p.Count != 10 {
-			t.Errorf("Serial Number Count = %d, want 10", p.Count)
-		}
-		if !p.IsASCII {
-			t.Error("Serial Number should be ASCII")
-		}
+	if p, ok := byName["Serial Number"]; assert.True(t, ok, "missing Serial Number probe") {
+		assert.Equal(t, uint16(0x9047), p.Addr, "Serial Number Addr")
+		assert.Equal(t, uint16(10), p.Count, "Serial Number Count")
+		assert.True(t, p.IsASCII, "Serial Number should be ASCII")
 	}
 
 	// Total Voltage
-	if p, ok := byName["Total Voltage"]; !ok {
-		t.Error("missing Total Voltage probe")
-	} else {
-		if p.Addr != 0x9079 {
-			t.Errorf("Total Voltage Addr = 0x%04X, want 0x9079", p.Addr)
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("Total Voltage Scale = %f, want 0.1", p.Scale)
-		}
-		if p.Unit != "V" {
-			t.Errorf("Total Voltage Unit = %q, want \"V\"", p.Unit)
-		}
+	if p, ok := byName["Total Voltage"]; assert.True(t, ok, "missing Total Voltage probe") {
+		assert.Equal(t, uint16(0x9079), p.Addr, "Total Voltage Addr")
+		assert.Equal(t, 0.1, p.Scale, "Total Voltage Scale")
+		assert.Equal(t, "V", p.Unit, "Total Voltage Unit")
 	}
 
 	// Check Cell 1
-	if p, ok := byName["Cell 1"]; !ok {
-		t.Error("missing Cell 1 probe")
-	} else {
-		if p.Addr != 0x9051 {
-			t.Errorf("Cell 1 Addr = 0x%04X, want 0x9051", p.Addr)
-		}
-		if p.Scale != 0.001 {
-			t.Errorf("Cell 1 Scale = %f, want 0.001", p.Scale)
-		}
-		if p.Unit != "V" {
-			t.Errorf("Cell 1 Unit = %q, want \"V\"", p.Unit)
-		}
+	if p, ok := byName["Cell 1"]; assert.True(t, ok, "missing Cell 1 probe") {
+		assert.Equal(t, uint16(0x9051), p.Addr, "Cell 1 Addr")
+		assert.Equal(t, 0.001, p.Scale, "Cell 1 Scale")
+		assert.Equal(t, "V", p.Unit, "Cell 1 Unit")
 	}
 	// Check Cell 16 (last cell per D-05)
-	if p, ok := byName["Cell 16"]; !ok {
-		t.Error("missing Cell 16 probe")
-	} else {
-		if p.Addr != 0x9060 {
-			t.Errorf("Cell 16 Addr = 0x%04X, want 0x9060", p.Addr)
-		}
-		if p.Scale != 0.001 {
-			t.Errorf("Cell 16 Scale = %f, want 0.001", p.Scale)
-		}
+	if p, ok := byName["Cell 16"]; assert.True(t, ok, "missing Cell 16 probe") {
+		assert.Equal(t, uint16(0x9060), p.Addr, "Cell 16 Addr")
+		assert.Equal(t, 0.001, p.Scale, "Cell 16 Scale")
 	}
 
 	// Cell 17 should NOT exist (only 16 cells per D-05)
-	if _, ok := byName["Cell 17"]; ok {
-		t.Error("Cell 17 should not exist (only 16 cells per D-05)")
-	}
+	_, ok := byName["Cell 17"]
+	assert.False(t, ok, "Cell 17 should not exist (only 16 cells per D-05)")
 
 	// Verify exactly 16 cell voltage probes (D-05)
 	cellCount := 0
@@ -1393,73 +901,38 @@ func TestPackRTProbes(t *testing.T) {
 			cellCount++
 		}
 	}
-	if cellCount != 16 {
-		t.Errorf("found %d cell voltage probes, want 16", cellCount)
-	}
+	assert.Equal(t, 16, cellCount, "cell voltage probes count")
 
 	// Current: signed, scale 0.1, unit A
-	if p, ok := byName["Current"]; !ok {
-		t.Error("missing Current probe")
-	} else {
-		if p.Addr != 0x9071 {
-			t.Errorf("Current Addr = 0x%04X, want 0x9071", p.Addr)
-		}
-		if !p.Signed {
-			t.Error("Current should be Signed")
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("Current Scale = %f, want 0.1", p.Scale)
-		}
-		if p.Unit != "A" {
-			t.Errorf("Current Unit = %q, want \"A\"", p.Unit)
-		}
+	if p, ok := byName["Current"]; assert.True(t, ok, "missing Current probe") {
+		assert.Equal(t, uint16(0x9071), p.Addr, "Current Addr")
+		assert.True(t, p.Signed, "Current should be Signed")
+		assert.Equal(t, 0.1, p.Scale, "Current Scale")
+		assert.Equal(t, "A", p.Unit, "Current Unit")
 	}
 
 	// Temp 1-4 at 0x906B-0x906E, Signed, Scale 0.1, Unit C
 	tempAddrs := map[string]uint16{"Temp 1": 0x906B, "Temp 2": 0x906C, "Temp 3": 0x906D, "Temp 4": 0x906E}
 	for name, wantAddr := range tempAddrs {
 		p, ok := byName[name]
-		if !ok {
-			t.Errorf("missing %s probe", name)
+		if !assert.True(t, ok, "missing %s probe", name) {
 			continue
 		}
-		if p.Addr != wantAddr {
-			t.Errorf("%s Addr = 0x%04X, want 0x%04X", name, p.Addr, wantAddr)
-		}
-		if !p.Signed {
-			t.Errorf("%s should be Signed", name)
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("%s Scale = %f, want 0.1", name, p.Scale)
-		}
+		assert.Equal(t, wantAddr, p.Addr, "%s Addr", name)
+		assert.True(t, p.Signed, "%s should be Signed", name)
+		assert.Equal(t, 0.1, p.Scale, "%s Scale", name)
 	}
 
 	// MOS Temp and Env Temp: signed, scale 0.1
-	if p, ok := byName["MOS Temp"]; !ok {
-		t.Error("missing MOS Temp probe")
-	} else {
-		if p.Addr != 0x906F {
-			t.Errorf("MOS Temp Addr = 0x%04X, want 0x906F", p.Addr)
-		}
-		if !p.Signed {
-			t.Error("MOS Temp should be Signed")
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("MOS Temp Scale = %f, want 0.1", p.Scale)
-		}
+	if p, ok := byName["MOS Temp"]; assert.True(t, ok, "missing MOS Temp probe") {
+		assert.Equal(t, uint16(0x906F), p.Addr, "MOS Temp Addr")
+		assert.True(t, p.Signed, "MOS Temp should be Signed")
+		assert.Equal(t, 0.1, p.Scale, "MOS Temp Scale")
 	}
-	if p, ok := byName["Env Temp"]; !ok {
-		t.Error("missing Env Temp probe")
-	} else {
-		if p.Addr != 0x9070 {
-			t.Errorf("Env Temp Addr = 0x%04X, want 0x9070", p.Addr)
-		}
-		if !p.Signed {
-			t.Error("Env Temp should be Signed")
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("Env Temp Scale = %f, want 0.1", p.Scale)
-		}
+	if p, ok := byName["Env Temp"]; assert.True(t, ok, "missing Env Temp probe") {
+		assert.Equal(t, uint16(0x9070), p.Addr, "Env Temp Addr")
+		assert.True(t, p.Signed, "Env Temp should be Signed")
+		assert.Equal(t, 0.1, p.Scale, "Env Temp Scale")
 	}
 
 	// Balance State, Alarm Status, Protection Status, Fault Status
@@ -1471,46 +944,27 @@ func TestPackRTProbes(t *testing.T) {
 	}
 	for name, wantAddr := range statusProbes {
 		p, ok := byName[name]
-		if !ok {
-			t.Errorf("missing %s probe", name)
+		if !assert.True(t, ok, "missing %s probe", name) {
 			continue
 		}
-		if p.Addr != wantAddr {
-			t.Errorf("%s Addr = 0x%04X, want 0x%04X", name, p.Addr, wantAddr)
-		}
+		assert.Equal(t, wantAddr, p.Addr, "%s Addr", name)
 	}
 
 	// Min/Max Cell Voltage
-	if p, ok := byName["Min Cell Voltage"]; !ok {
-		t.Error("missing Min Cell Voltage probe")
-	} else {
-		if p.Addr != 0x906A {
-			t.Errorf("Min Cell Voltage Addr = 0x%04X, want 0x906A", p.Addr)
-		}
-		if p.Scale != 0.001 {
-			t.Errorf("Min Cell Voltage Scale = %f, want 0.001", p.Scale)
-		}
-		if p.Unit != "V" {
-			t.Errorf("Min Cell Voltage Unit = %q, want \"V\"", p.Unit)
-		}
+	if p, ok := byName["Min Cell Voltage"]; assert.True(t, ok, "missing Min Cell Voltage probe") {
+		assert.Equal(t, uint16(0x906A), p.Addr, "Min Cell Voltage Addr")
+		assert.Equal(t, 0.001, p.Scale, "Min Cell Voltage Scale")
+		assert.Equal(t, "V", p.Unit, "Min Cell Voltage Unit")
 	}
-	if p, ok := byName["Max Cell Voltage"]; !ok {
-		t.Error("missing Max Cell Voltage probe")
-	} else {
-		if p.Addr != 0x9069 {
-			t.Errorf("Max Cell Voltage Addr = 0x%04X, want 0x9069", p.Addr)
-		}
-		if p.Scale != 0.001 {
-			t.Errorf("Max Cell Voltage Scale = %f, want 0.001", p.Scale)
-		}
+	if p, ok := byName["Max Cell Voltage"]; assert.True(t, ok, "missing Max Cell Voltage probe") {
+		assert.Equal(t, uint16(0x9069), p.Addr, "Max Cell Voltage Addr")
+		assert.Equal(t, 0.001, p.Scale, "Max Cell Voltage Scale")
 	}
 }
 
 func TestPackInfoProbes(t *testing.T) {
 	probes := PackInfoProbes()
-	if len(probes) < 6 {
-		t.Errorf("PackInfoProbes returned %d probes, want >= 6", len(probes))
-	}
+	assert.GreaterOrEqual(t, len(probes), 6, "PackInfoProbes count")
 
 	byName := make(map[string]Probe)
 	for _, p := range probes {
@@ -1518,48 +972,24 @@ func TestPackInfoProbes(t *testing.T) {
 	}
 
 	// SOH
-	if p, ok := byName["SOH"]; !ok {
-		t.Error("missing SOH probe")
-	} else {
-		if p.Addr != 0x910A {
-			t.Errorf("SOH Addr = 0x%04X, want 0x910A", p.Addr)
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("SOH Scale = %f, want 0.1", p.Scale)
-		}
-		if p.Unit != "%" {
-			t.Errorf("SOH Unit = %q, want \"%%\"", p.Unit)
-		}
+	if p, ok := byName["SOH"]; assert.True(t, ok, "missing SOH probe") {
+		assert.Equal(t, uint16(0x910A), p.Addr, "SOH Addr")
+		assert.Equal(t, 0.1, p.Scale, "SOH Scale")
+		assert.Equal(t, "%", p.Unit, "SOH Unit")
 	}
 
 	// Rated Capacity
-	if p, ok := byName["Rated Capacity"]; !ok {
-		t.Error("missing Rated Capacity probe")
-	} else {
-		if p.Addr != 0x910B {
-			t.Errorf("Rated Capacity Addr = 0x%04X, want 0x910B", p.Addr)
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("Rated Capacity Scale = %f, want 0.1", p.Scale)
-		}
-		if p.Unit != "Ah" {
-			t.Errorf("Rated Capacity Unit = %q, want \"Ah\"", p.Unit)
-		}
+	if p, ok := byName["Rated Capacity"]; assert.True(t, ok, "missing Rated Capacity probe") {
+		assert.Equal(t, uint16(0x910B), p.Addr, "Rated Capacity Addr")
+		assert.Equal(t, 0.1, p.Scale, "Rated Capacity Scale")
+		assert.Equal(t, "Ah", p.Unit, "Rated Capacity Unit")
 	}
 
 	// Manufacturer
-	if p, ok := byName["Manufacturer"]; !ok {
-		t.Error("missing Manufacturer probe")
-	} else {
-		if p.Addr != 0x9106 {
-			t.Errorf("Manufacturer Addr = 0x%04X, want 0x9106", p.Addr)
-		}
-		if p.Count != 4 {
-			t.Errorf("Manufacturer Count = %d, want 4", p.Count)
-		}
-		if !p.IsASCII {
-			t.Error("Manufacturer should be ASCII")
-		}
+	if p, ok := byName["Manufacturer"]; assert.True(t, ok, "missing Manufacturer probe") {
+		assert.Equal(t, uint16(0x9106), p.Addr, "Manufacturer Addr")
+		assert.Equal(t, uint16(4), p.Count, "Manufacturer Count")
+		assert.True(t, p.IsASCII, "Manufacturer should be ASCII")
 	}
 
 	// Alarm 2, Protection 2, Fault 2
@@ -1570,98 +1000,70 @@ func TestPackInfoProbes(t *testing.T) {
 	}
 	for name, wantAddr := range extProbes {
 		p, ok := byName[name]
-		if !ok {
-			t.Errorf("missing %s probe", name)
+		if !assert.True(t, ok, "missing %s probe", name) {
 			continue
 		}
-		if p.Addr != wantAddr {
-			t.Errorf("%s Addr = 0x%04X, want 0x%04X", name, p.Addr, wantAddr)
-		}
+		assert.Equal(t, wantAddr, p.Addr, "%s Addr", name)
 	}
 }
 
 func TestPackTemps58Probes(t *testing.T) {
 	probes := PackTemps58Probes()
-	if len(probes) != 4 {
-		t.Fatalf("PackTemps58Probes returned %d probes, want 4", len(probes))
-	}
+	require.Len(t, probes, 4)
 
 	wantAddrs := []uint16{0x90BC, 0x90BD, 0x90BE, 0x90BF}
 	for i, p := range probes {
 		wantName := "Temp " + string(rune('5'+i))
-		if p.Addr != wantAddrs[i] {
-			t.Errorf("probe %d Addr = 0x%04X, want 0x%04X", i, p.Addr, wantAddrs[i])
-		}
-		if !p.Signed {
-			t.Errorf("%s should be Signed", wantName)
-		}
-		if p.Scale != 0.1 {
-			t.Errorf("%s Scale = %f, want 0.1", wantName, p.Scale)
-		}
-		if p.Unit != "\u00b0C" {
-			t.Errorf("%s Unit = %q, want \"°C\"", wantName, p.Unit)
-		}
+		assert.Equal(t, wantAddrs[i], p.Addr, "probe %d Addr", i)
+		assert.True(t, p.Signed, "%s should be Signed", wantName)
+		assert.Equal(t, 0.1, p.Scale, "%s Scale", wantName)
+		assert.Equal(t, "\u00b0C", p.Unit, "%s Unit", wantName)
 	}
 }
 
 func TestBMSAlarmTable(t *testing.T) {
-	if len(BMSAlarmBits) == 0 {
-		t.Fatal("BMSAlarmBits is empty")
-	}
+	require.NotEmpty(t, BMSAlarmBits, "BMSAlarmBits is empty")
 
 	// Check for cell OV alarm at bit 0
 	found := false
 	for _, fb := range BMSAlarmBits {
 		if fb.Addr == 0x9076 && fb.Bit == 0 {
-			if !strings.Contains(fb.Desc, "Cell") || !strings.Contains(fb.Desc, "OV") {
-				t.Errorf("bit 0 Desc = %q, want containing Cell and OV", fb.Desc)
-			}
+			assert.Contains(t, fb.Desc, "Cell", "bit 0 Desc should contain Cell")
+			assert.Contains(t, fb.Desc, "OV", "bit 0 Desc should contain OV")
 			found = true
 		}
 	}
-	if !found {
-		t.Error("missing BMSAlarmBits entry at Addr=0x9076 Bit=0")
-	}
+	assert.True(t, found, "missing BMSAlarmBits entry at Addr=0x9076 Bit=0")
 
 	// Check for cell UV alarm at bit 1
 	found = false
 	for _, fb := range BMSAlarmBits {
 		if fb.Addr == 0x9076 && fb.Bit == 1 {
-			if !strings.Contains(fb.Desc, "Cell") || !strings.Contains(fb.Desc, "UV") {
-				t.Errorf("bit 1 Desc = %q, want containing Cell and UV", fb.Desc)
-			}
+			assert.Contains(t, fb.Desc, "Cell", "bit 1 Desc should contain Cell")
+			assert.Contains(t, fb.Desc, "UV", "bit 1 Desc should contain UV")
 			found = true
 		}
 	}
-	if !found {
-		t.Error("missing BMSAlarmBits entry at Addr=0x9076 Bit=1")
-	}
+	assert.True(t, found, "missing BMSAlarmBits entry at Addr=0x9076 Bit=1")
 }
 
 func TestBMSProtectionTable(t *testing.T) {
-	if len(BMSProtectionBits) == 0 {
-		t.Fatal("BMSProtectionBits is empty")
-	}
+	require.NotEmpty(t, BMSProtectionBits, "BMSProtectionBits is empty")
 
 	// Check for cell OV protection at bit 0
 	found := false
 	for _, fb := range BMSProtectionBits {
 		if fb.Addr == 0x9077 && fb.Bit == 0 {
-			if !strings.Contains(fb.Desc, "Cell") || !strings.Contains(fb.Desc, "OV") {
-				t.Errorf("bit 0 Desc = %q, want containing Cell and OV", fb.Desc)
-			}
+			assert.Contains(t, fb.Desc, "Cell", "bit 0 Desc should contain Cell")
+			assert.Contains(t, fb.Desc, "OV", "bit 0 Desc should contain OV")
 			found = true
 		}
 	}
-	if !found {
-		t.Error("missing BMSProtectionBits entry at Addr=0x9077 Bit=0")
-	}
+	assert.True(t, found, "missing BMSProtectionBits entry at Addr=0x9077 Bit=0")
 }
 
 func TestBMSFaultTable_Pack(t *testing.T) {
-	if len(BMSFaultBits) == 0 {
-		t.Fatal("BMSFaultBits is empty")
-	}
+	require.NotEmpty(t, BMSFaultBits, "BMSFaultBits is empty")
 
 	// Check entries exist for 0x9078
 	found := false
@@ -1671,9 +1073,7 @@ func TestBMSFaultTable_Pack(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Error("missing BMSFaultBits entries for Addr=0x9078")
-	}
+	assert.True(t, found, "missing BMSFaultBits entries for Addr=0x9078")
 }
 
 func TestDecodeBalanceState(t *testing.T) {
@@ -1690,14 +1090,10 @@ func TestDecodeBalanceState(t *testing.T) {
 	for _, tt := range tests {
 		got := DecodeBalanceState(tt.val)
 		if tt.exact != "" {
-			if got != tt.exact {
-				t.Errorf("DecodeBalanceState(0x%04X) = %q, want %q", tt.val, got, tt.exact)
-			}
+			assert.Equal(t, tt.exact, got, "DecodeBalanceState(0x%04X)", tt.val)
 		}
 		for _, sub := range tt.contains {
-			if !strings.Contains(got, sub) {
-				t.Errorf("DecodeBalanceState(0x%04X) = %q, missing %q", tt.val, got, sub)
-			}
+			assert.Contains(t, got, sub, "DecodeBalanceState(0x%04X) missing %q", tt.val, sub)
 		}
 	}
 }
@@ -1762,9 +1158,7 @@ func TestFormatRawValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := FormatRawValue(tt.p, tt.data)
-			if got != tt.want {
-				t.Errorf("FormatRawValue(%s) = %q, want %q", tt.name, got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -1773,84 +1167,58 @@ func TestDecodeBMSBitmap(t *testing.T) {
 	// Use BMSAlarmBits for testing bitmap decoding
 	// Bit 0 and bit 1 set at address 0x9076
 	result := DecodeBMSBitmap(0x0003, BMSAlarmBits, 0x9076)
-	if len(result) != 2 {
-		t.Errorf("DecodeBMSBitmap(0x0003) returned %d entries, want 2", len(result))
-	}
+	assert.Len(t, result, 2, "DecodeBMSBitmap(0x0003)")
 
 	// No bits set
 	result = DecodeBMSBitmap(0x0000, BMSAlarmBits, 0x9076)
-	if len(result) != 0 {
-		t.Errorf("DecodeBMSBitmap(0x0000) returned %d entries, want 0", len(result))
-	}
+	assert.Empty(t, result, "DecodeBMSBitmap(0x0000)")
 }
 
 func TestPackProbeGroupOrder(t *testing.T) {
 	groups := PackProbeGroups()
 
 	// Exactly 5 groups
-	if len(groups) != 5 {
-		t.Fatalf("PackProbeGroups returned %d groups, want 5", len(groups))
-	}
+	require.Len(t, groups, 5)
 
 	// Group names in correct order (D-03)
 	wantNames := []string{"Pack Info", "Cell Voltages", "Balance State", "Temperatures", "Pack Status"}
 	for i, want := range wantNames {
-		if groups[i].Name != want {
-			t.Errorf("group[%d].Name = %q, want %q", i, groups[i].Name, want)
-		}
+		assert.Equal(t, want, groups[i].Name, "group[%d].Name", i)
 	}
 
 	// Group types
 	wantTypes := []string{"", "cell_grid", "balance", "", "pack_status"}
 	for i, want := range wantTypes {
-		if groups[i].Type != want {
-			t.Errorf("group[%d].Type = %q, want %q", i, groups[i].Type, want)
-		}
+		assert.Equal(t, want, groups[i].Type, "group[%d].Type", i)
 	}
 
 	// Cell Voltages group: 16 cell probes + Max Cell Voltage + Min Cell Voltage = 18 probes
 	cellGroup := groups[1]
-	if len(cellGroup.Probes) != 18 {
-		t.Fatalf("Cell Voltages group has %d probes, want 18", len(cellGroup.Probes))
-	}
+	require.Len(t, cellGroup.Probes, 18, "Cell Voltages group probes")
 	for i := 0; i < 16; i++ {
 		wantName := fmt.Sprintf("Cell %d", i+1)
-		if cellGroup.Probes[i].Name != wantName {
-			t.Errorf("Cell Voltages probe[%d].Name = %q, want %q", i, cellGroup.Probes[i].Name, wantName)
-		}
+		assert.Equal(t, wantName, cellGroup.Probes[i].Name, "Cell Voltages probe[%d].Name", i)
 	}
 
 	// Balance State group: probe at 0x9075
 	balanceGroup := groups[2]
-	if len(balanceGroup.Probes) != 1 {
-		t.Fatalf("Balance State group has %d probes, want 1", len(balanceGroup.Probes))
-	}
-	if balanceGroup.Probes[0].Addr != 0x9075 {
-		t.Errorf("Balance State probe[0].Addr = 0x%04X, want 0x9075", balanceGroup.Probes[0].Addr)
-	}
+	require.Len(t, balanceGroup.Probes, 1, "Balance State group probes")
+	assert.Equal(t, uint16(0x9075), balanceGroup.Probes[0].Addr, "Balance State probe[0].Addr")
 
 	// Temperatures group: Temp 1-4 (0x906B-0x906E), MOS Temp (0x906F), Env Temp (0x9070), Temp 5-8 (0x90BC-0x90BF) = 10 probes
 	tempGroup := groups[3]
-	if len(tempGroup.Probes) != 10 {
-		t.Fatalf("Temperatures group has %d probes, want 10", len(tempGroup.Probes))
-	}
+	require.Len(t, tempGroup.Probes, 10, "Temperatures group probes")
 	wantTempAddrs := []uint16{0x906B, 0x906C, 0x906D, 0x906E, 0x906F, 0x9070, 0x90BC, 0x90BD, 0x90BE, 0x90BF}
 	for i, wantAddr := range wantTempAddrs {
-		if tempGroup.Probes[i].Addr != wantAddr {
-			t.Errorf("Temperatures probe[%d].Addr = 0x%04X, want 0x%04X", i, tempGroup.Probes[i].Addr, wantAddr)
-		}
+		assert.Equal(t, wantAddr, tempGroup.Probes[i].Addr, "Temperatures probe[%d].Addr", i)
 	}
 
 	// Pack Status group: 6 probes at 0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126
 	statusGroup := groups[4]
-	if len(statusGroup.Probes) != 6 {
-		t.Fatalf("Pack Status group has %d probes, want 6", len(statusGroup.Probes))
-	}
+	require.Len(t, statusGroup.Probes, 6, "Pack Status group probes")
 	wantStatusAddrs := []uint16{0x9076, 0x9077, 0x9078, 0x9124, 0x9125, 0x9126}
 	for i, wantAddr := range wantStatusAddrs {
-		if statusGroup.Probes[i].Addr != wantAddr {
-			t.Errorf("Pack Status probe[%d].Addr = 0x%04X, want 0x%04X", i, statusGroup.Probes[i].Addr, wantAddr)
-		}
+		assert.Equal(t, wantAddr, statusGroup.Probes[i].Addr, "Pack Status probe[%d].Addr", i)
 	}
 
 	// Pack Info group: contains probes from both RT and Info blocks
@@ -1877,13 +1245,9 @@ func TestPackProbeGroupOrder(t *testing.T) {
 		gotInfoAddrs[p.Addr] = true
 	}
 	for addr := range wantInfoAddrs {
-		if !gotInfoAddrs[addr] {
-			t.Errorf("Pack Info group missing probe at addr 0x%04X", addr)
-		}
+		assert.True(t, gotInfoAddrs[addr], "Pack Info group missing probe at addr 0x%04X", addr)
 	}
-	if len(infoGroup.Probes) != len(wantInfoAddrs) {
-		t.Errorf("Pack Info group has %d probes, want %d", len(infoGroup.Probes), len(wantInfoAddrs))
-	}
+	assert.Len(t, infoGroup.Probes, len(wantInfoAddrs), "Pack Info group probe count")
 }
 
 // === Configuration Enum Maps Tests ===
@@ -1917,13 +1281,10 @@ func TestConfigEnumMaps(t *testing.T) {
 	}
 
 	for name, enum := range allEnums {
-		if enum == nil {
-			t.Errorf("%s is nil", name)
+		if !assert.NotNil(t, enum, "%s is nil", name) {
 			continue
 		}
-		if len(enum) < 2 {
-			t.Errorf("%s has %d entries, want >= 2", name, len(enum))
-		}
+		assert.GreaterOrEqual(t, len(enum), 2, "%s has too few entries", name)
 	}
 
 	// Spot-check specific key-value pairs
@@ -1946,13 +1307,10 @@ func TestConfigEnumMaps(t *testing.T) {
 
 	for _, sc := range spotChecks {
 		got, ok := sc.enum[sc.key]
-		if !ok {
-			t.Errorf("%s[%d] not found", sc.name, sc.key)
+		if !assert.True(t, ok, "%s[%d] not found", sc.name, sc.key) {
 			continue
 		}
-		if got != sc.want {
-			t.Errorf("%s[%d] = %q, want %q", sc.name, sc.key, got, sc.want)
-		}
+		assert.Equal(t, sc.want, got, "%s[%d]", sc.name, sc.key)
 	}
 }
 
@@ -1962,20 +1320,14 @@ func TestConfigurationGroups(t *testing.T) {
 	groups := ConfigurationGroups
 
 	// Must be non-nil with >= 15 groups
-	if groups == nil {
-		t.Fatal("ConfigurationGroups is nil")
-	}
-	if len(groups) < 18 {
-		t.Errorf("ConfigurationGroups has %d groups, want >= 18", len(groups))
-	}
+	require.NotNil(t, groups, "ConfigurationGroups is nil")
+	assert.GreaterOrEqual(t, len(groups), 18, "ConfigurationGroups count")
 
 	// First group should be "System Config"
-	if groups[0].Name != "System Config" {
-		t.Errorf("First group name = %q, want %q", groups[0].Name, "System Config")
-	}
+	assert.Equal(t, "System Config", groups[0].Name, "First group name")
 	// First probe should be in 0x1000 range
-	if len(groups[0].Probes) > 0 && groups[0].Probes[0].Addr < 0x1000 {
-		t.Errorf("First group first probe addr = 0x%04X, want >= 0x1000", groups[0].Probes[0].Addr)
+	if len(groups[0].Probes) > 0 {
+		assert.GreaterOrEqual(t, groups[0].Probes[0].Addr, uint16(0x1000), "First group first probe addr")
 	}
 
 	// Find specific groups by name
@@ -1986,42 +1338,30 @@ func TestConfigurationGroups(t *testing.T) {
 
 	// "Battery Config" group with probe at 0x1046 referencing BatteryProtocolEnum
 	battConfig, ok := groupMap["Battery Config"]
-	if !ok {
-		t.Error("Missing 'Battery Config' group")
-	} else {
+	if assert.True(t, ok, "Missing 'Battery Config' group") {
 		found := false
 		for _, p := range battConfig.Probes {
 			if p.Addr == 0x1046 {
 				found = true
-				if p.Enum == nil {
-					t.Error("Battery Config probe at 0x1046 has nil Enum")
-				}
+				assert.NotNil(t, p.Enum, "Battery Config probe at 0x1046 has nil Enum")
 				break
 			}
 		}
-		if !found {
-			t.Error("Battery Config missing probe at 0x1046")
-		}
+		assert.True(t, found, "Battery Config missing probe at 0x1046")
 	}
 
 	// "Energy Storage Mode" group with probe at 0x1110
 	esMode, ok := groupMap["Energy Storage Mode"]
-	if !ok {
-		t.Error("Missing 'Energy Storage Mode' group")
-	} else {
+	if assert.True(t, ok, "Missing 'Energy Storage Mode' group") {
 		found := false
 		for _, p := range esMode.Probes {
 			if p.Addr == 0x1110 {
 				found = true
-				if p.Enum == nil {
-					t.Error("Energy Storage Mode probe at 0x1110 has nil Enum")
-				}
+				assert.NotNil(t, p.Enum, "Energy Storage Mode probe at 0x1110 has nil Enum")
 				break
 			}
 		}
-		if !found {
-			t.Error("Energy Storage Mode missing probe at 0x1110")
-		}
+		assert.True(t, found, "Energy Storage Mode missing probe at 0x1110")
 	}
 
 	// No duplicate addresses across all groups
@@ -2031,7 +1371,8 @@ func TestConfigurationGroups(t *testing.T) {
 		for _, p := range g.Probes {
 			totalProbes++
 			if prev, exists := addrSet[p.Addr]; exists {
-				t.Errorf("Duplicate address 0x%04X in group %q (first seen in %q)", p.Addr, g.Name, prev)
+				assert.Fail(t, "Duplicate address",
+					"Duplicate address 0x%04X in group %q (first seen in %q)", p.Addr, g.Name, prev)
 			}
 			addrSet[p.Addr] = g.Name
 		}
@@ -2040,25 +1381,23 @@ func TestConfigurationGroups(t *testing.T) {
 	// All probes have Count >= 1
 	for _, g := range groups {
 		for _, p := range g.Probes {
-			if p.Count < 1 {
-				t.Errorf("Probe %q in group %q has Count %d, want >= 1", p.Name, g.Name, p.Count)
-			}
+			assert.GreaterOrEqual(t, p.Count, uint16(1),
+				"Probe %q in group %q has Count < 1", p.Name, g.Name)
 		}
 	}
 
 	// All U32 probes have Count == 2
 	for _, g := range groups {
 		for _, p := range g.Probes {
-			if p.U32 && p.Count != 2 {
-				t.Errorf("U32 probe %q in group %q has Count %d, want 2", p.Name, g.Name, p.Count)
+			if p.U32 {
+				assert.Equal(t, uint16(2), p.Count,
+					"U32 probe %q in group %q should have Count 2", p.Name, g.Name)
 			}
 		}
 	}
 
 	// Total probe count >= 224 (post hardware sweep cleanup)
-	if totalProbes < 224 {
-		t.Errorf("Total probe count = %d, want >= 224", totalProbes)
-	}
+	assert.GreaterOrEqual(t, totalProbes, 224, "Total probe count")
 
 	// At least 5 safety groups exist ("Safety:" prefix)
 	safetyCount := 0
@@ -2067,41 +1406,25 @@ func TestConfigurationGroups(t *testing.T) {
 			safetyCount++
 		}
 	}
-	if safetyCount < 5 {
-		t.Errorf("Safety group count = %d, want >= 5", safetyCount)
-	}
+	assert.GreaterOrEqual(t, safetyCount, 5, "Safety group count")
 }
 
 // TestInternalInfoGroups verifies InternalInfoGroups returns the expected structure:
 // exactly 1 group named "Internal Info" with 5 probes at known addresses.
 func TestInternalInfoGroups(t *testing.T) {
 	groups := InternalInfoGroups()
-	if len(groups) != 1 {
-		t.Fatalf("InternalInfoGroups() returned %d groups, want 1", len(groups))
-	}
+	require.Len(t, groups, 1)
 
 	g := groups[0]
-	if g.Name != "Internal Info" {
-		t.Errorf("group name = %q, want %q", g.Name, "Internal Info")
-	}
-	if len(g.Probes) != 5 {
-		t.Fatalf("probe count = %d, want 5", len(g.Probes))
-	}
+	assert.Equal(t, "Internal Info", g.Name)
+	require.Len(t, g.Probes, 5, "probe count")
 
 	// First probe: "Total BUS voltage" at 0x06CC
-	if g.Probes[0].Name != "Total BUS voltage" {
-		t.Errorf("first probe name = %q, want %q", g.Probes[0].Name, "Total BUS voltage")
-	}
-	if g.Probes[0].Addr != 0x06CC {
-		t.Errorf("first probe addr = 0x%04X, want 0x06CC", g.Probes[0].Addr)
-	}
+	assert.Equal(t, "Total BUS voltage", g.Probes[0].Name, "first probe name")
+	assert.Equal(t, uint16(0x06CC), g.Probes[0].Addr, "first probe addr")
 
 	// Last probe: "Rated power" at 0x06ED
 	last := g.Probes[len(g.Probes)-1]
-	if last.Name != "Rated power" {
-		t.Errorf("last probe name = %q, want %q", last.Name, "Rated power")
-	}
-	if last.Addr != 0x06ED {
-		t.Errorf("last probe addr = 0x%04X, want 0x06ED", last.Addr)
-	}
+	assert.Equal(t, "Rated power", last.Name, "last probe name")
+	assert.Equal(t, uint16(0x06ED), last.Addr, "last probe addr")
 }
