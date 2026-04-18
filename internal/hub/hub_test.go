@@ -3686,9 +3686,25 @@ func TestBatteryBatchRead_AutoDetect(t *testing.T) {
 
 	// Subscribe triggers read, which detects 4 channels and reconfigures.
 	// After reconfiguration, a re-triggered read completes with section_complete.
+	// Collect raw messages so we can verify the schema broadcast.
 	h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "battery"})
-	_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
-	require.GreaterOrEqual(t, idx, 0, "section_complete not received after auto-detection")
+	var rawMsgs [][]byte
+	deadline := time.After(10 * time.Second)
+autoDetectDrain:
+	for {
+		select {
+		case raw := <-send:
+			rawMsgs = append(rawMsgs, raw)
+			var peek map[string]interface{}
+			if err := json.Unmarshal(raw, &peek); err == nil {
+				if peek["type"] == "section_complete" {
+					break autoDetectDrain
+				}
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for section_complete after auto-detection")
+		}
+	}
 
 	// Verify the section was reconfigured to 4 channels.
 	groups := h.GetSectionGroups("battery")
@@ -3709,6 +3725,35 @@ func TestBatteryBatchRead_AutoDetect(t *testing.T) {
 		}
 	}
 	assert.True(t, hasInternalInfo, "Internal Info group must survive reconfiguration")
+
+	// Verify that a section_schema was broadcast after reconfiguration with 4-channel layout.
+	var foundAutoDetectSchema bool
+	for _, raw := range rawMsgs {
+		var schema hub.SectionSchemaMessage
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			continue
+		}
+		if schema.Type != hub.MsgTypeSectionSchema || schema.Section != "battery" {
+			continue
+		}
+		// Look for the 4-channel schema (has "Channel 4" group)
+		hasChannel4 := false
+		for _, g := range schema.Groups {
+			if g.Name == "Channel 4" {
+				hasChannel4 = true
+				break
+			}
+		}
+		if hasChannel4 {
+			foundAutoDetectSchema = true
+			// 4 Channel groups + Global Stats + Internal Info = 6 groups
+			assert.Equal(t, 6, len(schema.Groups),
+				"4-channel schema should have 6 groups (4 channels + Global Stats + Internal Info)")
+			break
+		}
+	}
+	assert.True(t, foundAutoDetectSchema,
+		"should receive a section_schema with 4-channel layout after auto-detection reconfiguration")
 }
 
 func TestBatteryBatchRead_OutputEquivalence(t *testing.T) {
@@ -4072,8 +4117,8 @@ func TestBatteryBatchRead_ReconnectResetsChannels(t *testing.T) {
 	mb.statesCh <- broker.StateEvent{State: broker.StateConnected}
 	time.Sleep(50 * time.Millisecond)
 
-	// Drain state messages
-	drainClientMessages(send, 100*time.Millisecond)
+	// Drain state messages as raw bytes so we can check for schema broadcast.
+	reconnectRawMsgs := drainRawMessages(send, 200*time.Millisecond)
 
 	// After reconnect, battery section should revert to 2-channel default.
 	groups = h.GetSectionGroups("battery")
@@ -4085,6 +4130,30 @@ func TestBatteryBatchRead_ReconnectResetsChannels(t *testing.T) {
 	}
 	assert.Equal(t, 2, channelCount,
 		"battery section should reset to 2-channel default after reconnect")
+
+	// Verify that a section_schema was broadcast after reconnect with 2-channel layout.
+	var foundReconnectSchema bool
+	for _, raw := range reconnectRawMsgs {
+		var schema hub.SectionSchemaMessage
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			continue
+		}
+		if schema.Type != hub.MsgTypeSectionSchema || schema.Section != "battery" {
+			continue
+		}
+		// Verify 2-channel layout: 2 Channel groups + Global Stats + Internal Info = 4 groups
+		foundReconnectSchema = true
+		assert.Equal(t, 4, len(schema.Groups),
+			"reconnect schema should have 4 groups (2 channels + Global Stats + Internal Info)")
+		// Ensure no Channel 3 or Channel 4 groups exist (proving it is 2-channel, not 4-channel)
+		for _, g := range schema.Groups {
+			assert.False(t, g.Name == "Channel 3" || g.Name == "Channel 4",
+				"reconnect schema should not contain %q (should be 2-channel)", g.Name)
+		}
+		break
+	}
+	assert.True(t, foundReconnectSchema,
+		"should receive a section_schema with 2-channel layout after reconnect reset")
 
 	// Verify BatchPlan matches 2-channel plan (not 4-channel).
 	groups2 := append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)
