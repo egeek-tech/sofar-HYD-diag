@@ -78,6 +78,17 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - ✓ Structured backend logging — v1.0
 - ✓ Desktop-optimized layout — v1.0
 
+### Validated (v1.5)
+
+- ✓ Configuration section excludes unsupported registers (90 removed via hardware sweep) — v1.5 Phase 20
+- ✓ All 7 standard sections (Grid, EPS, PV, Meter, PCU, BDU + DCDC removed) verified on real hardware — v1.5 Phase 21
+- ✓ Three-state SpanTracker (Normal → Degraded → Skipped) with 10th-cycle probe recovery — v1.5 Phase 22
+- ✓ Battery section reads via BatchPlan spans with channel auto-detection preserved — v1.5 Phase 23
+- ✓ BMS section reads via BatchPlan spans with Composite probes for clock/version composition — v1.5 Phase 24
+- ✓ Pack drill-down reads via BatchPlan spans with write+settle preserved — v1.5 Phase 25
+- ✓ PV BatchPlan staleness fix, dead code cleanup — v1.5 Phase 26
+- ✓ Battery channel config resets on reconnect (schema broadcast to subscribers) — v1.5 Phase 22 + quick fix
+
 ### Out of Scope
 
 - Mobile-responsive design — desktop only
@@ -104,6 +115,10 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - **Hardware timing**: 500ms minimum delay between Modbus reads; BMS pack switch needs ~1s settle time
 - **Single connection**: Only one TCP connection to inverter at a time (Modbus is serial)
 - **Deployment**: Single binary, no external dependencies
+
+## Completed Milestone: v1.5 Full Batch Reading & Configuration Cleanup (shipped 2026-04-18)
+
+Extended batch reading to every section. 90 unsupported config registers removed. SpanTracker auto-skips persistently-failing spans. Battery, BMS, and pack drill-down all migrated to BatchPlan spans. Shared `readBatchSpans` helper eliminated 3-way span loop duplication. 8 days, 7 phases, 14 plans, +8,449/-1,430 lines.
 
 ## Completed Milestone: v1.4 Batch Register Reading (shipped 2026-04-15)
 
@@ -132,12 +147,18 @@ Proved that batching contiguous register reads dramatically reduces section load
 | Composite probe type | Probe.Composite field with format dispatch instead of special-case code | ✓ Good — v1.4, system time is a real batchable probe |
 | Batch span streaming | Iterate BatchPlan.Spans with single read per span, fallback per span | ✓ Good — v1.4, 3-5x speedup confirmed by human testing |
 | Synthetic → Composite migration | Convert Count:0 probes to real Composite probes for batch eligibility | ✓ Good — v1.4, eliminates unbatchable probes in System section |
+| Hardware sweep for register pruning | Build standalone tool, test on hardware, remove failing probes | ✓ Good — v1.5, 90 registers removed, zero fallback warnings |
+| DCDC section removal | All registers returned illegal data address on this hardware | ✓ Good — v1.5, section deregistered and nav button removed |
+| Three-state SpanTracker | Normal → Degraded → Skipped with 10th-cycle probe recovery | ✓ Good — v1.5, resilient to intermittent hardware failures |
+| Shared readBatchSpans helper | Single function for all section batch reads, eliminates duplication | ✓ Good — v1.5, used by standard, battery, BMS, and pack sections |
+| Battery reconnect reset | Reset Groups/Probes/BatchPlan to 2-channel default on StateConnected | ✓ Good — v1.5, eliminates stale channel config after reconnect |
+| Schema broadcast on reconfiguration | Push updated section_schema to subscribers when Groups change | ✓ Good — v1.5, UI reflects channel changes immediately |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
 
-Last updated: 2026-04-14 — v1.4 milestone started
+Last updated: 2026-04-15 — v1.5 milestone started
 
 **After each phase transition** (via `/gsd-transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
@@ -154,14 +175,14 @@ Last updated: 2026-04-14 — v1.4 milestone started
 
 ## Current State
 
-Shipped v1.4 with ~11,700 LOC Go + ~2,900 LOC JS/HTML/CSS.
-Four milestones complete (v1.0 MVP, v1.1 UX Polish & Battery Pack Fix, v1.2 Reliability & UX Refinements, v1.3 Data Cleanup & Configuration, v1.4 Batch Register Reading).
-All 20 battery packs accessible with per-register streaming, browser-driven refresh, immediate disconnect, automatic retry, value persistence with dimming, section caching, parameter tooltips, BMS bitmap decoding, batch reading for System and Configuration sections.
+Shipped v1.5 with ~13,000 LOC Go + ~2,900 LOC JS/HTML/CSS.
+Six milestones: v1.0 MVP, v1.1 UX Polish & Battery Pack Fix, v1.2 Reliability & UX Refinements, v1.3 Data Cleanup & Configuration, v1.4 Batch Register Reading, v1.5 Full Batch Reading & Configuration Cleanup.
+All sections now use BatchPlan batch spans. SpanTracker auto-skips failing spans. Battery channel auto-detection with schema broadcast on reconnect. 90 unsupported config registers removed. Shared readBatchSpans helper eliminates span loop duplication.
 
 **Known issues (from todos):**
 - PackInfoProbes (0x9104-0x9126) returns illegal address on this BMS hardware — skip unsupported registers
 - Read delay burst on section switch — enforceInterReadDelay timing edge case
-- Some Configuration section parameters show errors under batch reads (to be addressed in future milestone)
+- Stream pack drill-down values per-register — currently waits for full batch before sending
 
 ---
-*Last updated: 2026-04-15 after v1.4 milestone (Batch Register Reading) shipped*
+*Last updated: 2026-04-18 after v1.5 milestone*
