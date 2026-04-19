@@ -654,6 +654,62 @@ func TestBrokerNoRetryIllegalAddress(t *testing.T) {
 		"expected StateConnected (connection not closed for non-retryable)")
 }
 
+func TestInterReadDelayBurst(t *testing.T) {
+	// D-07: Verify that inter-read delay is enforced between reads in a batch
+	// even after a long idle period (simulating a section switch).
+	// The burst bug: when lastReadTime is stale, enforceInterReadDelay skips
+	// the delay for the first read. With the IsZero guard, the very first read
+	// stamps lastReadTime so subsequent reads within the same batch are throttled.
+
+	// Setup: mock server handling enough requests for two batches (3 + 3 = 6)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err, "failed to create listener")
+	defer listener.Close()
+	addr := listener.Addr().String()
+
+	go mockModbusServer(t, listener, 6, 0xABCD)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	b := broker.New(discardLogger(), "", 1, false)
+	b.SetInterReadDelay(500 * time.Millisecond)
+	go b.Run(ctx)
+	defer b.Close()
+
+	require.NoError(t, b.Reconfigure(ctx, addr, 1), "Reconfigure failed")
+
+	reads := []broker.ReadRequest{
+		{Addr: 0x0404, Count: 1},
+		{Addr: 0x0484, Count: 1},
+		{Addr: 0x0604, Count: 1},
+	}
+
+	// First batch -- establishes lastReadTime
+	results1 := b.ReadBatch(ctx, reads)
+	for i, r := range results1 {
+		require.NoError(t, r.Err, "first batch read %d failed", i)
+	}
+
+	// Simulate section switch idle period (lastReadTime becomes stale)
+	time.Sleep(2 * time.Second)
+
+	// Second batch -- should still enforce inter-read delay between reads
+	start := time.Now()
+	results2 := b.ReadBatch(ctx, reads)
+	elapsed := time.Since(start)
+
+	for i, r := range results2 {
+		require.NoError(t, r.Err, "second batch read %d failed", i)
+	}
+
+	// 3 reads with 500ms delay: first read may skip delay (stale lastReadTime),
+	// but reads 2 and 3 must each wait 500ms = at least 1000ms total.
+	// If the burst bug existed, all 3 reads would fire without delay (~0ms).
+	assert.GreaterOrEqual(t, elapsed, 900*time.Millisecond,
+		"second batch completed too fast -- inter-read delay not enforced after idle period")
+}
+
 func TestBrokerRetrySuccess(t *testing.T) {
 	// Server: first read gets connection closed, reconnect + second read succeeds
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
