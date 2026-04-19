@@ -26,6 +26,14 @@ type StatusResponse struct {
 	InverterAddr    string `json:"inverter_addr"`
 }
 
+// StatusInfo represents the JSON response for /status (operational monitoring, D-04).
+type StatusInfo struct {
+	Status  string `json:"status"`
+	Version string `json:"version"`
+	Uptime  string `json:"uptime"`
+	Broker  string `json:"broker"`
+}
+
 // DefaultsConfig holds CLI default values for the /api/defaults endpoint (D-14).
 type DefaultsConfig struct {
 	Host       string `json:"host"`
@@ -45,7 +53,33 @@ var upgrader = websocket.Upgrader{
 }
 
 // SetupRoutes configures the chi router with API endpoints, WebSocket handler, and embedded static file serving.
-func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsConfig, startTime time.Time, logger *slog.Logger) {
+func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsConfig, startTime time.Time, version string, logger *slog.Logger) {
+	// Health/readiness/status endpoints for container orchestration (D-01)
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if b.CurrentState() == broker.StateConnected {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+
+	r.Get("/status", func(w http.ResponseWriter, r *http.Request) {
+		info := StatusInfo{
+			Status:  "ok",
+			Version: version,
+			Uptime:  time.Since(startTime).Round(time.Second).String(),
+			Broker:  b.CurrentState().String(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(info); err != nil {
+			_ = err
+		}
+	})
+
 	// API routes
 	r.Get("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		status := StatusResponse{
