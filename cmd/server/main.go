@@ -1,4 +1,3 @@
-// Package main is the entry point for the Sofar HYD diagnostic web server.
 package main
 
 import (
