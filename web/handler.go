@@ -59,14 +59,6 @@ func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsCo
 		w.WriteHeader(http.StatusOK)
 	})
 
-	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if b.CurrentState() == broker.StateConnected {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		w.WriteHeader(http.StatusServiceUnavailable)
-	})
-
 	r.Get("/status", func(w http.ResponseWriter, r *http.Request) {
 		info := StatusInfo{
 			Status:  "ok",

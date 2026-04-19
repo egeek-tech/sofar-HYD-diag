@@ -111,19 +111,6 @@ func TestHealthzEndpoint(t *testing.T) {
 	}
 }
 
-func TestReadyzEndpointDormant(t *testing.T) {
-	r := newTestRouter()
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	w := httptest.NewRecorder()
-
-	r.ServeHTTP(w, req)
-
-	// Broker starts in StateDormant -- readyz should return 503
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 for dormant broker, got %d", w.Code)
-	}
-}
-
 func TestStatusInfoEndpoint(t *testing.T) {
 	r := newTestRouter()
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)
