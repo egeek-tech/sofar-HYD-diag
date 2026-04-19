@@ -255,9 +255,9 @@ func collectClientMessages(t *testing.T, send chan []byte, count int, timeout ti
 }
 
 // drainClientMessages reads all available messages from a client's send channel.
-func drainClientMessages(send chan []byte, timeout time.Duration) []hub.OutboundMessage {
+// Returns after idleTimeout of silence (no new messages).
+func drainClientMessages(send chan []byte, idleTimeout time.Duration) []hub.OutboundMessage {
 	var msgs []hub.OutboundMessage
-	deadline := time.After(timeout)
 	for {
 		select {
 		case raw, ok := <-send:
@@ -269,7 +269,7 @@ func drainClientMessages(send chan []byte, timeout time.Duration) []hub.Outbound
 				continue
 			}
 			msgs = append(msgs, msg)
-		case <-deadline:
+		case <-time.After(idleTimeout):
 			return msgs
 		}
 	}
@@ -277,10 +277,9 @@ func drainClientMessages(send chan []byte, timeout time.Duration) []hub.Outbound
 
 // waitForMessageType drains messages until one with the specified type is found.
 // Returns all messages drained (including the target) and the index of the target.
-func waitForMessageType(t *testing.T, send chan []byte, msgType string, timeout time.Duration) ([]hub.OutboundMessage, int) {
+func waitForMessageType(t *testing.T, send chan []byte, msgType string, idleTimeout time.Duration) ([]hub.OutboundMessage, int) {
 	t.Helper()
 	var msgs []hub.OutboundMessage
-	deadline := time.After(timeout)
 	for {
 		select {
 		case raw, ok := <-send:
@@ -293,21 +292,21 @@ func waitForMessageType(t *testing.T, send chan []byte, msgType string, timeout 
 			if msg.Type == msgType {
 				return msgs, len(msgs) - 1
 			}
-		case <-deadline:
+		case <-time.After(idleTimeout):
 			types := make([]string, len(msgs))
 			for i, m := range msgs {
 				types[i] = m.Type
 			}
-			require.Failf(t, "timeout", "timeout waiting for %q after %v: got types %v", msgType, timeout, types)
+			require.Failf(t, "timeout", "idle timeout waiting for %q after %v: got types %v", msgType, idleTimeout, types)
 		}
 	}
 }
 
 // drainRawMessages reads all available raw JSON messages from a client's send channel.
 // Returns the raw byte slices for flexible unmarshalling into different message types.
-func drainRawMessages(send chan []byte, timeout time.Duration) [][]byte {
+// Returns after idleTimeout of silence (no new messages).
+func drainRawMessages(send chan []byte, idleTimeout time.Duration) [][]byte {
 	var msgs [][]byte
-	deadline := time.After(timeout)
 	for {
 		select {
 		case raw, ok := <-send:
@@ -315,7 +314,7 @@ func drainRawMessages(send chan []byte, timeout time.Duration) [][]byte {
 				return msgs
 			}
 			msgs = append(msgs, raw)
-		case <-deadline:
+		case <-time.After(idleTimeout):
 			return msgs
 		}
 	}
@@ -323,10 +322,10 @@ func drainRawMessages(send chan []byte, timeout time.Duration) [][]byte {
 
 // drainUntilComplete drains messages until section_complete is received.
 // Returns all messages including register_value, section_data, section_schema, section_complete.
-func drainUntilComplete(t *testing.T, send chan []byte, timeout time.Duration) []hub.OutboundMessage {
+// Falls back to idle-timeout if section_complete is not received.
+func drainUntilComplete(t *testing.T, send chan []byte, idleTimeout time.Duration) []hub.OutboundMessage {
 	t.Helper()
 	var msgs []hub.OutboundMessage
-	deadline := time.After(timeout)
 	for {
 		select {
 		case raw, ok := <-send:
@@ -341,7 +340,7 @@ func drainUntilComplete(t *testing.T, send chan []byte, timeout time.Duration) [
 			if msg.Type == hub.MsgTypeSectionComplete {
 				return msgs
 			}
-		case <-deadline:
+		case <-time.After(idleTimeout):
 			return msgs
 		}
 	}
@@ -2177,10 +2176,10 @@ func TestPackSchemaGroupOrder(t *testing.T) {
 }
 
 // collectRawMessages collects raw JSON messages from a client's send channel.
-func collectRawMessages(t *testing.T, send chan []byte, timeout time.Duration) []json.RawMessage {
+// Returns after idleTimeout of silence (no new messages).
+func collectRawMessages(t *testing.T, send chan []byte, idleTimeout time.Duration) []json.RawMessage {
 	t.Helper()
 	var msgs []json.RawMessage
-	deadline := time.After(timeout)
 	for {
 		select {
 		case raw, ok := <-send:
@@ -2188,7 +2187,7 @@ func collectRawMessages(t *testing.T, send chan []byte, timeout time.Duration) [
 				return msgs
 			}
 			msgs = append(msgs, json.RawMessage(raw))
-		case <-deadline:
+		case <-time.After(idleTimeout):
 			return msgs
 		}
 	}
