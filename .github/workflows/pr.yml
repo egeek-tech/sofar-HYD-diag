@@ -1,4 +1,5 @@
 name: PR Validation
+# Validates build, test, lint, and Docker on every PR to master
 
 on:
   pull_request:
