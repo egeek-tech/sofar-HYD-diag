@@ -19,6 +19,7 @@ import (
 )
 
 func TestBrokerSatisfiesInterface(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Compile-time check that broker.Broker satisfies hub.BrokerInterface
 		var _ hub.BrokerInterface = (*broker.Broker)(nil)
@@ -374,6 +375,7 @@ func uint16Bytes(v uint16) []byte {
 }
 
 func TestHubRegisterUnregister(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -401,6 +403,7 @@ func TestHubRegisterUnregister(t *testing.T) {
 }
 
 func TestHubConnectCommand(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -434,6 +437,7 @@ func TestHubConnectCommand(t *testing.T) {
 }
 
 func TestHubDisconnectCommand(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -458,6 +462,7 @@ func TestHubDisconnectCommand(t *testing.T) {
 }
 
 func TestHubStateBroadcast(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -495,6 +500,7 @@ func TestHubStateBroadcast(t *testing.T) {
 }
 
 func TestClientWritePump(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// This test verifies that the send channel mechanism works.
 		// We use NewTestClient which has a direct send channel.
@@ -560,6 +566,7 @@ func setupConnectedHub(t *testing.T, mb *mockBroker, _ time.Duration) (*hub.Hub,
 }
 
 func TestSubscribeTriggerImmediateRead(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -597,6 +604,7 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 }
 
 func TestSingleSectionPerClient(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -631,6 +639,7 @@ func TestSingleSectionPerClient(t *testing.T) {
 }
 
 func TestReadCycleMessage(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -663,6 +672,7 @@ func TestReadCycleMessage(t *testing.T) {
 }
 
 func TestSkipOverlappingReadCycle(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		mb.mu.Lock()
@@ -705,6 +715,7 @@ func TestSkipOverlappingReadCycle(t *testing.T) {
 }
 
 func TestReadsCancelledOnDisconnect(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		mb.mu.Lock()
@@ -742,6 +753,7 @@ func TestReadsCancelledOnDisconnect(t *testing.T) {
 }
 
 func TestReadsWorkAfterReconnect(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -788,6 +800,7 @@ func TestReadsWorkAfterReconnect(t *testing.T) {
 }
 
 func TestSectionErrorBroadcast(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		// Configure mock to return errors for all reads (grid has 27 probes)
@@ -822,6 +835,7 @@ func TestSectionErrorBroadcast(t *testing.T) {
 }
 
 func TestManualRefresh(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -862,6 +876,7 @@ func TestManualRefresh(t *testing.T) {
 }
 
 func TestNoBackendTimer(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -892,6 +907,7 @@ func TestNoBackendTimer(t *testing.T) {
 }
 
 func TestCancelReadOnSectionSwitch(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		// Use a moderate delay so grid read is in progress when we switch
@@ -929,6 +945,7 @@ func TestCancelReadOnSectionSwitch(t *testing.T) {
 }
 
 func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -974,6 +991,7 @@ func TestSubscribeWhileDisconnectedSendsError(t *testing.T) {
 // === Phase 03 Plan 02: Grouped section tests ===
 
 func TestGroupedSectionRegistered(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -992,6 +1010,7 @@ func TestGroupedSectionRegistered(t *testing.T) {
 }
 
 func TestStatusSectionRemoved(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -1006,6 +1025,7 @@ func TestStatusSectionRemoved(t *testing.T) {
 }
 
 func TestSystemSectionGroupedData(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		// Build mock results: 19 probe results + 2 fault batch results = 21
@@ -1039,6 +1059,7 @@ func TestSystemSectionGroupedData(t *testing.T) {
 }
 
 func TestSystemSectionFaults(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		// Build mock results with all-zero fault data -> empty faults array
@@ -1079,6 +1100,7 @@ func TestSystemSectionFaults(t *testing.T) {
 }
 
 func TestSystemSectionFaultsActive(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 
@@ -1126,6 +1148,7 @@ func TestSystemSectionFaultsActive(t *testing.T) {
 }
 
 func TestSystemSectionTimeComposition(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 
@@ -1203,6 +1226,7 @@ func TestSystemSectionTimeComposition(t *testing.T) {
 }
 
 func TestSystemSectionEnumLabel(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 
@@ -1241,6 +1265,7 @@ func TestSystemSectionEnumLabel(t *testing.T) {
 }
 
 func TestGridSectionGroupedLayout(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -1283,6 +1308,7 @@ func TestGridSectionGroupedLayout(t *testing.T) {
 }
 
 func TestNonSystemNoFaults(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -1319,6 +1345,7 @@ func TestNonSystemNoFaults(t *testing.T) {
 // === Task 2: Configure message tests ===
 
 func TestConfigurePVChannels(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -1365,6 +1392,7 @@ func TestConfigurePVChannels(t *testing.T) {
 }
 
 func TestConfigurePVBatchPlan(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, _, cancel := setupConnectedHub(t, mb, 0)
@@ -1401,6 +1429,7 @@ func TestConfigurePVBatchPlan(t *testing.T) {
 }
 
 func TestConfigureClampRange(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -1449,6 +1478,7 @@ func TestConfigureClampRange(t *testing.T) {
 }
 
 func TestConfigureNonPVIgnored(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -1478,6 +1508,7 @@ func TestConfigureNonPVIgnored(t *testing.T) {
 }
 
 func TestConfigureTriggersReread(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
@@ -1622,6 +1653,7 @@ func collectPackErrorMessages(t *testing.T, send chan []byte, count int, timeout
 }
 
 func TestHandleSelectPack(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 
@@ -1670,6 +1702,7 @@ func TestHandleSelectPack(t *testing.T) {
 }
 
 func TestPackDataMessageShape(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Phase 11: Pack data is now sent as streaming messages (section_schema + register_value + section_complete)
 		// instead of a single pack_data batch message.
@@ -1786,6 +1819,7 @@ func TestPackDataMessageShape(t *testing.T) {
 }
 
 func TestPackErrorOnWriteTimeout(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 
@@ -1820,6 +1854,7 @@ func TestPackErrorOnWriteTimeout(t *testing.T) {
 }
 
 func TestEncodePackQueryInHandler(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 
@@ -1866,6 +1901,7 @@ func TestEncodePackQueryInHandler(t *testing.T) {
 }
 
 func TestTopologyConstants(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert.Equal(t, 2, hub.TopoTowers)
 		assert.Equal(t, 10, hub.TopoPacksPerTower)
@@ -1927,6 +1963,7 @@ func setupBMSBatchSpanTest(t *testing.T, towerBitmap uint16) (*mockBroker, regis
 }
 
 func TestBMSTowerBitmap(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, _ := setupBMSBatchSpanTest(t, 0x0003) // both towers online
 
@@ -1977,6 +2014,7 @@ func TestBMSTowerBitmap(t *testing.T) {
 }
 
 func TestBMSTowerBitmapPartialOnline(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, _ := setupBMSBatchSpanTest(t, 0x0001) // only tower 1 online
 
@@ -2025,6 +2063,7 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 // TestBMSBatchRead_SpanReads verifies BMS section reads via batch spans and emits
 // register_value messages for all probes, section_data with bitmap/protection, and section_complete.
 func TestBMSBatchRead_SpanReads(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, _ := setupBMSBatchSpanTest(t, 0x0003)
 
@@ -2065,6 +2104,7 @@ func TestBMSBatchRead_SpanReads(t *testing.T) {
 // TestBMSBatchRead_CompositeValues verifies that bms_clock and bms_sw_version Composite
 // probes produce correctly formatted values in register_value messages.
 func TestBMSBatchRead_CompositeValues(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, _ := setupBMSBatchSpanTest(t, 0x0003)
 
@@ -2140,6 +2180,7 @@ func TestBMSBatchRead_CompositeValues(t *testing.T) {
 // TestBMSBatchRead_ProtectionDecoding verifies that protection registers appear both as
 // register_value messages (raw hex) and in the section_data protection group.
 func TestBMSBatchRead_ProtectionDecoding(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, _ := setupBMSBatchSpanTest(t, 0x0003)
 
@@ -2176,6 +2217,7 @@ func TestBMSBatchRead_ProtectionDecoding(t *testing.T) {
 
 // TestPackDataMessageItemMeta verifies that PackItemMeta and CellAddrs appear in JSON.
 func TestPackDataMessageItemMeta(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		msg := hub.PackDataMessage{
 			Type:    "pack_data",
@@ -2211,6 +2253,7 @@ func TestPackDataMessageItemMeta(t *testing.T) {
 }
 
 func TestNewRegisterValueJSON(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		msg := hub.NewRegisterValue("system", "Info", "Inverter SN", "SA00T", "", 0x0445, "534F464152")
 		data, err := json.Marshal(msg)
@@ -2222,6 +2265,7 @@ func TestNewRegisterValueJSON(t *testing.T) {
 }
 
 func TestNewRegisterValueComposedJSON(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		msg := hub.NewRegisterValue("system", "Status", "System time", "16:03:42 12-04-2026", "", 0x042C, "0x042C-0x0431 | 26, 4, 12, 16, 3, 42")
 		data, err := json.Marshal(msg)
@@ -2235,6 +2279,7 @@ func TestNewRegisterValueComposedJSON(t *testing.T) {
 // === Phase 11 Plan 01: Pack streaming tests ===
 
 func TestPackSchemaContext(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -2262,6 +2307,7 @@ func TestPackSchemaContext(t *testing.T) {
 }
 
 func TestPackSchemaGroupOrder(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		h := hub.NewTestHub(mb)
@@ -2295,6 +2341,7 @@ func collectRawMessages(t *testing.T, send chan []byte, idleTimeout time.Duratio
 }
 
 func TestPackStreamingMessages(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb := newMockBroker()
 		// Set up register results for all pack addresses
@@ -2406,6 +2453,7 @@ func TestPackStreamingMessages(t *testing.T) {
 }
 
 func TestPackSpanDegradation(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// After repeated batch failures on the 0x9104 span, SpanTracker should degrade it.
 		// Individual fallback reads still produce register_value messages for the failed span.
@@ -2505,6 +2553,7 @@ func TestPackSpanDegradation(t *testing.T) {
 }
 
 func TestPackSpanResetOnSwitch(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// After pack switch, packSpanTracker should be reset so previously degraded
 		// spans get a fresh start (D-05).
@@ -2597,6 +2646,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 // === Phase 25: Pack batch read tests ===
 
 func TestStreamPackBatchReadAllProbes(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Verify that streamPackBatchRead using readBatchSpans delivers register_value
 		// messages for all pack probes and ends with section_complete.
@@ -2730,6 +2780,7 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 // === Phase 15: Configuration Section Tests ===
 
 func TestConfigurationSectionRegistered(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		mb := newMockBroker()
@@ -2755,6 +2806,7 @@ func TestConfigurationSectionRegistered(t *testing.T) {
 }
 
 func TestConfigurationReadOnceFirstReadCycleTriggers(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		mb := newMockBroker()
@@ -2792,6 +2844,7 @@ func TestConfigurationReadOnceFirstReadCycleTriggers(t *testing.T) {
 }
 
 func TestConfigurationReadOnceSkipsSecondReadCycle(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		mb := newMockBroker()
@@ -2826,6 +2879,7 @@ func TestConfigurationReadOnceSkipsSecondReadCycle(t *testing.T) {
 }
 
 func TestConfigurationRefreshResetsCache(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		mb := newMockBroker()
@@ -2864,6 +2918,7 @@ func TestConfigurationRefreshResetsCache(t *testing.T) {
 }
 
 func TestOtherSectionsUnaffectedByReadOnce(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		mb := newMockBroker()
@@ -2906,6 +2961,7 @@ func TestOtherSectionsUnaffectedByReadOnce(t *testing.T) {
 // === Phase 19-02: Batch streaming tests ===
 
 func TestBatchStreamingMessages(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Verify that batch reading produces register_value messages for all probes in a section.
 		// Use the grid section for predictable span structure.
@@ -2961,6 +3017,7 @@ func TestBatchStreamingMessages(t *testing.T) {
 }
 
 func TestBatchSpanFallback(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Verify that when a batch span read fails, individual probe reads are attempted.
 		mb := newMockBroker()
@@ -3028,6 +3085,7 @@ func TestBatchSpanFallback(t *testing.T) {
 }
 
 func TestBatchProgressiveStreaming(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Verify BATCH-04: values appear progressively per span, not all at once.
 		mb := newMockBroker()
@@ -3086,6 +3144,7 @@ func TestBatchProgressiveStreaming(t *testing.T) {
 }
 
 func TestBatchTimingLog(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Verify the timing log code path runs to completion by checking that
 		// streamStandardRead completes with section_complete for a non-fault section.
@@ -3177,6 +3236,7 @@ func triggerGridReadCycle(t *testing.T, h *hub.Hub, c *hub.Client, send chan []b
 }
 
 func TestStreamStandardRead_SpanTrackerDegradation(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// After 3 batch failures on span 0, SpanTracker should degrade it.
 		// Individual fallback reads still produce register_value messages.
@@ -3224,6 +3284,7 @@ func TestStreamStandardRead_SpanTrackerDegradation(t *testing.T) {
 }
 
 func TestStreamStandardRead_SpanTrackerSkipped(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// After 3 batch failures (degraded) + 2 all-individual-fail cycles (skipped),
 		// the span transitions to SpanSkipped.
@@ -3285,6 +3346,7 @@ func TestStreamStandardRead_SpanTrackerSkipped(t *testing.T) {
 }
 
 func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// After a span becomes skipped, a probe on the 10th cycle should recover it.
 		mb, gridPlan, failAddr := setupGridSpanTest(t)
@@ -3367,6 +3429,7 @@ func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
 }
 
 func TestStreamStandardRead_SpanTrackerResetOnReconnect(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// Degraded span should reset to Normal when broker reconnects.
 		mb, _, failAddr := setupGridSpanTest(t)
@@ -3450,6 +3513,7 @@ func setupBatterySpanTest(t *testing.T) (*mockBroker, register.BatchPlan) {
 }
 
 func TestCountBatteryChannels(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// 2-channel groups: [Channel 1, Channel 2, Global Stats]
 		groups2 := register.GenerateBatteryGroups(2)
@@ -3469,6 +3533,7 @@ func TestCountBatteryChannels(t *testing.T) {
 }
 
 func TestBatteryBatchRead_SpanReads(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// BATT-01: Verify battery section reads via batch spans and emits
 		// register_value messages for all probes.
@@ -3511,6 +3576,7 @@ func TestBatteryBatchRead_SpanReads(t *testing.T) {
 }
 
 func TestBatteryBatchRead_AutoDetect(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// BATT-02: Verify that when 0x066A returns a different channel count,
 		// the section reconfigures and InternalInfoGroups are preserved.
@@ -3622,6 +3688,7 @@ func TestBatteryBatchRead_AutoDetect(t *testing.T) {
 }
 
 func TestBatteryBatchRead_OutputEquivalence(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// BATT-03: Verify batch read produces the same register names and non-empty
 		// values as expected for a 2-channel battery section.
@@ -3705,6 +3772,7 @@ func TestBatteryBatchRead_OutputEquivalence(t *testing.T) {
 }
 
 func TestBatteryBatchRead_SpanFallback(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// BATT-01 degradation path: Verify that when a battery batch span fails,
 		// individual fallback reads still produce register_value messages.
@@ -3788,6 +3856,7 @@ func setupPackBatchSpanTest(t *testing.T) (*mockBroker, register.BatchPlan) {
 }
 
 func TestPackBatchRead_SpanReads(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, plan := setupPackBatchSpanTest(t)
 
@@ -3834,6 +3903,7 @@ func TestPackBatchRead_SpanReads(t *testing.T) {
 }
 
 func TestPackBatchRead_WriteAndSettle(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, _ := setupPackBatchSpanTest(t)
 
@@ -3870,6 +3940,7 @@ func TestPackBatchRead_WriteAndSettle(t *testing.T) {
 }
 
 func TestPackBatchRead_SpanDegradation(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		mb, plan := setupPackBatchSpanTest(t)
 
@@ -3931,6 +4002,7 @@ func TestPackBatchRead_SpanDegradation(t *testing.T) {
 // === Phase 22-03: Battery reconnect reset integration test ===
 
 func TestBatteryBatchRead_ReconnectResetsChannels(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		// UAT gap: After disconnect/reconnect, battery section should reset to 2-channel
 		// default so that the next read cycle re-detects channels via 0x066A.

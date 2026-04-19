@@ -49,6 +49,7 @@ type Hub struct {
 	results    chan sectionResult  // read results routed back to event loop
 	ctx        context.Context
 	cancel     context.CancelFunc
+	done       chan struct{}        // closed on shutdown; used by RunFunc/ClientCount to avoid racing on h.ctx
 	connected          bool          // tracks whether broker is connected (D-28)
 	defaultPVChannels  int           // default PV channel count for PV section (D-16)
 	selectedPack       *packSelection // currently selected pack for auto-refresh (nil = no pack selected)
@@ -87,6 +88,7 @@ func NewHub(b BrokerInterface, logger *slog.Logger, pvChannels int) *Hub {
 	h.readDelayMs = 500
 	h.packSettleMs = 1000
 	h.packSpanTracker = NewSpanTracker(DefaultDegradationThreshold, h.logger.With("component", "pack-tracker"))
+	h.done = make(chan struct{}) // closed in shutdown(); safe for RunFunc/ClientCount before Run()
 	// Initialize ctx/cancel so ClientCount and RunFunc are safe before Run().
 	// Run() replaces this with the caller-provided context.
 	h.ctx, h.cancel = context.WithCancel(context.Background())
@@ -129,13 +131,13 @@ func (h *Hub) ClientCount() int {
 	reply := make(chan int, 1)
 	select {
 	case h.funcs <- func() { reply <- len(h.clients) }:
-	case <-h.ctx.Done():
+	case <-h.done:
 		return 0
 	}
 	select {
 	case n := <-reply:
 		return n
-	case <-h.ctx.Done():
+	case <-h.done:
 		return 0
 	}
 }
@@ -151,12 +153,12 @@ func (h *Hub) RunFunc(fn func()) {
 	}
 	select {
 	case h.funcs <- wrapper:
-	case <-h.ctx.Done():
+	case <-h.done:
 		return // hub shut down; fn will not execute
 	}
 	select {
 	case <-done:
-	case <-h.ctx.Done():
+	case <-h.done:
 	}
 }
 
@@ -548,6 +550,7 @@ func (h *Hub) removeClient(c *Client) {
 
 // shutdown closes all client connections and clears maps.
 func (h *Hub) shutdown() {
+	close(h.done) // signal RunFunc/ClientCount callers that hub is shutting down
 	for c := range h.clients {
 		c.closed.Store(true) // CR-01: signal goroutines before closing channel
 		close(c.send)
