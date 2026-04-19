@@ -34,7 +34,7 @@ func newTestRouter() *chi.Mux {
 		PVChannels: 2,
 	}
 	r := chi.NewRouter()
-	web.SetupRoutes(r, b, h, defaults, time.Now(), logger)
+	web.SetupRoutes(r, b, h, defaults, time.Now(), "test-v1.0.0", logger)
 	return r
 }
 
@@ -99,6 +99,66 @@ func TestDefaultsEndpoint(t *testing.T) {
 	}
 }
 
+func TestHealthzEndpoint(t *testing.T) {
+	r := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestReadyzEndpointDormant(t *testing.T) {
+	r := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	// Broker starts in StateDormant -- readyz should return 503
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for dormant broker, got %d", w.Code)
+	}
+}
+
+func TestStatusInfoEndpoint(t *testing.T) {
+	r := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/status", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+
+	var resp web.StatusInfo
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+
+	if resp.Status != "ok" {
+		t.Errorf("expected status 'ok', got %q", resp.Status)
+	}
+	if resp.Version != "test-v1.0.0" {
+		t.Errorf("expected version 'test-v1.0.0', got %q", resp.Version)
+	}
+	if resp.Broker != "dormant" {
+		t.Errorf("expected broker 'dormant', got %q", resp.Broker)
+	}
+	if resp.Uptime == "" {
+		t.Error("expected non-empty uptime")
+	}
+}
+
 func TestWSUpgrade(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
@@ -109,7 +169,7 @@ func TestWSUpgrade(t *testing.T) {
 
 	defaults := web.DefaultsConfig{Host: "10.5.99.29", Port: 4192, SlaveID: 1, PVChannels: 2}
 	r := chi.NewRouter()
-	web.SetupRoutes(r, b, h, defaults, time.Now(), logger)
+	web.SetupRoutes(r, b, h, defaults, time.Now(), "test-v1.0.0", logger)
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()
