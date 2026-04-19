@@ -29,6 +29,9 @@ var (
 	logLevel     = flag.String("log-level", "info", "Log level: debug, info, warn, error")
 )
 
+// version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
+
 // setupLogger creates an slog.Logger with the specified log level.
 // Supported levels: debug, info, warn, error (case-insensitive).
 func setupLogger(levelName string) *slog.Logger {
@@ -47,8 +50,38 @@ func setupLogger(levelName string) *slog.Logger {
 	return slog.New(handler)
 }
 
+// applyEnvOverrides sets flag values from environment variables
+// for flags that were not explicitly set on the command line.
+// Precedence: explicit flag > env var > compiled default (D-05).
+func applyEnvOverrides() {
+	explicitly := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		explicitly[f.Name] = true
+	})
+
+	envMap := map[string]string{
+		"listen":        "LISTEN_ADDR",
+		"inverter-host": "INVERTER_HOST",
+		"inverter-port": "INVERTER_PORT",
+		"slave":         "SLAVE_ID",
+		"modbus-mode":   "MODBUS_MODE",
+		"pv-channels":   "PV_CHANNELS",
+		"log-level":     "LOG_LEVEL",
+	}
+
+	for flagName, envName := range envMap {
+		if explicitly[flagName] {
+			continue
+		}
+		if val, ok := os.LookupEnv(envName); ok {
+			_ = flag.Set(flagName, val)
+		}
+	}
+}
+
 func main() {
 	flag.Parse()
+	applyEnvOverrides()
 
 	// Validate inputs
 	if *slaveID < 1 || *slaveID > 247 {
@@ -100,7 +133,7 @@ func main() {
 		SlaveID:    *slaveID,
 		PVChannels: *pvChannels,
 	}
-	web.SetupRoutes(r, b, wsHub, defaults, startTime, logger)
+	web.SetupRoutes(r, b, wsHub, defaults, startTime, version, logger)
 
 	// Create HTTP server
 	srv := &http.Server{
