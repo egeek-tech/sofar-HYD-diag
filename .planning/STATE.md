@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Full Batch Reading & Configuration Cleanup
+milestone: v1.6
+milestone_name: CI/CD, Docker & Test Performance
 status: executing
-stopped_at: Completed 26-01-PLAN.md
-last_updated: "2026-04-18T11:20:27.160Z"
-last_activity: 2026-04-18
+stopped_at: Phase 29 context gathered
+last_updated: "2026-04-19T17:20:10.125Z"
+last_activity: 2026-04-19
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 5
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
   percent: 100
 ---
 
@@ -18,24 +18,26 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-18)
+See: .planning/PROJECT.md (updated 2026-04-19)
 
 **Core value:** Clear, real-time visibility into all Sofar HYD inverter parameters through a reliable web interface
-**Current focus:** Planning next milestone
+**Current focus:** Phase 29 — PR Workflow
 
 ## Current Position
 
-Milestone: v1.5 shipped 2026-04-18
-Status: Between milestones
-Last activity: 2026-04-18 - Completed v1.5 milestone
+Milestone: v1.6 CI/CD, Docker & Test Performance
+Phase: 30
+Plan: Not started
+Status: Executing Phase 29
+Last activity: 2026-04-19
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 16 (v1.5)
+- Total plans completed: 22 (v1.5)
 - Average duration: -
 - Total execution time: -
 
@@ -46,34 +48,37 @@ Progress: [██████████] 100%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [v1.4 Phase 18]: BatchPlan infrastructure with per-span fallback proven for System and Configuration
-- [v1.4 Phase 19]: Composite probe type eliminates unbatchable probes, 3-5x speedup confirmed
-- [v1.4 Phase 19]: Batch span streaming rewrite delivers progressive UI updates per span group
-- [Phase 26]: Test asserts total register count increase (not span count) since contiguous PV channels merge into one batch span
+- [v1.5]: All sections now use BatchPlan batch spans
+- [v1.5]: SpanTracker auto-skips persistently-failing spans
+- [v1.6]: Test optimization before CI (160s tests make CI a liability)
+- [v1.6]: distroless/static-debian12:nonroot over scratch (CA certs, tzdata)
+- [v1.6]: release-please for conventional commit parsing
+- [v1.6]: dorny/paths-filter for docs skip (not paths-ignore)
 
 ### Pending Todos
 
-None yet.
+- Read delay burst on section switch
+- Skip unsupported PackInfoProbes registers
+- Stream pack drill-down values per-register
 
 ### Blockers/Concerns
 
-- Configuration section has 14 batch spans returning illegal data address (0x83/0x02) — to be resolved in Phase 20
+None.
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260418-e03 | Fix battery channel 2 UI persistence — broadcast schema on reconfiguration | 2026-04-18 | 7e60dc4 | [260418-e03](./quick/260418-e03-fix-battery-channel-2-persistence-and-di/) |
+| 260418-e03 | Fix battery channel 2 UI persistence -- broadcast schema on reconfiguration | 2026-04-18 | 7e60dc4 | [260418-e03](./quick/260418-e03-fix-battery-channel-2-persistence-and-di/) |
 
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
 | (none) | | | |
-| Phase 26 P01 | 11min | 2 tasks | 6 files |
 
 ## Session Continuity
 
-Last session: 2026-04-17T22:08:43.947Z
-Stopped at: Completed 26-01-PLAN.md
-Resume file: None
+Last session: 2026-04-19T15:38:05.119Z
+Stopped at: Phase 29 context gathered
+Resume file: .planning/phases/29-pr-workflow/29-CONTEXT.md

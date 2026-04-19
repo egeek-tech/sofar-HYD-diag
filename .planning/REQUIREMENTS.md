@@ -1,59 +1,45 @@
 # Requirements: Sofar HYD Diagnostic Tool
 
-**Defined:** 2026-04-15
+**Defined:** 2026-04-19
 **Core Value:** Provide clear, real-time visibility into all Sofar HYD inverter parameters through a reliable web interface
 
-## v1.5 Requirements
+## v1.6 Requirements
 
-Requirements for v1.5 Full Batch Reading & Configuration Cleanup. Each maps to roadmap phases.
+Requirements for CI/CD, Docker packaging, and test performance milestone.
 
-### Configuration Cleanup
+### Docker Packaging
 
-- [ ] **CONF-01**: Configuration section excludes registers that return illegal data address on this hardware
-- [ ] **CONF-02**: Configuration groups with no working registers are hidden from the UI
-- [ ] **CONF-03**: Configuration section loads without batch span fallback warnings in server logs
+- [ ] **DOCK-01**: Project has a multi-stage Dockerfile producing a minimal container image
+- [ ] **DOCK-02**: .dockerignore excludes build artifacts, planning files, and dev tooling
+- [ ] **DOCK-03**: Container runs as non-root user with distroless/static base
+- [ ] **DOCK-04**: Binary built with CGO_ENABLED=0 for fully static linking
+- [ ] **DOCK-05**: /health endpoint returns 200 OK for container liveness checks
 
-### Batch Verification
+### PR Workflow
 
-- [ ] **BVER-01**: Grid section loads via batch spans on real hardware without errors
-- [ ] **BVER-02**: EPS section loads via batch spans on real hardware without errors
-- [ ] **BVER-03**: PV section loads via batch spans on real hardware without errors
-- [ ] **BVER-04**: Meter section loads via batch spans on real hardware without errors
-- [ ] **BVER-05**: DCDC section loads via batch spans on real hardware without errors
-- [ ] **BVER-06**: PCU section loads via batch spans on real hardware without errors
-- [ ] **BVER-07**: BDU section loads via batch spans on real hardware without errors
+- [ ] **CIPR-01**: GitHub Actions workflow runs build, test, and golangci-lint on every PR
+- [ ] **CIPR-02**: Workflow skips execution on docs-only changes (*.md, docs/)
+- [ ] **CIPR-03**: Jobs run in parallel (lint, fast tests, hub tests, build)
+- [ ] **CIPR-04**: Go module dependencies are cached between runs
 
-### Battery Migration
+### Release Automation
 
-- [ ] **BATT-01**: Battery section reads registers via BatchPlan spans instead of individual reads
-- [ ] **BATT-02**: Battery channel auto-detection (0x066A) still works correctly after migration
-- [ ] **BATT-03**: Battery section UI renders identically to pre-migration behavior
+- [ ] **REL-01**: Merges to master auto-generate semver tags from conventional commits (feat->minor, fix->patch)
+- [ ] **REL-02**: GitHub Release created with auto-generated changelog from commit history
+- [ ] **REL-03**: Docker image built and pushed to ghcr.io on release
+- [ ] **REL-04**: Binary artifact attached to GitHub Release
 
-### Pack Drill-Down Migration
+### Dependency Management
 
-- [ ] **PACK-01**: Pack drill-down reads registers via BatchPlan spans instead of individual reads
-- [ ] **PACK-02**: Pack selection write (0x9020) and 1s settle delay preserved before reading
-- [ ] **PACK-03**: Known unsupported PackInfo registers (0x9104+) are skipped without errors
-- [ ] **PACK-04**: Pack drill-down UI renders identically to pre-migration behavior
+- [ ] **DEP-01**: Dependabot configured for Go module updates on weekly schedule
+- [ ] **DEP-02**: Dependabot configured for GitHub Actions version updates
 
-### Resilience
+### Test Performance
 
-- [ ] **RESIL-01**: SpanTracker wired into streamStandardRead to track persistently-failing spans
-- [ ] **RESIL-02**: Spans that fail consistently are automatically skipped on subsequent reads
-
-### BMS Migration
-
-- [ ] **BMS-01**: BMS section reads registers via BatchPlan spans instead of individual reads
-- [ ] **BMS-02**: BMS clock composition (0x9004+0x9005) renders correctly after migration
-- [ ] **BMS-03**: BMS SW version composition (0x9018-0x901B) renders correctly after migration
-- [ ] **BMS-04**: BMS bitmap and protection post-processing preserved after migration
-
-### Milestone Cleanup
-
-- [x] **CLEAN-01**: PV handleConfigure recomputes sec.BatchPlan after channel change
-- [x] **CLEAN-02**: Dead readSpanIndividualFallback (non-Accum) removed from hub_streaming.go
-- [x] **CLEAN-03**: DCDC nav button removed from index.html
-- [x] **CLEAN-04**: Orphaned config enum maps removed from config_enum.go
+- [ ] **TEST-01**: Hub test helpers (collectRawMessages/drainRawMessages) rewritten to eliminate unnecessary waits
+- [ ] **TEST-02**: Hub tests use t.Parallel() where tests don't share state
+- [ ] **TEST-03**: Hub test suite completes in under 60 seconds
+- [ ] **TEST-04**: Hub tests migrated to testing/synctest where beneficial for time-dependent tests
 
 ## Future Requirements
 
@@ -74,10 +60,13 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
+| GoReleaser cross-compilation | Single binary, single platform — Docker is the distribution format |
+| Kubernetes manifests / Helm chart | Local diagnostic tool, not a cloud service |
+| Code coverage enforcement | Not needed for a personal diagnostic tool |
+| E2E integration tests in CI | Requires real inverter hardware, not possible in CI |
+| Mobile Docker image variants | Desktop-only tool |
 | Cross-section batch merging | Sections are independent streaming units; merging adds complexity for marginal gain |
 | Dynamic register auto-discovery | Register map is fixed per hardware model; static removal is correct and simpler |
-| Batch plan UI visualization | Developer-facing diagnostic, not user-facing value |
-| Write register batching | Read-only diagnostic tool; no write batching needed |
 
 ## Traceability
 
@@ -85,39 +74,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONF-01 | Phase 20 | Pending |
-| CONF-02 | Phase 20 | Pending |
-| CONF-03 | Phase 20 | Pending |
-| BVER-01 | Phase 21 | Pending |
-| BVER-02 | Phase 21 | Pending |
-| BVER-03 | Phase 21 | Pending |
-| BVER-04 | Phase 21 | Pending |
-| BVER-05 | Phase 21 | Pending |
-| BVER-06 | Phase 21 | Pending |
-| BVER-07 | Phase 21 | Pending |
-| RESIL-01 | Phase 22 | Pending |
-| RESIL-02 | Phase 22 | Pending |
-| BATT-01 | Phase 23 | Pending |
-| BATT-02 | Phase 23 | Pending |
-| BATT-03 | Phase 23 | Pending |
-| BMS-01 | Phase 24 | Pending |
-| BMS-02 | Phase 24 | Pending |
-| BMS-03 | Phase 24 | Pending |
-| BMS-04 | Phase 24 | Pending |
-| PACK-01 | Phase 25 | Pending |
-| PACK-02 | Phase 25 | Pending |
-| PACK-03 | Phase 25 | Pending |
-| PACK-04 | Phase 25 | Pending |
-| CLEAN-01 | Phase 26 | Complete |
-| CLEAN-02 | Phase 26 | Complete |
-| CLEAN-03 | Phase 26 | Complete |
-| CLEAN-04 | Phase 26 | Complete |
+| DOCK-01 | Phase 28 | Pending |
+| DOCK-02 | Phase 28 | Pending |
+| DOCK-03 | Phase 28 | Pending |
+| DOCK-04 | Phase 28 | Pending |
+| DOCK-05 | Phase 28 | Pending |
+| CIPR-01 | Phase 29 | Pending |
+| CIPR-02 | Phase 29 | Pending |
+| CIPR-03 | Phase 29 | Pending |
+| CIPR-04 | Phase 29 | Pending |
+| REL-01 | Phase 30 | Pending |
+| REL-02 | Phase 30 | Pending |
+| REL-03 | Phase 30 | Pending |
+| REL-04 | Phase 30 | Pending |
+| DEP-01 | Phase 31 | Pending |
+| DEP-02 | Phase 31 | Pending |
+| TEST-01 | Phase 27 | Pending |
+| TEST-02 | Phase 27 | Pending |
+| TEST-03 | Phase 27 | Pending |
+| TEST-04 | Phase 27 | Pending |
 
 **Coverage:**
-- v1.5 requirements: 27 total
-- Mapped to phases: 27
+- v1.6 requirements: 19 total
+- Mapped to phases: 19
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-04-15*
-*Last updated: 2026-04-15 after roadmap creation*
+*Requirements defined: 2026-04-19*
+*Last updated: 2026-04-19 after roadmap creation*

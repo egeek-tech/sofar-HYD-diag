@@ -21,8 +21,8 @@ decisions:
 metrics:
   duration: 83s
   completed: "2026-04-19T16:19:44Z"
-  status: checkpoint-blocked
-  tasks_completed: 1
+  status: complete
+  tasks_completed: 2
   tasks_total: 2
 ---
 
@@ -42,7 +42,7 @@ Created `.github/workflows/pr.yml` with:
 - **Concurrency:** `pr-${{ github.event.pull_request.number }}` with `cancel-in-progress: true`
 - **Permissions:** Minimal -- `contents: read`, `pull-requests: read`, `checks: write`
 - **Job 1 (changes):** `dorny/paths-filter@v4` with `src` and `docker` output filters, no checkout step
-- **Job 2 (lint):** `actions/setup-go@v5` + `golangci-lint-action@v7` (v2.1), conditional on `src` filter
+- **Job 2 (lint):** `actions/setup-go@v5` + `golangci-lint-action@v7` (v2.11), conditional on `src` filter
 - **Job 3 (test):** `gotestsum --junitfile test-results.xml` + `dorny/test-reporter@v3` with `if: always()`, conditional on `src` filter
 - **Job 4 (build):** `go build ./cmd/server`, conditional on `src` filter
 - **Job 5 (docker):** `docker build --build-arg VERSION=ci-${{ github.sha }}`, conditional on `docker` filter
@@ -50,13 +50,25 @@ Created `.github/workflows/pr.yml` with:
 
 All 20 acceptance criteria verified via automated grep checks.
 
-### Task 2: Verify PR workflow on real pull request (CHECKPOINT)
+### Task 2: Verify PR workflow on real pull request (COMPLETE)
 
-**Status:** Blocked at human-verify checkpoint. Requires pushing branch, creating PR against master, and observing GitHub Actions results to verify CIPR-01 through CIPR-04.
+**PR:** https://github.com/richie-tt/sofar-HYD-diag/pull/1
+
+Verified all four CIPR requirements on a real PR:
+
+1. **CIPR-01:** All 5 jobs (changes, lint, test, build, docker) appeared and passed
+2. **CIPR-02:** Workflow-only push correctly skipped lint/test/build/docker (paths-filter working)
+3. **CIPR-03:** lint, test, build, docker ran in parallel after changes completed
+4. **CIPR-04:** setup-go handled Go module caching automatically
+
+**Fixes applied during verification:**
+- golangci-lint upgraded from v2.1 to v2.11 (v2.1 was built with Go 1.24, incompatible with Go 1.26)
+- cmd/fyne-poc removed (unused GUI experiment with system deps unavailable on CI runners)
 
 ## Deviations from Plan
 
-None -- plan executed exactly as written.
+- golangci-lint version changed from v2.1 (D-08) to v2.11 — v2.1 was built with Go 1.24 and cannot analyze Go 1.26 code
+- cmd/fyne-poc removed — build failed on CI due to missing system GUI libraries (libGL)
 
 ## Known Stubs
 

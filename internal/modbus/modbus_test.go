@@ -88,11 +88,11 @@ func TestReadHoldingRegistersTCP(t *testing.T) {
 		binary.BigEndian.PutUint16(resp[0:2], txID) // echo txID
 		binary.BigEndian.PutUint16(resp[2:4], 0)    // protocol ID
 		binary.BigEndian.PutUint16(resp[4:6], 5)    // length: unitID(1) + func(1) + byteCount(1) + data(2)
-		resp[6] = 0x01                               // unitID
-		resp[7] = 0x03                               // function code
-		resp[8] = 2                                  // byte count
-		resp[9] = 0x12                               // data high byte
-		resp[10] = 0x34                              // data low byte
+		resp[6] = 0x01                              // unitID
+		resp[7] = 0x03                              // function code
+		resp[8] = 2                                 // byte count
+		resp[9] = 0x12                              // data high byte
+		resp[10] = 0x34                             // data low byte
 
 		server.Write(resp)
 	}()
@@ -132,9 +132,9 @@ func TestReadHoldingRegistersTCP_Exception(t *testing.T) {
 		binary.BigEndian.PutUint16(resp[0:2], nextTxID) // txID
 		binary.BigEndian.PutUint16(resp[2:4], 0)        // protocol ID
 		binary.BigEndian.PutUint16(resp[4:6], 3)        // length: unitID(1) + exception func(1) + error code(1)
-		resp[6] = 0x01                                   // unitID
-		resp[7] = 0x83                                   // function 0x03 | 0x80
-		resp[8] = 0x02                                   // error code: illegal data address
+		resp[6] = 0x01                                  // unitID
+		resp[7] = 0x83                                  // function 0x03 | 0x80
+		resp[8] = 0x02                                  // error code: illegal data address
 
 		server.Write(resp)
 	}()
@@ -185,8 +185,8 @@ func TestWriteMultipleRegistersTCP(t *testing.T) {
 		binary.BigEndian.PutUint16(resp[0:2], txID) // echo txID
 		binary.BigEndian.PutUint16(resp[2:4], 0)    // protocol ID
 		binary.BigEndian.PutUint16(resp[4:6], 6)    // length: unitID(1) + func(1) + regAddr(2) + qty(2)
-		resp[6] = 0x01                               // unitID
-		resp[7] = 0x10                               // function code
+		resp[6] = 0x01                              // unitID
+		resp[7] = 0x10                              // function code
 		binary.BigEndian.PutUint16(resp[8:10], 0x9020)
 		binary.BigEndian.PutUint16(resp[10:12], 1)
 

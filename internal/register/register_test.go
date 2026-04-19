@@ -273,10 +273,10 @@ func TestEPSGroups(t *testing.T) {
 
 func TestFormatValueEnum(t *testing.T) {
 	p := Probe{
-		Name: "Running state",
-		Addr: 0x0404,
+		Name:  "Running state",
+		Addr:  0x0404,
 		Count: 1,
-		Enum: RunningStateEnum,
+		Enum:  RunningStateEnum,
 	}
 	// Value 2 should return "Grid-connected"
 	data := make([]byte, 2)
@@ -310,11 +310,11 @@ func TestComposeSystemTime(t *testing.T) {
 func TestFormatValueComposite(t *testing.T) {
 	p := Probe{Name: "System time", Addr: 0x042C, Count: 6, Composite: "system_time"}
 	data := make([]byte, 12)
-	binary.BigEndian.PutUint16(data[0:2], 26)  // year
-	binary.BigEndian.PutUint16(data[2:4], 4)   // month
-	binary.BigEndian.PutUint16(data[4:6], 14)  // day
-	binary.BigEndian.PutUint16(data[6:8], 10)  // hour
-	binary.BigEndian.PutUint16(data[8:10], 30) // min
+	binary.BigEndian.PutUint16(data[0:2], 26)   // year
+	binary.BigEndian.PutUint16(data[2:4], 4)    // month
+	binary.BigEndian.PutUint16(data[4:6], 14)   // day
+	binary.BigEndian.PutUint16(data[6:8], 10)   // hour
+	binary.BigEndian.PutUint16(data[8:10], 30)  // min
 	binary.BigEndian.PutUint16(data[10:12], 45) // sec
 	got := FormatValue(p, data)
 	assert.Equal(t, "10:30:45 14-04-2026", got)
@@ -524,7 +524,7 @@ func TestFormatValueU32(t *testing.T) {
 	p := Probe{Name: "Energy", U32: true, Count: 2, Scale: 0.01, Unit: "kWh"}
 	// Encode 23900: hi_word=0, lo_word=23900
 	data := make([]byte, 4)
-	binary.BigEndian.PutUint16(data[:2], 0)     // high word
+	binary.BigEndian.PutUint16(data[:2], 0)      // high word
 	binary.BigEndian.PutUint16(data[2:4], 23900) // low word
 	got := FormatValue(p, data)
 	assert.Equal(t, "239.00 kWh", got)
@@ -830,16 +830,16 @@ func TestDecodeTopology(t *testing.T) {
 
 func TestEncodePackQuery(t *testing.T) {
 	tests := []struct {
-		name                              string
+		name                               string
 		input, tower, pack, towersPerInput int
-		want                              uint16
+		want                               uint16
 	}{
 		// 0-based encoding: group = (input-1)*tpi + (tower-1), packIdx = pack-1
-		{"input1 tower2 pack5 tpi2", 1, 2, 5, 2, 0x0104},  // group=1, pack=4
-		{"input2 tower1 pack1 tpi2", 2, 1, 1, 2, 0x0200},  // group=2, pack=0
-		{"input1 tower1 pack1 tpi1", 1, 1, 1, 1, 0x0000},  // group=0, pack=0
+		{"input1 tower2 pack5 tpi2", 1, 2, 5, 2, 0x0104},   // group=1, pack=4
+		{"input2 tower1 pack1 tpi2", 2, 1, 1, 2, 0x0200},   // group=2, pack=0
+		{"input1 tower1 pack1 tpi1", 1, 1, 1, 1, 0x0000},   // group=0, pack=0
 		{"input1 tower1 pack10 tpi2", 1, 1, 10, 2, 0x0009}, // group=0, pack=9
-		{"input1 tower1 pack6 tpi2", 1, 1, 6, 2, 0x0005},  // group=0, pack=5 (UI "Pack 6")
+		{"input1 tower1 pack6 tpi2", 1, 1, 6, 2, 0x0005},   // group=0, pack=5 (UI "Pack 6")
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1255,29 +1255,29 @@ func TestPackProbeGroupOrder(t *testing.T) {
 func TestConfigEnumMaps(t *testing.T) {
 	// All enum maps must be non-nil and have at least 2 entries
 	allEnums := map[string]map[uint16]string{
-		"BaudRateEnum":              BaudRateEnum,
-		"PVInputModeEnum":           PVInputModeEnum,
-		"AntiBackFlowEnum":          AntiBackFlowEnum,
-		"EPSControlEnum":            EPSControlEnum,
-		"LanguageEnum":              LanguageEnum,
-		"ProhibitEnableEnum":        ProhibitEnableEnum,
-		"BatteryProtocolEnum":       BatteryProtocolEnum,
-		"CellTypeEnum":              CellTypeEnum,
-		"BatteryUsageEnum":          BatteryUsageEnum,
-		"EnergyStorageModeEnum":     EnergyStorageModeEnum,
-		"DRMSEnum":                  DRMSEnum,
-		"ParallelModeEnum":          ParallelModeEnum,
-		"GridDetectionEnum":         GridDetectionEnum,
-		"DryContactEnum":            DryContactEnum,
-		"SafetyCountryEnum":         SafetyCountryEnum,
-		"RemoteOnOffEnum":           RemoteOnOffEnum,
-		"PowerControlEnum":          PowerControlEnum,
+		"BaudRateEnum":               BaudRateEnum,
+		"PVInputModeEnum":            PVInputModeEnum,
+		"AntiBackFlowEnum":           AntiBackFlowEnum,
+		"EPSControlEnum":             EPSControlEnum,
+		"LanguageEnum":               LanguageEnum,
+		"ProhibitEnableEnum":         ProhibitEnableEnum,
+		"BatteryProtocolEnum":        BatteryProtocolEnum,
+		"CellTypeEnum":               CellTypeEnum,
+		"BatteryUsageEnum":           BatteryUsageEnum,
+		"EnergyStorageModeEnum":      EnergyStorageModeEnum,
+		"DRMSEnum":                   DRMSEnum,
+		"ParallelModeEnum":           ParallelModeEnum,
+		"GridDetectionEnum":          GridDetectionEnum,
+		"DryContactEnum":             DryContactEnum,
+		"SafetyCountryEnum":          SafetyCountryEnum,
+		"RemoteOnOffEnum":            RemoteOnOffEnum,
+		"PowerControlEnum":           PowerControlEnum,
 		"ChargeDischargeControlEnum": ChargeDischargeControlEnum,
-		"ChargingSourceEnum":        ChargingSourceEnum,
-		"ProtectionEnableEnum":      ProtectionEnableEnum,
-		"ReactiveControlModeEnum":   ReactiveControlModeEnum,
-		"EnableStatusEnum":          EnableStatusEnum,
-		"InputChannelTypeEnum":      InputChannelTypeEnum,
+		"ChargingSourceEnum":         ChargingSourceEnum,
+		"ProtectionEnableEnum":       ProtectionEnableEnum,
+		"ReactiveControlModeEnum":    ReactiveControlModeEnum,
+		"EnableStatusEnum":           EnableStatusEnum,
+		"InputChannelTypeEnum":       InputChannelTypeEnum,
 	}
 
 	for name, enum := range allEnums {

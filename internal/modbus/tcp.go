@@ -88,14 +88,14 @@ func WriteMultipleRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte,
 
 	// MBAP header (7 bytes) + PDU: funcCode(1) + regAddr(2) + quantity(2) + byteCount(1) + data(2) = 8
 	req := make([]byte, 15)
-	binary.BigEndian.PutUint16(req[0:2], txID)   // transaction ID
-	binary.BigEndian.PutUint16(req[2:4], 0)       // protocol ID
-	binary.BigEndian.PutUint16(req[4:6], 9)       // length: unitID(1) + PDU(8)
+	binary.BigEndian.PutUint16(req[0:2], txID) // transaction ID
+	binary.BigEndian.PutUint16(req[2:4], 0)    // protocol ID
+	binary.BigEndian.PutUint16(req[4:6], 9)    // length: unitID(1) + PDU(8)
 	req[6] = slaveID
 	req[7] = 0x10 // Write Multiple Registers
 	binary.BigEndian.PutUint16(req[8:10], regAddr)
 	binary.BigEndian.PutUint16(req[10:12], 1) // quantity = 1 register
-	req[12] = 2                                // byte count = 2
+	req[12] = 2                               // byte count = 2
 	binary.BigEndian.PutUint16(req[13:15], value)
 
 	_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))

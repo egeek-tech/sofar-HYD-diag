@@ -10,9 +10,9 @@ const (
 	MsgTypeUnsubscribe = "unsubscribe"
 	MsgTypeConnect     = "connect"
 	MsgTypeDisconnect  = "disconnect"
-	MsgTypeRefresh    = "refresh"
-	MsgTypeConfigure  = "configure"
-	MsgTypeReadCycle  = "read_cycle"
+	MsgTypeRefresh     = "refresh"
+	MsgTypeConfigure   = "configure"
+	MsgTypeReadCycle   = "read_cycle"
 	MsgTypeSectionData = "section_data"
 	MsgTypeSectionErr  = "section_error"
 	MsgTypeState       = "connection_state"
@@ -86,9 +86,9 @@ type InboundMessage struct {
 type OutboundMessage struct {
 	Type      string            `json:"type"`
 	Section   string            `json:"section,omitempty"`
-	Data      map[string]string `json:"data,omitempty"`      // legacy flat sections
-	Groups    []GroupData       `json:"groups,omitempty"`     // grouped data (D-02)
-	Faults    []FaultEntry      `json:"faults"`               // fault list (D-11); never omit so frontend always renders fault card
+	Data      map[string]string `json:"data,omitempty"`   // legacy flat sections
+	Groups    []GroupData       `json:"groups,omitempty"` // grouped data (D-02)
+	Faults    []FaultEntry      `json:"faults"`           // fault list (D-11); never omit so frontend always renders fault card
 	State     string            `json:"state,omitempty"`
 	Error     string            `json:"error,omitempty"`
 	Timestamp string            `json:"timestamp,omitempty"`
@@ -114,19 +114,19 @@ type PackItemMeta struct {
 
 // PackGroup represents a group within a pack data response.
 type PackGroup struct {
-	Name    string            `json:"name"`
-	Layout  string            `json:"layout,omitempty"`
-	Type    string            `json:"type,omitempty"`
-	Items   map[string]string `json:"items,omitempty"`
+	Name   string            `json:"name"`
+	Layout string            `json:"layout,omitempty"`
+	Type   string            `json:"type,omitempty"`
+	Items  map[string]string `json:"items,omitempty"`
 	// Per-item register metadata for tooltips (Phase 10, D-15)
 	ItemMeta map[string]PackItemMeta `json:"item_meta,omitempty"`
 	// Cell grid specific (type="cell_grid")
-	Cells        []int    `json:"cells,omitempty"`           // raw millivolt values for 16 cells (D-05)
-	CellAddrs    []uint16 `json:"cell_addrs,omitempty"`      // per-cell register addresses for tooltips (D-15)
-	MaxCell      int      `json:"max_cell,omitempty"`        // register 0x9069 value in mV
-	MinCell      int      `json:"min_cell,omitempty"`        // register 0x906A value in mV
-	MaxCellIndex int      `json:"max_cell_index,omitempty"`  // 1-based index of max cell
-	MinCellIndex int      `json:"min_cell_index,omitempty"`  // 1-based index of min cell
+	Cells        []int    `json:"cells,omitempty"`          // raw millivolt values for 16 cells (D-05)
+	CellAddrs    []uint16 `json:"cell_addrs,omitempty"`     // per-cell register addresses for tooltips (D-15)
+	MaxCell      int      `json:"max_cell,omitempty"`       // register 0x9069 value in mV
+	MinCell      int      `json:"min_cell,omitempty"`       // register 0x906A value in mV
+	MaxCellIndex int      `json:"max_cell_index,omitempty"` // 1-based index of max cell
+	MinCellIndex int      `json:"min_cell_index,omitempty"` // 1-based index of min cell
 	// Temperature specific
 	TempRaw []int `json:"temp_raw,omitempty"` // raw temp values (x10) for color coding
 	// Pack status specific (type="pack_status")
@@ -235,7 +235,7 @@ type SectionSchemaMessage struct {
 	Type        string             `json:"type"`
 	Section     string             `json:"section"`
 	Groups      []SchemaGroup      `json:"groups"`
-	PackContext *PackSchemaContext  `json:"pack_context,omitempty"` // Phase 11: pack drill-down context
+	PackContext *PackSchemaContext `json:"pack_context,omitempty"` // Phase 11: pack drill-down context
 }
 
 // NewRegisterValue creates a register_value message for a single probe result.

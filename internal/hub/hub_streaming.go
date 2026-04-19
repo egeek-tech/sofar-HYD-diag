@@ -530,4 +530,3 @@ func (h *Hub) streamPackBatchRead(input, tower, pack int, client *Client, readCt
 		}
 	}()
 }
-
