@@ -530,11 +530,23 @@ func (b *Broker) executeDisconnect() {
 }
 
 // enforceInterReadDelay sleeps if needed to maintain the minimum delay between reads.
+// Handles the zero-value edge case: on the very first read (lastReadTime is zero),
+// no delay is needed but we stamp the time so the next read within the same batch
+// is properly throttled (D-07 burst prevention).
 func (b *Broker) enforceInterReadDelay() {
+	if b.lastReadTime.IsZero() {
+		// First read ever or after reset -- no delay needed,
+		// but set the timestamp so the NEXT read is properly delayed.
+		b.lastReadTime = time.Now()
+		return
+	}
 	elapsed := time.Since(b.lastReadTime)
 	if elapsed < b.interReadDelay {
 		time.Sleep(b.interReadDelay - elapsed)
 	}
+	// When elapsed >= interReadDelay (stale/idle), the read proceeds without delay.
+	// This is correct: a long idle period already satisfies the minimum gap.
+	// lastReadTime is updated after the read completes (executeRead line ~403).
 }
 
 // ensureConnected establishes a connection if one doesn't exist.
