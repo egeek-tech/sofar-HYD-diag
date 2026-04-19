@@ -193,7 +193,6 @@ func buildConfigurationGroups() []ProbeGroup {
 			{Name: "Comm interruption threshold", Addr: 0x11C6, Count: 1, Unit: "min", Scale: 1},
 			{Name: "Comm interruption data source", Addr: 0x11C7, Count: 1},
 		}},
-
 	}
 
 	// Append Safety groups
@@ -321,4 +320,3 @@ func safetyGroups() []ProbeGroup {
 		}},
 	}
 }
-

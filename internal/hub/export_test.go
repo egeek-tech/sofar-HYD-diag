@@ -11,8 +11,12 @@ var CountBatteryChannels = countBatteryChannels
 
 // NewTestHub creates a Hub for testing with default 2 PV channels.
 // Uses a default logger. Topology uses package-level constants.
+// Sets packSettleMs to 10ms (production default: 1000ms) to avoid slow tests.
 func NewTestHub(b BrokerInterface) *Hub {
-	return NewHub(b, slog.Default(), 2)
+	h := NewHub(b, slog.Default(), 2)
+	h.readDelayMs = 0
+	h.packSettleMs = 10
+	return h
 }
 
 // NewTestHubWithPVChannels creates a Hub for testing with a specified PV channel count.
@@ -92,6 +96,12 @@ func (h *Hub) GetTimingConfig() (readDelayMs, packSettleMs int) {
 		packSettleMs = h.packSettleMs
 	})
 	return
+}
+
+// SetPackSettleMs sets the pack settle time for testing.
+// Must be called before Run() or via RunFunc after Run().
+func (h *Hub) SetPackSettleMs(ms int) {
+	h.packSettleMs = ms
 }
 
 // BuildPackSchema exposes buildPackSchema for testing.

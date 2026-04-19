@@ -77,9 +77,9 @@ func statusLabel(e ComparisonEntry) string {
 
 // addressGroup defines a named address range for grouping output.
 type addressGroup struct {
-	name     string
-	minAddr  uint16
-	maxAddr  uint16
+	name    string
+	minAddr uint16
+	maxAddr uint16
 }
 
 var groups = []addressGroup{

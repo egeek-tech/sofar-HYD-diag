@@ -25,9 +25,9 @@ type Section struct {
 	Name         string
 	Probes       []register.Probe      // flattened from Groups for read requests
 	Groups       []register.ProbeGroup // source of truth for grouped sections (D-06)
-	BatchPlan    register.BatchPlan   // pre-computed batch read plan (D-02)
-	SpanTracker  *SpanTracker         // per-section span degradation tracker (D-01)
-	faultSection bool                 // true for "system" section (reads fault registers)
+	BatchPlan    register.BatchPlan    // pre-computed batch read plan (D-02)
+	SpanTracker  *SpanTracker          // per-section span degradation tracker (D-01)
+	faultSection bool                  // true for "system" section (reads fault registers)
 	readOnce     bool                  // D-09: when true, skip re-reads after initial successful read
 	hasReadOnce  bool                  // D-09: true after first successful read completes
 	subscribers  map[*Client]bool

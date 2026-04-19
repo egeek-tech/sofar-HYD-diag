@@ -246,4 +246,3 @@ var PeakShavingBuyEnum = map[uint16]string{
 	0: "Prohibited",
 	1: "Enabled",
 }
-

@@ -166,7 +166,7 @@ A desktop-focused web application for monitoring and diagnosing Sofar HYD hybrid
 - Depends on: Protocol-specific implementations (TCP/RTU)
 - Used by: Domain logic layer
 - Purpose: Modbus TCP and RTU codec implementations
-- Location: 
+- Location:
 - Contains: Frame construction, CRC calculation, MBAP header management
 - Depends on: Utility functions (I/O, CRC)
 - Used by: Transport adapter layer
@@ -197,7 +197,7 @@ A desktop-focused web application for monitoring and diagnosing Sofar HYD hybrid
 ## Entry Points
 - Location: `main()` function (lines 42-65) in `/data/git/private/modbus_reader/main.go`
 - Triggers: Executable invocation with flags
-- Responsibilities: 
+- Responsibilities:
 - Location: `/data/git/private/modbus_reader/modbus_reader`
 - Invocation: `./modbus_reader -host <IP> -port <PORT> [-mode tcp|rtu] [-pack N] [-group G]`
 ## Error Handling

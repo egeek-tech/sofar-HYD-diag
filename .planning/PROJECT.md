@@ -78,6 +78,12 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - ✓ Structured backend logging — v1.0
 - ✓ Desktop-optimized layout — v1.0
 
+### Validated (v1.6)
+
+- ✓ Hub test suite optimized from 160s to 0.03s via synctest migration, idle-timeout helpers, and t.Parallel() — v1.6 Phase 27
+- ✓ Data race in Hub.RunFunc/ClientCount fixed (done channel synchronization) — v1.6 Phase 27
+- ✓ enforceInterReadDelay burst bug fixed (IsZero guard) — v1.6 Phase 27
+
 ### Validated (v1.5)
 
 - ✓ Configuration section excludes unsupported registers (90 removed via hardware sweep) — v1.5 Phase 20
@@ -115,6 +121,17 @@ Provide clear, real-time visibility into all Sofar HYD inverter parameters — e
 - **Hardware timing**: 500ms minimum delay between Modbus reads; BMS pack switch needs ~1s settle time
 - **Single connection**: Only one TCP connection to inverter at a time (Modbus is serial)
 - **Deployment**: Single binary, no external dependencies
+
+## Current Milestone: v1.6 CI/CD, Docker & Test Performance
+
+**Goal:** Production-ready CI/CD pipeline with Docker packaging, automated releases via conventional commits, and fast test suite.
+
+**Target features:**
+- Dockerfile with minimal image (scratch/distroless) receiving pre-built binary from CI
+- GitHub Actions PR workflow (build + test + lint, skip on docs-only changes)
+- GitHub Actions release workflow (auto-release on master merge, conventional commit semver, Docker push to ghcr.io)
+- Dependabot for Go dependency updates
+- Hub test suite optimization (currently 160s)
 
 ## Completed Milestone: v1.5 Full Batch Reading & Configuration Cleanup (shipped 2026-04-18)
 
@@ -158,7 +175,7 @@ Proved that batching contiguous register reads dramatically reduces section load
 
 This document evolves at phase transitions and milestone boundaries.
 
-Last updated: 2026-04-15 — v1.5 milestone started
+Last updated: 2026-04-19 — v1.6 milestone started
 
 **After each phase transition** (via `/gsd-transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
