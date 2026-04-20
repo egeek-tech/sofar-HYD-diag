@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.7.0...v1.7.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* add sleep before drainUntilComplete in TestOtherSectionsUnaffectedByReadOnce ([f829e3e](https://github.com/richie-tt/sofar-HYD-diag/commit/f829e3ec41040f91783c2ae5ef7206601a834e51))
+* flaky TestOtherSectionsUnaffectedByReadOnce ([25216fb](https://github.com/richie-tt/sofar-HYD-diag/commit/25216fbadf8be148d398c6bc169fd540ca2fb420))
+
 ## [1.7.0](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.6.0...v1.7.0) (2026-04-20)
 
 
