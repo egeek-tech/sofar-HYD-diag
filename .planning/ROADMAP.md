@@ -81,7 +81,7 @@
 - [x] **Phase 27: Hub Test Optimization** - Eliminate 160s hub test bottleneck before building CI around it (completed 2026-04-19)
 - [x] **Phase 28: Docker Packaging** - Minimal container image as foundation for Docker-based releases (completed 2026-04-19)
 - [x] **Phase 29: PR Workflow** - Automated quality gates on every pull request (completed 2026-04-19)
-- [ ] **Phase 30: Release Automation** - Conventional-commit semver releases with Docker push to ghcr.io
+- [x] **Phase 30: Release Automation** - Conventional-commit semver releases with Docker push to ghcr.io (completed 2026-04-19)
 - [ ] **Phase 31: Dependency Management** - Automated dependency update PRs via Dependabot
 
 ## Phase Details
@@ -138,7 +138,10 @@ Plans:
   2. GitHub Release is created with auto-generated changelog from conventional commit history
   3. Docker image is built and pushed to ghcr.io/<owner>/modbus_reader with semver + latest tags
   4. Compiled binary artifact is attached to the GitHub Release for direct download
-**Plans**: TBD
+**Plans:** 2/2 plans complete
+Plans:
+- [x] 30-01-PLAN.md -- release-please config/manifest files and Dockerfile multi-arch update
+- [x] 30-02-PLAN.md -- GitHub Actions release workflow with release-please, Docker push, and binary upload
 
 ### Phase 31: Dependency Management
 **Goal**: Go module and GitHub Actions dependencies stay current via automated update PRs
@@ -147,7 +150,9 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Dependabot opens weekly grouped PRs for Go module dependency updates
   2. Dependabot opens PRs for GitHub Actions version updates (setup-go, golangci-lint-action, etc.)
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 31-01-PLAN.md -- Create Dependabot configuration for gomod and github-actions ecosystems
 
 ## Progress
 
@@ -159,5 +164,5 @@ Phases execute in numeric order: 27 -> 28 -> 29 -> 30 -> 31
 | 27. Hub Test Optimization | v1.6 | 3/3 | Complete    | 2026-04-19 |
 | 28. Docker Packaging | v1.6 | 2/2 | Complete    | 2026-04-19 |
 | 29. PR Workflow | v1.6 | 1/1 | Complete    | 2026-04-19 |
-| 30. Release Automation | v1.6 | 0/0 | Not started | - |
-| 31. Dependency Management | v1.6 | 0/0 | Not started | - |
+| 30. Release Automation | v1.6 | 2/2 | Complete    | 2026-04-19 |
+| 31. Dependency Management | v1.6 | 0/1 | Not started | - |
