@@ -2952,6 +2952,7 @@ func TestOtherSectionsUnaffectedByReadOnce(t *testing.T) {
 
 		// Send read_cycle for grid -- should NOT be skipped
 		h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
+		time.Sleep(100 * time.Millisecond)
 		drainUntilComplete(t, send, 10*time.Second)
 
 		assert.Greater(mb.getBatchCallCount(), countAfterFirst, "grid should still re-read on read_cycle (not affected by readOnce)")
