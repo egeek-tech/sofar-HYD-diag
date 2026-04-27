@@ -1,0 +1,11 @@
+# Default owner — required reviewer for every PR
+* @richie-tt
+
+# Workflow & supply-chain config
+/.github/                @richie-tt
+/Dockerfile              @richie-tt
+/.dockerignore           @richie-tt
+/go.mod                  @richie-tt
+/go.sum                  @richie-tt
+/release-please-config.json     @richie-tt
+/.release-please-manifest.json  @richie-tt
