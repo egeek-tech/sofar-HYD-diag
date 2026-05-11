@@ -337,7 +337,7 @@ func (b *Broker) SetDelayRuntime(ctx context.Context, d time.Duration) error {
 
 // setState updates the broker's connection state and emits a state event.
 func (b *Broker) setState(s State, err error) {
-	b.state.Store(int32(s))
+	b.state.Store(int32(s)) //nolint:gosec // G115: State enum range is -1..3, fits in int32
 	select {
 	case b.stateCh <- StateEvent{State: s, Err: err}:
 	default:

@@ -59,7 +59,7 @@ func FormatValue(p Probe, data []byte) string {
 		}
 		raw := uint32(binary.BigEndian.Uint16(data[:2]))<<16 | uint32(binary.BigEndian.Uint16(data[2:4]))
 		if p.Signed {
-			sval := int32(raw)
+			sval := int32(raw) //nolint:gosec // G115: intentional signed reinterpretation of a Modbus U32 register
 			if p.Scale > 0 {
 				scaled := float64(sval) * p.Scale
 				if p.Unit != "" {
@@ -93,7 +93,7 @@ func FormatValue(p Probe, data []byte) string {
 	}
 
 	if p.Signed {
-		val := int16(binary.BigEndian.Uint16(data[:2]))
+		val := int16(binary.BigEndian.Uint16(data[:2])) //nolint:gosec // G115: intentional signed reinterpretation of a Modbus U16 register
 		if p.Scale > 0 {
 			scaled := float64(val) * p.Scale
 			if p.Unit != "" {

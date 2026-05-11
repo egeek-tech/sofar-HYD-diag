@@ -18,13 +18,14 @@ import (
 )
 
 // newTestRouter creates a chi router with web routes wired to a disconnected broker and hub.
-func newTestRouter() *chi.Mux {
+func newTestRouter(t *testing.T) *chi.Mux {
+	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
 	h := hub.NewHub(b, logger, 2)
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	go h.Run(ctx)
-	_ = cancel // cleanup happens when test ends (short-lived)
 
 	defaults := web.DefaultsConfig{
 		Host:       "10.5.99.29",
@@ -38,7 +39,7 @@ func newTestRouter() *chi.Mux {
 }
 
 func TestStatusEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 	w := httptest.NewRecorder()
 
@@ -65,7 +66,7 @@ func TestStatusEndpoint(t *testing.T) {
 }
 
 func TestDefaultsEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/defaults", nil)
 	w := httptest.NewRecorder()
 
@@ -99,7 +100,7 @@ func TestDefaultsEndpoint(t *testing.T) {
 }
 
 func TestHealthzEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 
@@ -111,7 +112,7 @@ func TestHealthzEndpoint(t *testing.T) {
 }
 
 func TestStatusInfoEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)
 	w := httptest.NewRecorder()
 
@@ -172,7 +173,7 @@ func TestWSUpgrade(t *testing.T) {
 	}
 
 	// Should receive initial connectionState message
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read initial message failed: %v", err)
@@ -183,7 +184,7 @@ func TestWSUpgrade(t *testing.T) {
 }
 
 func TestWSUpgradeWithoutHeaders(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	w := httptest.NewRecorder()
 
@@ -196,7 +197,7 @@ func TestWSUpgradeWithoutHeaders(t *testing.T) {
 }
 
 func TestStaticFileServing(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
@@ -213,7 +214,7 @@ func TestStaticFileServing(t *testing.T) {
 }
 
 func TestStaticCSS(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
 	w := httptest.NewRecorder()
 
@@ -230,7 +231,7 @@ func TestStaticCSS(t *testing.T) {
 }
 
 func TestStaticJS(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
 	w := httptest.NewRecorder()
 

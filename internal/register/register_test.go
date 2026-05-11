@@ -31,7 +31,7 @@ func TestFormatValueSignedNegative(t *testing.T) {
 	// Encode -83 as big-endian int16 (two's complement)
 	data := make([]byte, 2)
 	neg83 := int16(-83)
-	binary.BigEndian.PutUint16(data, uint16(neg83))
+	binary.BigEndian.PutUint16(data, uint16(neg83)) //nolint:gosec // G115: encoding negative test value via two's-complement bit pattern
 	got := FormatValue(p, data)
 	assert.Equal(t, "-0.83 kW", got)
 }
@@ -56,7 +56,7 @@ func TestFormatValueSignedNoUnit(t *testing.T) {
 	p := Probe{Name: "Raw signed", Signed: true}
 	data := make([]byte, 2)
 	neg42 := int16(-42)
-	binary.BigEndian.PutUint16(data, uint16(neg42))
+	binary.BigEndian.PutUint16(data, uint16(neg42)) //nolint:gosec // G115: encoding negative test value via two's-complement bit pattern
 	got := FormatValue(p, data)
 	assert.Equal(t, "-42", got)
 }

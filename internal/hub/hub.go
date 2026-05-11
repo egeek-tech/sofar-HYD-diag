@@ -187,7 +187,7 @@ func (h *Hub) Run(ctx context.Context) {
 		case client := <-h.unregister:
 			h.removeClient(client)
 		case cmd := <-h.commands:
-			h.handleCommand(cmd)
+			h.handleCommand(cmd) //nolint:contextcheck // triggerSectionRead intentionally uses h.ctx for read lifecycle; see comment on triggerSectionRead
 		case evt, ok := <-stateEvents:
 			if !ok {
 				h.logger.Info("broker state channel closed, shutting down hub")
@@ -219,7 +219,7 @@ func (h *Hub) handleCommand(cmd ClientCommand) {
 		// Run async so the hub event loop can still process state events and disconnect commands
 		// while the broker's single dial attempt (5s timeout) is in progress.
 		go func() {
-			if err := h.broker.Reconfigure(h.ctx, addr, byte(msg.SlaveID)); err != nil {
+			if err := h.broker.Reconfigure(h.ctx, addr, byte(msg.SlaveID)); err != nil { //nolint:gosec // G115: out-of-range slaveID will fail at Reconfigure connect time
 				h.logger.Error("connect failed", "addr", addr, "error", err)
 			}
 		}()
@@ -411,6 +411,10 @@ func (h *Hub) handleReadCycle(_ *Client, msg InboundMessage) {
 // The read runs in a goroutine; results are broadcast to section subscribers.
 // Cancels any previous in-progress read before starting (D-02).
 // BMS and battery sections have custom read cycles; all others use the standard path.
+//
+// Note: this intentionally derives the read context from h.ctx rather than
+// taking one from the caller, because section reads outlive the command that
+// triggered them. contextcheck flags the chain; see nolint at the call sites.
 func (h *Hub) triggerSectionRead(sectionName string) {
 	sec, ok := h.sections[sectionName]
 	if !ok {

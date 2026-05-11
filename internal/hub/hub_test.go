@@ -1758,7 +1758,7 @@ func TestPackDataMessageShape(t *testing.T) {
 		})
 
 		// Collect streaming messages
-		rawMsgs := collectRawMessages(t, send, 5*time.Second)
+		rawMsgs := collectRawMessages(t, send)
 
 		// Verify message flow: section_schema, register_values, section_complete
 		var schemaMsg *hub.SectionSchemaMessage
@@ -1773,7 +1773,7 @@ func TestPackDataMessageShape(t *testing.T) {
 			switch generic["type"] {
 			case "section_schema":
 				var sm hub.SectionSchemaMessage
-				json.Unmarshal(raw, &sm)
+				_ = json.Unmarshal(raw, &sm)
 				schemaMsg = &sm
 			case "register_value":
 				regValueCount++
@@ -1912,7 +1912,7 @@ func TestTopologyConstants(t *testing.T) {
 // setupBMSBatchSpanTest creates a mockBroker configured for BMS batch span reads.
 // Sets up span-level batch responses with known values for topology (0x900D = 0x020A)
 // and bitmap (0x9022 = towerBitmap) at their correct byte offsets.
-func setupBMSBatchSpanTest(t *testing.T, towerBitmap uint16) (*mockBroker, register.BatchPlan) {
+func setupBMSBatchSpanTest(t *testing.T, towerBitmap uint16) *mockBroker {
 	t.Helper()
 	mb := newMockBroker()
 	mb.registerResults = make(map[uint16]broker.Result)
@@ -1959,13 +1959,13 @@ func setupBMSBatchSpanTest(t *testing.T, towerBitmap uint16) (*mockBroker, regis
 		mb.registerResults[span.StartAddr] = broker.Result{Data: data}
 	}
 
-	return mb, plan
+	return mb
 }
 
 func TestBMSTowerBitmap(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		mb, _ := setupBMSBatchSpanTest(t, 0x0003) // both towers online
+		mb := setupBMSBatchSpanTest(t, 0x0003) // both towers online
 
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
 		defer cancel()
@@ -2016,7 +2016,7 @@ func TestBMSTowerBitmap(t *testing.T) {
 func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		mb, _ := setupBMSBatchSpanTest(t, 0x0001) // only tower 1 online
+		mb := setupBMSBatchSpanTest(t, 0x0001) // only tower 1 online
 
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
 		defer cancel()
@@ -2065,7 +2065,7 @@ func TestBMSTowerBitmapPartialOnline(t *testing.T) {
 func TestBMSBatchRead_SpanReads(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		mb, _ := setupBMSBatchSpanTest(t, 0x0003)
+		mb := setupBMSBatchSpanTest(t, 0x0003)
 
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
 		defer cancel()
@@ -2106,7 +2106,7 @@ func TestBMSBatchRead_SpanReads(t *testing.T) {
 func TestBMSBatchRead_CompositeValues(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		mb, _ := setupBMSBatchSpanTest(t, 0x0003)
+		mb := setupBMSBatchSpanTest(t, 0x0003)
 
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
 		defer cancel()
@@ -2135,7 +2135,7 @@ func TestBMSBatchRead_CompositeValues(t *testing.T) {
 		_ = swVerMsg
 
 		// Re-run with raw messages to access Name field
-		mb2, _ := setupBMSBatchSpanTest(t, 0x0003)
+		mb2 := setupBMSBatchSpanTest(t, 0x0003)
 		h2, c2, send2, cancel2 := setupConnectedHub(t, mb2, 0)
 		defer cancel2()
 
@@ -2182,7 +2182,7 @@ func TestBMSBatchRead_CompositeValues(t *testing.T) {
 func TestBMSBatchRead_ProtectionDecoding(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		mb, _ := setupBMSBatchSpanTest(t, 0x0003)
+		mb := setupBMSBatchSpanTest(t, 0x0003)
 
 		h, c, send, cancel := setupConnectedHub(t, mb, 0)
 		defer cancel()
@@ -2323,9 +2323,10 @@ func TestPackSchemaGroupOrder(t *testing.T) {
 }
 
 // collectRawMessages collects raw JSON messages from a client's send channel.
-// Returns after idleTimeout of silence (no new messages).
-func collectRawMessages(t *testing.T, send chan []byte, idleTimeout time.Duration) []json.RawMessage {
+// Returns after 5s of silence (no new messages).
+func collectRawMessages(t *testing.T, send chan []byte) []json.RawMessage {
 	t.Helper()
+	const idleTimeout = 5 * time.Second
 	var msgs []json.RawMessage
 	for {
 		select {
@@ -2417,7 +2418,7 @@ func TestPackStreamingMessages(t *testing.T) {
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
 
 		// Collect messages
-		rawMsgs := collectRawMessages(t, send, 5*time.Second)
+		rawMsgs := collectRawMessages(t, send)
 
 		require.NotEmpty(t, rawMsgs, "received no messages after select_pack")
 
@@ -2518,11 +2519,11 @@ func TestPackSpanDegradation(t *testing.T) {
 		// The 3rd failure (count=3) degrades the span but individual fallback in the
 		// Normal path does NOT call RecordSuccess, so the span stays degraded.
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
-		collectRawMessages(t, send, 5*time.Second)
+		collectRawMessages(t, send)
 		time.Sleep(100 * time.Millisecond)
 		for range 2 {
 			h.Command(client, hub.InboundMessage{Type: "read_cycle", Section: "bms"})
-			collectRawMessages(t, send, 5*time.Second)
+			collectRawMessages(t, send)
 			time.Sleep(100 * time.Millisecond)
 		}
 
@@ -2534,7 +2535,7 @@ func TestPackSpanDegradation(t *testing.T) {
 		// which calls RecordSuccess and recovers the span. Verify individual fallback
 		// still produces register_value messages for 0x9104.
 		h.Command(client, hub.InboundMessage{Type: "read_cycle", Section: "bms"})
-		msgs := collectRawMessages(t, send, 5*time.Second)
+		msgs := collectRawMessages(t, send)
 
 		count9104 := 0
 		for _, raw := range msgs {
@@ -2610,11 +2611,11 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 		// Accumulate 3 batch failures to degrade the 0x9104 span.
 		// select_pack resets tracker (count=0), then 2 read_cycles bring count to 3.
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
-		collectRawMessages(t, send, 5*time.Second)
+		collectRawMessages(t, send)
 		time.Sleep(100 * time.Millisecond)
 		for range 2 {
 			h.Command(client, hub.InboundMessage{Type: "read_cycle", Section: "bms"})
-			collectRawMessages(t, send, 5*time.Second)
+			collectRawMessages(t, send)
 			time.Sleep(100 * time.Millisecond)
 		}
 
@@ -2635,7 +2636,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 
 		// Select different pack (pack 2) -- should reset packSpanTracker (D-05)
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 2})
-		collectRawMessages(t, send, 5*time.Second)
+		collectRawMessages(t, send)
 
 		// Verify 0x9104 span is back to normal after pack switch reset
 		state = h.GetPackSpanState(0x9104)
@@ -2671,7 +2672,7 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 		snSpanData := make([]byte, 26*2)
 		copy(snSpanData, []byte("TEST1234567890123456"))
 		for i := 10; i < 26; i++ {
-			binary.BigEndian.PutUint16(snSpanData[i*2:], 3300+uint16(i-10))
+			binary.BigEndian.PutUint16(snSpanData[i*2:], 3300+uint16(i-10)) //nolint:gosec // G115: i ranges 10..25, i-10 fits in uint16
 		}
 		mb.registerResults[0x9047] = broker.Result{Data: snSpanData}
 		// 0x9104 span (8 regs)
@@ -2711,7 +2712,7 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
 
 		// Collect all messages until section_complete
-		rawMsgs := collectRawMessages(t, send, 5*time.Second)
+		rawMsgs := collectRawMessages(t, send)
 
 		// Parse messages
 		type regMsg struct {
@@ -3984,12 +3985,12 @@ func TestPackBatchRead_SpanDegradation(t *testing.T) {
 			Type:  hub.MsgTypeSelectPack,
 			Input: 1, Tower: 1, Pack: 1,
 		})
-		collectRawMessages(t, send, 5*time.Second)
+		collectRawMessages(t, send)
 		time.Sleep(100 * time.Millisecond)
 
 		for range 2 {
 			h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "bms"})
-			collectRawMessages(t, send, 5*time.Second)
+			collectRawMessages(t, send)
 			time.Sleep(100 * time.Millisecond)
 		}
 
