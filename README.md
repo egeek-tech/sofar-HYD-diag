@@ -1,9 +1,31 @@
 <!-- generated-by: gsd-doc-writer -->
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 # Sofar HYD Diagnostic Tool
 
 A desktop-focused web application for monitoring and diagnosing Sofar HYD hybrid inverters via TCP Modbus, presenting real-time register data through a structured browser interface.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+## TL;DR
+
+The application exposes the HTTP server, which communicates with Modbus TCP to RTU convert (I used [Waveshare ethernet to RTU](https://www.waveshare.com/product/iot-communication/wired-comm-converter/ethernet-to-uart-rs232-rs485/rs485-to-eth-b.htm)). Modbus needs to be connected to the SofarSolar Inverter to the communication port, and that is all.
+
+
+```
+┌─────────┐       ┌──────────────┐       ┌───────────────────┐       ┌──────────────┐
+│ Browser │◄─────►│  Sofar HYD   │◄─────►│  Modbus Gateway   │◄─────►│  Sofar HYD   │
+│  (UI)   │  WS   │  Diag Server │  TCP  │  (LSW-3 / WiFi    │  RS485│  Inverter    │
+│         │:8080  │  (Go binary) │ :4192 │   Stick / Logger) │       │              │
+└─────────┘       └──────────────┘       └───────────────────┘       └──────────────┘
+                   Modbus TCP/RTU          TCP ◄──► Serial            Modbus RTU
+                   register reads          protocol converter         slave device
+```
+
+## Screenshots
+
+![System View](assets/system.png)
+![BMS Overview](assets/bms.png)
+![Battery Pack Details](assets/baterry-pack3.png)
 
 ## Installation
 
@@ -106,6 +128,15 @@ Build the XLSX discovery tool separately:
 ```bash
 make discover
 ```
+
+## Documentation
+
+- [Getting Started](docs/GETTING-STARTED.md) -- Installation, first run, and common setup issues
+- [Architecture](docs/ARCHITECTURE.md) -- System design, component diagram, and data flow
+- [Configuration](docs/CONFIGURATION.md) -- CLI flags, runtime timing parameters, and constants
+- [API](docs/API.md) -- REST and WebSocket protocol reference
+- [Development](docs/DEVELOPMENT.md) -- Contributing and development workflow
+- [Testing](docs/TESTING.md) -- Test strategy and running tests
 
 ## Running tests
 

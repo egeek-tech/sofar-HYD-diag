@@ -56,6 +56,28 @@ Open `http://localhost:8080` in your browser. The web UI will load with the inve
 
 To stop the server, press `Ctrl+C`. It performs a graceful shutdown with a 5-second timeout.
 
+## User Interface
+
+The web interface provides real-time visibility into all inverter parameters through organized sections.
+
+### System View
+
+The System section displays inverter identity, firmware versions, running state, and timing information:
+
+![System View](../assets/system.png)
+
+### BMS Overview
+
+The BMS section shows battery topology with online/offline status for each pack across all towers:
+
+![BMS Overview](../assets/bms.png)
+
+### Battery Pack Details
+
+Drilling into a specific pack reveals detailed cell voltages, temperatures, and pack status:
+
+![Battery Pack Details](../assets/baterry-pack3.png)
+
 ## Common setup issues
 
 ### Connection refused or timeout when connecting to the inverter
