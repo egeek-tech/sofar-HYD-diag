@@ -7,17 +7,17 @@ linters:
     - asciicheck
     - durationcheck
     - copyloopvar
-    # - contextcheck  soon
+    - contextcheck
     - errcheck
     - errchkjson
     - errname
     - fatcontext
     # - gocritic
     # - goconst
-    # - gocyclo
-    # - godox
+    - gocyclo
+    - godox
     - gomoddirectives
-    # - gosec      soon
+    - gosec
     - govet
     - ineffassign
     - intrange
@@ -28,15 +28,11 @@ linters:
     - revive
     - sloglint
     - staticcheck
-    # - tagliatelle  to enable when other errors fixed
+    - tagliatelle
     - testifylint
     - thelper
     - unconvert
-    # - unparam — disabled 2026-05-11. 13 findings split between real code
-    #   smells (dead returns / dead params / a stub `buildLazyModal` whose
-    #   every branch returns nil) and test-helper future-flex parameters.
-    #   Needs case-by-case judgment, not a blanket fix. Revisit per
-    #   .planning/todos/pending/2026-05-11-unparam-revisit.md.
+    - unparam
     - unused
     - usestdlibvars
     - usetesting
