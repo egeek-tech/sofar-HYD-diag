@@ -1789,7 +1789,7 @@ func TestPackDataMessageShape(t *testing.T) {
 		// Verify schema
 		require.NotNil(t, schemaMsg, "no section_schema message received")
 		assert.Equal(t, "bms", schemaMsg.Section)
-		require.NotNil(t, schemaMsg.PackContext, "schema missing pack_context")
+		require.NotNil(t, schemaMsg.PackContext, "schema missing packContext")
 		assert.Equal(t, 1, schemaMsg.PackContext.Input)
 		assert.Equal(t, 1, schemaMsg.PackContext.Tower)
 		assert.Equal(t, 1, schemaMsg.PackContext.Pack)
@@ -2243,12 +2243,12 @@ func TestPackDataMessageItemMeta(t *testing.T) {
 		require.NoError(t, err)
 		s := string(data)
 		// Verify ItemMeta appears in JSON
-		assert.Contains(t, s, `"item_meta"`, "JSON missing item_meta")
-		assert.Contains(t, s, `"register_addr":`, "JSON missing register_addr in item_meta")
+		assert.Contains(t, s, `"itemMeta"`, "JSON missing itemMeta")
+		assert.Contains(t, s, `"registerAddr":`, "JSON missing registerAddr in itemMeta")
 		// Verify CellAddrs appears
-		assert.Contains(t, s, `"cell_addrs"`, "JSON missing cell_addrs")
+		assert.Contains(t, s, `"cellAddrs"`, "JSON missing cellAddrs")
 		// Verify 0x906C = 36972 decimal appears
-		assert.Contains(t, s, `36972`, "JSON missing register_addr value 36972 for SOC")
+		assert.Contains(t, s, `36972`, "JSON missing registerAddr value 36972 for SOC")
 	})
 }
 
@@ -2259,8 +2259,8 @@ func TestNewRegisterValueJSON(t *testing.T) {
 		data, err := json.Marshal(msg)
 		require.NoError(t, err)
 		s := string(data)
-		assert.Contains(t, s, `"register_addr":1093`, "JSON missing register_addr")
-		assert.Contains(t, s, `"raw_value":"534F464152"`, "JSON missing raw_value")
+		assert.Contains(t, s, `"registerAddr":1093`, "JSON missing registerAddr")
+		assert.Contains(t, s, `"rawValue":"534F464152"`, "JSON missing rawValue")
 	})
 }
 
@@ -2271,8 +2271,8 @@ func TestNewRegisterValueComposedJSON(t *testing.T) {
 		data, err := json.Marshal(msg)
 		require.NoError(t, err)
 		s := string(data)
-		assert.Contains(t, s, `"register_addr":1068`, "JSON should contain register_addr 0x042C (1068 decimal)")
-		assert.Contains(t, s, `"raw_value":"0x042C-0x0431 | 26, 4, 12, 16, 3, 42"`, "JSON should contain pipe-delimited raw_value")
+		assert.Contains(t, s, `"registerAddr":1068`, "JSON should contain registerAddr 0x042C (1068 decimal)")
+		assert.Contains(t, s, `"rawValue":"0x042C-0x0431 | 26, 4, 12, 16, 3, 42"`, "JSON should contain pipe-delimited rawValue")
 	})
 }
 
@@ -2292,17 +2292,17 @@ func TestPackSchemaContext(t *testing.T) {
 		// Verify 5 groups
 		require.Len(t, schema.Groups, 5)
 
-		// Verify JSON contains pack_context
+		// Verify JSON contains packContext
 		data, err := json.Marshal(schema)
 		require.NoError(t, err)
 		s := string(data)
-		assert.Contains(t, s, `"pack_context"`, "JSON missing pack_context")
+		assert.Contains(t, s, `"packContext"`, "JSON missing packContext")
 		assert.Contains(t, s, `"input":1`, "JSON missing input:1")
 		assert.Contains(t, s, `"tower":2`, "JSON missing tower:2")
 		assert.Contains(t, s, `"pack":3`, "JSON missing pack:3")
 
-		// Verify Cell Voltages group has cell_count > 0
-		assert.Contains(t, s, `"cell_count"`, "JSON missing cell_count")
+		// Verify Cell Voltages group has cellCount > 0
+		assert.Contains(t, s, `"cellCount"`, "JSON missing cellCount")
 	})
 }
 
@@ -2433,9 +2433,9 @@ func TestPackStreamingMessages(t *testing.T) {
 			switch msgType {
 			case "section_schema":
 				hasSchema = true
-				// Verify pack_context is present
-				_, ok := generic["pack_context"]
-				assert.True(t, ok, "section_schema missing pack_context")
+				// Verify packContext is present
+				_, ok := generic["packContext"]
+				assert.True(t, ok, "section_schema missing packContext")
 			case "register_value":
 				hasRegValue = true
 			case "section_complete":
@@ -2543,7 +2543,7 @@ func TestPackSpanDegradation(t *testing.T) {
 				continue
 			}
 			if generic["type"] == "register_value" {
-				if addr, ok := generic["register_addr"].(float64); ok && uint16(addr) == 0x9104 {
+				if addr, ok := generic["registerAddr"].(float64); ok && uint16(addr) == 0x9104 {
 					count9104++
 				}
 			}
@@ -2718,7 +2718,7 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 			Type         string  `json:"type"`
 			Group        string  `json:"group"`
 			Name         string  `json:"name"`
-			RegisterAddr float64 `json:"register_addr"`
+			RegisterAddr float64 `json:"registerAddr"`
 		}
 
 		var regValues []regMsg

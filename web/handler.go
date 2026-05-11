@@ -24,8 +24,8 @@ var staticFiles embed.FS
 // StatusResponse represents the JSON response for /api/status.
 type StatusResponse struct {
 	Uptime          string `json:"uptime"`
-	ConnectionState string `json:"connection_state"`
-	InverterAddr    string `json:"inverter_addr"`
+	ConnectionState string `json:"connectionState"`
+	InverterAddr    string `json:"inverterAddr"`
 }
 
 // StatusInfo represents the JSON response for /status (operational monitoring, D-04).
@@ -40,8 +40,8 @@ type StatusInfo struct {
 type DefaultsConfig struct {
 	Host       string `json:"host"`
 	Port       int    `json:"port"`
-	SlaveID    int    `json:"slave_id"`
-	PVChannels int    `json:"pv_channels"`
+	SlaveID    int    `json:"slaveId"`
+	PVChannels int    `json:"pvChannels"`
 }
 
 // upgrader configures WebSocket upgrade. CheckOrigin returns true because this is

@@ -54,10 +54,10 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 
 	if resp.ConnectionState != "dormant" {
-		t.Errorf("expected connection_state 'dormant', got %q", resp.ConnectionState)
+		t.Errorf("expected connectionState 'dormant', got %q", resp.ConnectionState)
 	}
 	if resp.InverterAddr != "127.0.0.1:1" {
-		t.Errorf("expected inverter_addr '127.0.0.1:1', got %q", resp.InverterAddr)
+		t.Errorf("expected inverterAddr '127.0.0.1:1', got %q", resp.InverterAddr)
 	}
 	if resp.Uptime == "" {
 		t.Error("expected non-empty uptime")
@@ -91,10 +91,10 @@ func TestDefaultsEndpoint(t *testing.T) {
 		t.Errorf("expected port 4192, got %d", resp.Port)
 	}
 	if resp.SlaveID != 1 {
-		t.Errorf("expected slave_id 1, got %d", resp.SlaveID)
+		t.Errorf("expected slaveId 1, got %d", resp.SlaveID)
 	}
 	if resp.PVChannels != 2 {
-		t.Errorf("expected pv_channels 2, got %d", resp.PVChannels)
+		t.Errorf("expected pvChannels 2, got %d", resp.PVChannels)
 	}
 }
 
@@ -171,14 +171,14 @@ func TestWSUpgrade(t *testing.T) {
 		t.Errorf("expected %d, got %d", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
 
-	// Should receive initial connection_state message
+	// Should receive initial connectionState message
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read initial message failed: %v", err)
 	}
-	if !strings.Contains(string(msg), "connection_state") {
-		t.Errorf("expected connection_state message, got: %s", msg)
+	if !strings.Contains(string(msg), "connectionState") {
+		t.Errorf("expected connectionState message, got: %s", msg)
 	}
 }
 
