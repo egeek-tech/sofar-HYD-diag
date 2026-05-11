@@ -136,9 +136,9 @@ class WSClient {
                 this.send({
                     type: 'configure',
                     section: 'timing',
-                    timing_config: {
-                        read_delay_ms: storedTiming.readDelay || 500,
-                        pack_settle_ms: storedTiming.packSettle || 1000
+                    timingConfig: {
+                        readDelayMs: storedTiming.readDelay || 500,
+                        packSettleMs: storedTiming.packSettle || 1000
                     }
                 });
             }
@@ -203,7 +203,7 @@ const App = {
 document.addEventListener('DOMContentLoaded', function () {
     // Create WSClient and register handlers
     App.ws = new WSClient();
-    App.ws.on('connection_state', handleConnectionState);
+    App.ws.on('connectionState', handleConnectionState);
     App.ws.on('section_data', handleSectionData);
     App.ws.on('section_error', handleSectionError);
     App.ws.on('pack_data', handlePackData);
@@ -248,7 +248,7 @@ function initConnectionForm() {
         .then(function (data) {
             if (!$('#input-host').value) $('#input-host').value = data.host || '';
             if (!$('#input-port').value) $('#input-port').value = data.port || '';
-            if (!$('#input-slave').value) $('#input-slave').value = data.slave_id || '';
+            if (!$('#input-slave').value) $('#input-slave').value = data.slaveId || '';
         })
         .catch(function () {
             // Hardcoded fallbacks
@@ -288,7 +288,7 @@ function setupFormHandler() {
             type: 'connect',
             host: host,
             port: port,
-            slave_id: slaveId
+            slaveId: slaveId
         });
     });
 }
@@ -821,12 +821,12 @@ function renderGroupCard(group) {
         valEl.className = 'data-row-h__value';
         valEl.textContent = items[keys[i]];
 
-        // Phase 10: Set tooltip data attributes from item_meta (D-15)
-        var meta = group.item_meta && group.item_meta[keys[i]];
+        // Phase 10: Set tooltip data attributes from itemMeta (D-15)
+        var meta = group.itemMeta && group.itemMeta[keys[i]];
         if (meta) {
-            var addrHex = '0x' + meta.register_addr.toString(16).toUpperCase().padStart(4, '0');
+            var addrHex = '0x' + meta.registerAddr.toString(16).toUpperCase().padStart(4, '0');
             valEl.setAttribute('data-register-addr', addrHex);
-            if (meta.raw_value) valEl.setAttribute('data-register-raw', meta.raw_value);
+            if (meta.rawValue) valEl.setAttribute('data-register-raw', meta.rawValue);
         }
 
         row.appendChild(keyEl);
@@ -1000,9 +1000,9 @@ function initPVDropdown() {
         fetch('/api/defaults')
             .then(function(res) { return res.json(); })
             .then(function(data) {
-                if (data.pv_channels && !loadPVChannels()) {
-                    select.value = String(data.pv_channels);
-                    PV_DEFAULT_CHANNELS = data.pv_channels;
+                if (data.pvChannels && !loadPVChannels()) {
+                    select.value = String(data.pvChannels);
+                    PV_DEFAULT_CHANNELS = data.pvChannels;
                 }
             })
             .catch(function() {});
@@ -1191,19 +1191,19 @@ function hideTooltip() {
 function handleSectionSchema(msg) {
     if (msg.section !== App.activeSection) return;
 
-    // Pack schema detection: pack_context present means pack drill-down
-    if (msg.pack_context) {
+    // Pack schema detection: packContext present means pack drill-down
+    if (msg.packContext) {
         packViewState.mode = 'pack_detail';
-        packViewState.selectedInput = msg.pack_context.input;
-        packViewState.selectedTower = msg.pack_context.tower;
-        packViewState.selectedPack = msg.pack_context.pack;
+        packViewState.selectedInput = msg.packContext.input;
+        packViewState.selectedTower = msg.packContext.tower;
+        packViewState.selectedPack = msg.packContext.pack;
         showPackSelectors();
         syncPackSelectorValues();
         renderPackSkeleton(msg);
         return;
     }
 
-    // BMS overview guard: if in pack_detail mode and no pack_context, ignore overview schema
+    // BMS overview guard: if in pack_detail mode and no packContext, ignore overview schema
     if (msg.section === 'bms' && packViewState.mode === 'pack_detail') return;
 
     var body = $('#content-body');
@@ -1334,7 +1334,7 @@ function renderPackSkeleton(msg) {
     body.textContent = '';
 
     // Breadcrumb
-    body.appendChild(renderBreadcrumb(msg.pack_context.input, msg.pack_context.tower, msg.pack_context.pack));
+    body.appendChild(renderBreadcrumb(msg.packContext.input, msg.packContext.tower, msg.packContext.pack));
 
     var groups = msg.groups || [];
     for (var i = 0; i < groups.length; i++) {
@@ -1403,7 +1403,7 @@ function renderCellGridSkeleton(group) {
     container.appendChild(summary);
 
     // Cell grid with 16 cells
-    var cellCount = group.cell_count || 16;
+    var cellCount = group.cellCount || 16;
     var grid = document.createElement('div');
     grid.className = 'cell-grid';
     grid.setAttribute('data-pack-grid', 'cells');
@@ -1571,7 +1571,7 @@ function renderTempGridSkeleton(group) {
 
 function handlePackRegisterValue(msg) {
     // D-04: Suppress PackInfoProbes errors (0x9104-0x9126) -- hide row, console.warn
-    if (msg.error && msg.register_addr >= 0x9104 && msg.register_addr <= 0x9126) {
+    if (msg.error && msg.registerAddr >= 0x9104 && msg.registerAddr <= 0x9126) {
         var key = msg.group + '::' + msg.name;
         var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
         if (el) {
@@ -1579,7 +1579,7 @@ function handlePackRegisterValue(msg) {
             if (row) row.style.display = 'none';
         }
         console.warn('[PackInfo] Register unavailable:', msg.name,
-            '(0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0') + ')',
+            '(0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0') + ')',
             msg.error);
         return;
     }
@@ -1603,7 +1603,7 @@ function updateStandardPackValue(msg) {
     var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
     if (!el) return;
 
-    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var addrHex = '0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0');
     var now = new Date();
     var timeStr = now.toTimeString().slice(0, 8);
 
@@ -1618,13 +1618,13 @@ function updateStandardPackValue(msg) {
     }
 
     el.setAttribute('data-register-addr', addrHex);
-    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    if (msg.rawValue) el.setAttribute('data-register-raw', msg.rawValue);
     el.setAttribute('data-register-time', timeStr);
 
     updateCache(key, {
         value: msg.value || '',
         registerAddr: addrHex,
-        rawValue: msg.raw_value || '',
+        rawValue: msg.rawValue || '',
         timestamp: timeStr,
         error: !!msg.error
     });
@@ -1635,7 +1635,7 @@ function updateCellValue(msg) {
     var el = document.querySelector('[data-register="' + CSS.escape(key) + '"]');
     if (!el) return;
 
-    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var addrHex = '0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0');
     var now = new Date();
     var timeStr = now.toTimeString().slice(0, 8);
 
@@ -1649,9 +1649,9 @@ function updateCellValue(msg) {
         el.classList.add('data-row-h__value--fresh');
 
         // Track cell value for progressive summary (D-08, D-09)
-        // Parse millivolt from raw_value (integer string)
-        if (msg.name.indexOf('Cell ') === 0 && msg.raw_value) {
-            var cellMv = parseInt(msg.raw_value, 10);
+        // Parse millivolt from rawValue (integer string)
+        if (msg.name.indexOf('Cell ') === 0 && msg.rawValue) {
+            var cellMv = parseInt(msg.rawValue, 10);
             if (!isNaN(cellMv)) {
                 packCellState.values[msg.name] = cellMv;
                 packCellState.count = Object.keys(packCellState.values).length;
@@ -1666,13 +1666,13 @@ function updateCellValue(msg) {
     }
 
     el.setAttribute('data-register-addr', addrHex);
-    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    if (msg.rawValue) el.setAttribute('data-register-raw', msg.rawValue);
     el.setAttribute('data-register-time', timeStr);
 
     updateCache(key, {
         value: msg.value || '',
         registerAddr: addrHex,
-        rawValue: msg.raw_value || '',
+        rawValue: msg.rawValue || '',
         timestamp: timeStr,
         error: !!msg.error
     });
@@ -1752,7 +1752,7 @@ function updateBalanceValue(msg) {
     var el = document.querySelector('[data-pack-balance="true"]');
     if (!el) return;
 
-    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var addrHex = '0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0');
     var now = new Date();
     var timeStr = now.toTimeString().slice(0, 8);
 
@@ -1761,8 +1761,8 @@ function updateBalanceValue(msg) {
         el.classList.remove('data-row-h__value--pending');
         el.classList.add('data-row-h__value--fresh');
     } else {
-        // Parse bitmap from raw_value
-        var bitmap = parseInt(msg.raw_value || '0', 10);
+        // Parse bitmap from rawValue
+        var bitmap = parseInt(msg.rawValue || '0', 10);
 
         // Clear existing content
         while (el.firstChild) el.removeChild(el.firstChild);
@@ -1796,14 +1796,14 @@ function updateBalanceValue(msg) {
     }
 
     el.setAttribute('data-register-addr', addrHex);
-    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    if (msg.rawValue) el.setAttribute('data-register-raw', msg.rawValue);
     el.setAttribute('data-register-time', timeStr);
 
     var key = 'Balance State::Balance State';
     updateCache(key, {
         value: msg.value || '',
         registerAddr: addrHex,
-        rawValue: msg.raw_value || '',
+        rawValue: msg.rawValue || '',
         timestamp: timeStr,
         error: !!msg.error
     });
@@ -1811,8 +1811,8 @@ function updateBalanceValue(msg) {
 
 function updateTemperatureValue(msg) {
     // D-01: Hide 0.0C temperatures entirely (disconnected sensors)
-    if (!msg.error && msg.raw_value) {
-        var rawVal = parseInt(msg.raw_value, 10);
+    if (!msg.error && msg.rawValue) {
+        var rawVal = parseInt(msg.rawValue, 10);
         if (rawVal === 0) {
             // Hide the entire temperature cell
             var key = msg.group + '::' + msg.name;
@@ -1823,13 +1823,13 @@ function updateTemperatureValue(msg) {
             }
             // Do NOT track in packTempState, do NOT update summary, do NOT call updateStandardPackValue
             // Cache the hidden state so it persists across section switches
-            var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+            var addrHex = '0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0');
             var now = new Date();
             var timeStr = now.toTimeString().slice(0, 8);
             updateCache(key, {
                 value: msg.value || '',
                 registerAddr: addrHex,
-                rawValue: msg.raw_value || '',
+                rawValue: msg.rawValue || '',
                 timestamp: timeStr,
                 error: false,
                 hidden: true
@@ -1839,7 +1839,7 @@ function updateTemperatureValue(msg) {
     }
 
     // Non-zero temperature: ensure cell is visible (sensor may come back online)
-    if (!msg.error && msg.raw_value) {
+    if (!msg.error && msg.rawValue) {
         var key2 = msg.group + '::' + msg.name;
         var el2 = document.querySelector('[data-register="' + CSS.escape(key2) + '"]');
         if (el2) {
@@ -1852,8 +1852,8 @@ function updateTemperatureValue(msg) {
     updateStandardPackValue(msg);
 
     // Track temperature for summary and apply color coding
-    if (!msg.error && msg.raw_value) {
-        var rawVal = parseInt(msg.raw_value, 10);
+    if (!msg.error && msg.rawValue) {
+        var rawVal = parseInt(msg.rawValue, 10);
         if (!isNaN(rawVal)) {
             packTempState.values[msg.name] = rawVal;
             packTempState.count = Object.keys(packTempState.values).length;
@@ -1925,12 +1925,12 @@ function updatePackStatusValue(msg) {
     var card = document.querySelector('[data-pack-status="true"]');
     if (!card) return;
 
-    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var addrHex = '0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0');
     var now = new Date();
     var timeStr = now.toTimeString().slice(0, 8);
 
-    if (!msg.error && msg.raw_value) {
-        var rawInt = parseInt(msg.raw_value, 10);
+    if (!msg.error && msg.rawValue) {
+        var rawInt = parseInt(msg.rawValue, 10);
         packStatusState.registers[msg.name] = rawInt;
         packStatusState.count = Object.keys(packStatusState.registers).length;
 
@@ -1946,7 +1946,7 @@ function updatePackStatusValue(msg) {
     updateCache(key, {
         value: msg.value || '',
         registerAddr: addrHex,
-        rawValue: msg.raw_value || '',
+        rawValue: msg.rawValue || '',
         timestamp: timeStr,
         error: !!msg.error
     });
@@ -2102,13 +2102,13 @@ function handleRegisterValue(msg) {
         var row = el.closest('.data-row-h');
         if (row) row.style.display = 'none';
         console.warn('[Config] Register unavailable:', msg.name,
-            '(0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0') + ')',
+            '(0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0') + ')',
             msg.error);
         return;
     }
 
     // Format register address as hex for tooltip (D-16)
-    var addrHex = '0x' + msg.register_addr.toString(16).toUpperCase().padStart(4, '0');
+    var addrHex = '0x' + msg.registerAddr.toString(16).toUpperCase().padStart(4, '0');
 
     // Format timestamp (D-16: HH:MM:SS)
     var now = new Date();
@@ -2129,14 +2129,14 @@ function handleRegisterValue(msg) {
 
     // Phase 10: Set tooltip data attributes (D-16, D-19)
     el.setAttribute('data-register-addr', addrHex);
-    if (msg.raw_value) el.setAttribute('data-register-raw', msg.raw_value);
+    if (msg.rawValue) el.setAttribute('data-register-raw', msg.rawValue);
     el.setAttribute('data-register-time', timeStr);
 
     // Phase 10: Update section cache (DISP-02)
     updateCache(key, {
         value: msg.value || '',
         registerAddr: addrHex,
-        rawValue: msg.raw_value || '',
+        rawValue: msg.rawValue || '',
         timestamp: timeStr,
         error: !!msg.error
     });
@@ -2258,9 +2258,9 @@ function initTimingControls() {
         App.ws.send({
             type: 'configure',
             section: 'timing',
-            timing_config: {
-                read_delay_ms: readDelay,
-                pack_settle_ms: packSettle
+            timingConfig: {
+                readDelayMs: readDelay,
+                packSettleMs: packSettle
             }
         });
     }
@@ -2324,10 +2324,10 @@ function renderBitmapGroup(group) {
     if (!bm) { card.appendChild(body); return card; }
 
     // Detected topology label (D-14)
-    if (bm.detected_topology) {
+    if (bm.detectedTopology) {
         var detLabel = document.createElement('div');
         detLabel.className = 'bitmap-detected';
-        detLabel.textContent = 'Detected: ' + bm.detected_topology;
+        detLabel.textContent = 'Detected: ' + bm.detectedTopology;
 
         // Mismatch warning
         if (bm.mismatch) {
@@ -2351,10 +2351,10 @@ function renderBitmapGroup(group) {
 
         var grid = document.createElement('div');
         grid.className = 'bitmap-grid';
-        grid.style.gridTemplateColumns = 'repeat(' + bm.packs_per_tower + ', 28px)';
+        grid.style.gridTemplateColumns = 'repeat(' + bm.packsPerTower + ', 28px)';
 
         var online = bm.online[t] || 0;
-        for (var p = 0; p < bm.packs_per_tower; p++) {
+        for (var p = 0; p < bm.packsPerTower; p++) {
             var cell = document.createElement('div');
             var isOnline = (online >> p) & 1;
             cell.className = 'bitmap-cell ' + (isOnline ? 'bitmap-cell--online' : 'bitmap-cell--offline');
@@ -2840,7 +2840,7 @@ function renderPackDetail(msg) {
             body.appendChild(renderPackStatusCard(group));
         } else if (group.type === 'balance') {
             body.appendChild(renderBalanceState(group));
-        } else if (group.temp_raw && group.temp_raw.length > 0) {
+        } else if (group.tempRaw && group.tempRaw.length > 0) {
             body.appendChild(renderPackTemperatures(group));
         } else {
             body.appendChild(renderGroupCard(group));
@@ -2884,10 +2884,10 @@ function renderCellVoltageGrid(group) {
     for (var i = 0; i < cells.length; i++) { sum += cells[i]; }
     var avg = sum / cells.length;
 
-    var minVal = group.min_cell || cells[0];
-    var maxVal = group.max_cell || cells[0];
-    var minIdx = group.min_cell_index || 1;
-    var maxIdx = group.max_cell_index || 1;
+    var minVal = group.minCell || cells[0];
+    var maxVal = group.maxCell || cells[0];
+    var minIdx = group.minCellIndex || 1;
+    var maxIdx = group.maxCellIndex || 1;
     var spread = maxVal - minVal;
 
     // Summary row (D-10)
@@ -2940,8 +2940,8 @@ function renderCellVoltageGrid(group) {
         voltSpan.textContent = (cells[c] / 1000).toFixed(3) + 'V';
 
         // Phase 10: Cell voltage tooltip data attributes (D-15)
-        if (group.cell_addrs && group.cell_addrs[c]) {
-            var cellAddrHex = '0x' + group.cell_addrs[c].toString(16).toUpperCase().padStart(4, '0');
+        if (group.cellAddrs && group.cellAddrs[c]) {
+            var cellAddrHex = '0x' + group.cellAddrs[c].toString(16).toUpperCase().padStart(4, '0');
             voltSpan.setAttribute('data-register-addr', cellAddrHex);
             voltSpan.setAttribute('data-register-raw', String(cells[c]));
         }
@@ -2961,8 +2961,8 @@ function renderPackTemperatures(group) {
     // Render standard group card first
     var card = renderGroupCard(group);
 
-    // Apply temperature color coding to value elements based on temp_raw
-    var tempRaw = group.temp_raw || [];
+    // Apply temperature color coding to value elements based on tempRaw
+    var tempRaw = group.tempRaw || [];
     var valueEls = card.querySelectorAll('.data-row-h__value');
 
     for (var i = 0; i < Math.min(tempRaw.length, valueEls.length); i++) {
@@ -3066,7 +3066,7 @@ function renderBalanceState(group) {
     sep.className = 'group-card__separator';
     container.appendChild(sep);
 
-    var bitmap = group.balance_bitmap || 0;
+    var bitmap = group.balanceBitmap || 0;
     if (bitmap === 0) {
         var balanced = document.createElement('div');
         balanced.className = 'balance-status balance-status--ok';

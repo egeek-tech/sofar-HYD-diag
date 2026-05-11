@@ -109,7 +109,7 @@ func main() {
 	// Create and start Modbus broker (D-13, D-14)
 	inverterAddr := fmt.Sprintf("%s:%d", *inverterHost, *inverterPort)
 	useRTU := *modbusMode == "rtu"
-	b := broker.New(logger.With("component", "broker"), inverterAddr, byte(*slaveID), useRTU)
+	b := broker.New(logger.With("component", "broker"), inverterAddr, byte(*slaveID), useRTU) //nolint:gosec // G115: slaveID validated to 1-247 above
 	go b.Run(ctx)
 
 	// Create WebSocket hub (D-03, D-29)
@@ -137,10 +137,11 @@ func main() {
 	}
 	web.SetupRoutes(r, b, wsHub, defaults, startTime, version, logger)
 
-	// Create HTTP server
+	// Create HTTP server. ReadHeaderTimeout mitigates Slowloris attacks (gosec G112).
 	srv := &http.Server{
-		Addr:    *listenAddr,
-		Handler: r,
+		Addr:              *listenAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// Start HTTP server in goroutine

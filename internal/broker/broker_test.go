@@ -36,7 +36,7 @@ func mockModbusServer(t *testing.T, listener net.Listener, numRequests int, regi
 	defer conn.Close()
 
 	for i := range numRequests {
-		conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 
 		// Read Modbus TCP request: 12 bytes (MBAP header 7 + PDU 5)
 		req := make([]byte, 12)
@@ -55,7 +55,7 @@ func mockModbusServer(t *testing.T, listener net.Listener, numRequests int, regi
 		case 0x03:
 			// Build read response
 			resp := buildReadResponse(txID, slaveID, registerValue)
-			conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+			_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 			if _, err := conn.Write(resp); err != nil {
 				t.Logf("mockModbusServer: write response %d error: %v", i, err)
 				return
@@ -63,7 +63,7 @@ func mockModbusServer(t *testing.T, listener net.Listener, numRequests int, regi
 		case 0x10:
 			// Build write response (echo first 12 bytes of PDU)
 			resp := buildWriteResponse(txID, slaveID, req[8:10], req[10:12])
-			conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+			_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 			if _, err := conn.Write(resp); err != nil {
 				t.Logf("mockModbusServer: write response %d error: %v", i, err)
 				return
@@ -353,7 +353,7 @@ func TestBrokerReconnect(t *testing.T) {
 	assert.Equal(t, uint16(0xAAAA), binary.BigEndian.Uint16(data), "first read value")
 
 	// Close first listener so next operation triggers reconnect
-	listener1.Close()
+	_ = listener1.Close()
 
 	// Start a new listener on the same address for the reconnect
 	listener2, err := net.Listen("tcp", addr)
@@ -573,7 +573,7 @@ func TestBrokerRetryThreeAttempts(t *testing.T) {
 			}
 			atomic.AddInt32(&attemptCount, 1)
 			// Close immediately to cause read failure
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 
@@ -614,7 +614,7 @@ func TestBrokerNoRetryIllegalAddress(t *testing.T) {
 
 		// Handle read requests -- return exception 0x02 every time
 		for {
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			req := make([]byte, 12)
 			_, err := readAll(conn, req)
 			if err != nil {
@@ -625,7 +625,7 @@ func TestBrokerNoRetryIllegalAddress(t *testing.T) {
 			slaveID := req[6]
 
 			resp := buildExceptionResponse(txID, slaveID, 0x83, 0x02)
-			conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+			_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 			if _, err := conn.Write(resp); err != nil {
 				return
 			}
@@ -729,11 +729,11 @@ func TestBrokerRetrySuccess(t *testing.T) {
 
 			// Handle requests on this connection
 			for {
-				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 				req := make([]byte, 12)
 				_, err := readAll(conn, req)
 				if err != nil {
-					conn.Close()
+					_ = conn.Close()
 					break
 				}
 
@@ -743,13 +743,13 @@ func TestBrokerRetrySuccess(t *testing.T) {
 
 				if n == 1 {
 					// First read: close connection (simulates failure)
-					conn.Close()
+					_ = conn.Close()
 					break
 				}
 				// Subsequent reads: success
 				resp := buildReadResponse(txID, slaveID, 0xBEEF)
-				conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-				conn.Write(resp)
+				_ = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+				_, _ = conn.Write(resp)
 			}
 		}
 	}()

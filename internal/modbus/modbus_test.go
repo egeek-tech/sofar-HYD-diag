@@ -30,15 +30,15 @@ func TestReadFull(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 
 	want := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 
 	// Server writes in two chunks to simulate partial reads
 	go func() {
-		server.Write(want[:3]) // first 3 bytes
-		server.Write(want[3:]) // remaining 5 bytes
+		_, _ = server.Write(want[:3]) // first 3 bytes
+		_, _ = server.Write(want[3:]) // remaining 5 bytes
 	}()
 
 	buf := make([]byte, len(want))
@@ -56,13 +56,13 @@ func TestReadHoldingRegistersTCP(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 
 	logger := discardLogger()
 
 	// Capture the next txID that will be used
-	nextTxID := uint16(transactionID.Load() + 1)
+	nextTxID := uint16(transactionID.Load() + 1) //nolint:gosec // G115: matches production 16-bit txID generation
 
 	go func() {
 		// Read the 12-byte request
@@ -93,7 +93,7 @@ func TestReadHoldingRegistersTCP(t *testing.T) {
 		resp[9] = 0x12                              // data high byte
 		resp[10] = 0x34                             // data low byte
 
-		server.Write(resp)
+		_, _ = server.Write(resp)
 	}()
 
 	data, err := ReadHoldingRegistersTCP(client, logger, 0x01, 0x0404, 1)
@@ -110,13 +110,13 @@ func TestReadHoldingRegistersTCP_Exception(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 
 	logger := discardLogger()
 
 	// Capture the next txID
-	nextTxID := uint16(transactionID.Load() + 1)
+	nextTxID := uint16(transactionID.Load() + 1) //nolint:gosec // G115: matches production 16-bit txID generation
 
 	go func() {
 		// Read the 12-byte request
@@ -135,7 +135,7 @@ func TestReadHoldingRegistersTCP_Exception(t *testing.T) {
 		resp[7] = 0x83                                  // function 0x03 | 0x80
 		resp[8] = 0x02                                  // error code: illegal data address
 
-		server.Write(resp)
+		_, _ = server.Write(resp)
 	}()
 
 	_, err := ReadHoldingRegistersTCP(client, logger, 0x01, 0x0404, 1)
@@ -151,13 +151,13 @@ func TestWriteMultipleRegistersTCP(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 
 	logger := discardLogger()
 
 	// Capture the next txID
-	nextTxID := uint16(transactionID.Load() + 1)
+	nextTxID := uint16(transactionID.Load() + 1) //nolint:gosec // G115: matches production 16-bit txID generation
 
 	go func() {
 		// Read the 15-byte request (MBAP 7 + PDU 8)
@@ -189,7 +189,7 @@ func TestWriteMultipleRegistersTCP(t *testing.T) {
 		binary.BigEndian.PutUint16(resp[8:10], 0x9020)
 		binary.BigEndian.PutUint16(resp[10:12], 1)
 
-		server.Write(resp)
+		_, _ = server.Write(resp)
 	}()
 
 	err := WriteMultipleRegistersTCP(client, logger, 0x01, 0x9020, 0x0100)
@@ -204,8 +204,8 @@ func TestReadHoldingRegistersRTU(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 
 	logger := discardLogger()
 
@@ -238,7 +238,7 @@ func TestReadHoldingRegistersRTU(t *testing.T) {
 		crc := CRC16(respData)
 		resp := append(respData, byte(crc&0xFF), byte(crc>>8))
 
-		server.Write(resp)
+		_, _ = server.Write(resp)
 	}()
 
 	data, err := ReadHoldingRegistersRTU(client, logger, 0x01, 0x0404, 1)
@@ -255,8 +255,8 @@ func TestReadHoldingRegistersRTU_CRCMismatch(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	client.SetDeadline(time.Now().Add(5 * time.Second))
-	server.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = server.SetDeadline(time.Now().Add(5 * time.Second))
 
 	logger := discardLogger()
 
@@ -279,7 +279,7 @@ func TestReadHoldingRegistersRTU_CRCMismatch(t *testing.T) {
 		// Append bad CRC (0xDEAD instead of correct CRC)
 		resp := append(respData, 0xAD, 0xDE)
 
-		server.Write(resp)
+		_, _ = server.Write(resp)
 	}()
 
 	_, err := ReadHoldingRegistersRTU(client, logger, 0x01, 0x0404, 1)

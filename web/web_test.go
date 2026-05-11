@@ -18,13 +18,14 @@ import (
 )
 
 // newTestRouter creates a chi router with web routes wired to a disconnected broker and hub.
-func newTestRouter() *chi.Mux {
+func newTestRouter(t *testing.T) *chi.Mux {
+	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
 	h := hub.NewHub(b, logger, 2)
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	go h.Run(ctx)
-	_ = cancel // cleanup happens when test ends (short-lived)
 
 	defaults := web.DefaultsConfig{
 		Host:       "10.5.99.29",
@@ -38,7 +39,7 @@ func newTestRouter() *chi.Mux {
 }
 
 func TestStatusEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 	w := httptest.NewRecorder()
 
@@ -54,10 +55,10 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 
 	if resp.ConnectionState != "dormant" {
-		t.Errorf("expected connection_state 'dormant', got %q", resp.ConnectionState)
+		t.Errorf("expected connectionState 'dormant', got %q", resp.ConnectionState)
 	}
 	if resp.InverterAddr != "127.0.0.1:1" {
-		t.Errorf("expected inverter_addr '127.0.0.1:1', got %q", resp.InverterAddr)
+		t.Errorf("expected inverterAddr '127.0.0.1:1', got %q", resp.InverterAddr)
 	}
 	if resp.Uptime == "" {
 		t.Error("expected non-empty uptime")
@@ -65,7 +66,7 @@ func TestStatusEndpoint(t *testing.T) {
 }
 
 func TestDefaultsEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/defaults", nil)
 	w := httptest.NewRecorder()
 
@@ -91,15 +92,15 @@ func TestDefaultsEndpoint(t *testing.T) {
 		t.Errorf("expected port 4192, got %d", resp.Port)
 	}
 	if resp.SlaveID != 1 {
-		t.Errorf("expected slave_id 1, got %d", resp.SlaveID)
+		t.Errorf("expected slaveId 1, got %d", resp.SlaveID)
 	}
 	if resp.PVChannels != 2 {
-		t.Errorf("expected pv_channels 2, got %d", resp.PVChannels)
+		t.Errorf("expected pvChannels 2, got %d", resp.PVChannels)
 	}
 }
 
 func TestHealthzEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 
@@ -111,7 +112,7 @@ func TestHealthzEndpoint(t *testing.T) {
 }
 
 func TestStatusInfoEndpoint(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)
 	w := httptest.NewRecorder()
 
@@ -171,19 +172,19 @@ func TestWSUpgrade(t *testing.T) {
 		t.Errorf("expected %d, got %d", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
 
-	// Should receive initial connection_state message
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	// Should receive initial connectionState message
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read initial message failed: %v", err)
 	}
-	if !strings.Contains(string(msg), "connection_state") {
-		t.Errorf("expected connection_state message, got: %s", msg)
+	if !strings.Contains(string(msg), "connectionState") {
+		t.Errorf("expected connectionState message, got: %s", msg)
 	}
 }
 
 func TestWSUpgradeWithoutHeaders(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	w := httptest.NewRecorder()
 
@@ -196,7 +197,7 @@ func TestWSUpgradeWithoutHeaders(t *testing.T) {
 }
 
 func TestStaticFileServing(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
@@ -213,7 +214,7 @@ func TestStaticFileServing(t *testing.T) {
 }
 
 func TestStaticCSS(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
 	w := httptest.NewRecorder()
 
@@ -230,7 +231,7 @@ func TestStaticCSS(t *testing.T) {
 }
 
 func TestStaticJS(t *testing.T) {
-	r := newTestRouter()
+	r := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
 	w := httptest.NewRecorder()
 

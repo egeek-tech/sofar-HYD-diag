@@ -294,7 +294,7 @@ func (h *Hub) streamBatteryBatchRead(readCtx context.Context, sec *Section) {
 					newGroups = append(newGroups, infoGroups...)
 					retrigger = true
 					select {
-					case h.funcs <- func() {
+					case h.funcs <- func() { //nolint:contextcheck // triggerSectionRead derives ctx from h.ctx, not readCtx, on purpose
 						sec.Groups = newGroups
 						sec.Probes = flattenProbeGroups(newGroups)
 						sec.BatchPlan = register.AnalyzeBatchPlan(newGroups)

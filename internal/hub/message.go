@@ -15,7 +15,7 @@ const (
 	MsgTypeReadCycle   = "read_cycle"
 	MsgTypeSectionData = "section_data"
 	MsgTypeSectionErr  = "section_error"
-	MsgTypeState       = "connection_state"
+	MsgTypeState       = "connectionState"
 	MsgTypeSelectPack  = "select_pack"
 	MsgTypePackData    = "pack_data"
 	MsgTypePackError   = "pack_error"
@@ -38,9 +38,9 @@ type GroupData struct {
 // BitmapData carries BMS online/offline bitmap state for the topology widget (D-08).
 type BitmapData struct {
 	Towers           int      `json:"towers"`
-	PacksPerTower    int      `json:"packs_per_tower"`
+	PacksPerTower    int      `json:"packsPerTower"`
 	Online           []uint16 `json:"online"`
-	DetectedTopology string   `json:"detected_topology,omitempty"`
+	DetectedTopology string   `json:"detectedTopology,omitempty"`
 	Mismatch         bool     `json:"mismatch"`
 }
 
@@ -56,8 +56,8 @@ type ConfigPayload struct {
 
 // TimingConfigPayload carries timing configuration from the client (D-04/D-06).
 type TimingConfigPayload struct {
-	ReadDelayMs  int `json:"read_delay_ms,omitempty"`
-	PackSettleMs int `json:"pack_settle_ms,omitempty"`
+	ReadDelayMs  int `json:"readDelayMs,omitempty"`
+	PackSettleMs int `json:"packSettleMs,omitempty"`
 }
 
 // InboundMessage represents a message from client to server.
@@ -68,13 +68,13 @@ type InboundMessage struct {
 	// Connect-specific fields
 	Host    string `json:"host,omitempty"`
 	Port    int    `json:"port,omitempty"`
-	SlaveID int    `json:"slave_id,omitempty"`
+	SlaveID int    `json:"slaveId,omitempty"`
 	// Auto-refresh toggle
 	Enabled *bool `json:"enabled,omitempty"`
 	// Configure payload (D-15)
 	Config *ConfigPayload `json:"config,omitempty"`
 	// Timing configuration payload (D-04/D-06)
-	TimingConfig *TimingConfigPayload `json:"timing_config,omitempty"`
+	TimingConfig *TimingConfigPayload `json:"timingConfig,omitempty"`
 	// Pack selection fields (select_pack)
 	Input int `json:"input,omitempty"`
 	Tower int `json:"tower,omitempty"`
@@ -108,8 +108,8 @@ type PackDataMessage struct {
 
 // PackItemMeta carries per-item register metadata for tooltip display (Phase 10, D-15).
 type PackItemMeta struct {
-	RegisterAddr uint16 `json:"register_addr"`
-	RawValue     string `json:"raw_value,omitempty"`
+	RegisterAddr uint16 `json:"registerAddr"`
+	RawValue     string `json:"rawValue,omitempty"`
 }
 
 // PackGroup represents a group within a pack data response.
@@ -119,16 +119,16 @@ type PackGroup struct {
 	Type   string            `json:"type,omitempty"`
 	Items  map[string]string `json:"items,omitempty"`
 	// Per-item register metadata for tooltips (Phase 10, D-15)
-	ItemMeta map[string]PackItemMeta `json:"item_meta,omitempty"`
+	ItemMeta map[string]PackItemMeta `json:"itemMeta,omitempty"`
 	// Cell grid specific (type="cell_grid")
 	Cells        []int    `json:"cells,omitempty"`          // raw millivolt values for 16 cells (D-05)
-	CellAddrs    []uint16 `json:"cell_addrs,omitempty"`     // per-cell register addresses for tooltips (D-15)
-	MaxCell      int      `json:"max_cell,omitempty"`       // register 0x9069 value in mV
-	MinCell      int      `json:"min_cell,omitempty"`       // register 0x906A value in mV
-	MaxCellIndex int      `json:"max_cell_index,omitempty"` // 1-based index of max cell
-	MinCellIndex int      `json:"min_cell_index,omitempty"` // 1-based index of min cell
+	CellAddrs    []uint16 `json:"cellAddrs,omitempty"`     // per-cell register addresses for tooltips (D-15)
+	MaxCell      int      `json:"maxCell,omitempty"`       // register 0x9069 value in mV
+	MinCell      int      `json:"minCell,omitempty"`       // register 0x906A value in mV
+	MaxCellIndex int      `json:"maxCellIndex,omitempty"` // 1-based index of max cell
+	MinCellIndex int      `json:"minCellIndex,omitempty"` // 1-based index of min cell
 	// Temperature specific
-	TempRaw []int `json:"temp_raw,omitempty"` // raw temp values (x10) for color coding
+	TempRaw []int `json:"tempRaw,omitempty"` // raw temp values (x10) for color coding
 	// Pack status specific (type="pack_status")
 	Alarm       int      `json:"alarm,omitempty"`
 	Protection  int      `json:"protection,omitempty"`
@@ -138,7 +138,7 @@ type PackGroup struct {
 	Fault2      int      `json:"fault2,omitempty"`
 	Decoded     []string `json:"decoded,omitempty"`
 	// Balance specific (type="balance")
-	BalanceBitmap int `json:"balance_bitmap,omitempty"`
+	BalanceBitmap int `json:"balanceBitmap,omitempty"`
 }
 
 // PackErrorMessage is the outbound message for pack read errors.
@@ -182,7 +182,7 @@ func NewSectionError(section string, errMsg string) OutboundMessage {
 	}
 }
 
-// NewStateMessage creates a connection_state outbound message.
+// NewStateMessage creates a connectionState outbound message.
 // If errMsg is non-empty, it is included so the client can display the reason for disconnection.
 func NewStateMessage(state string, errMsg string) OutboundMessage {
 	return OutboundMessage{
@@ -202,8 +202,8 @@ type RegisterValueMessage struct {
 	Name         string `json:"name"`
 	Value        string `json:"value,omitempty"`
 	Error        string `json:"error,omitempty"`
-	RegisterAddr uint16 `json:"register_addr"`
-	RawValue     string `json:"raw_value,omitempty"`
+	RegisterAddr uint16 `json:"registerAddr"`
+	RawValue     string `json:"rawValue,omitempty"`
 }
 
 // SectionCompleteMessage signals that all registers in a section have been read.
@@ -219,7 +219,7 @@ type SchemaGroup struct {
 	Layout    string   `json:"layout,omitempty"`
 	Type      string   `json:"type,omitempty"`
 	Registers []string `json:"registers"`
-	CellCount int      `json:"cell_count,omitempty"` // Phase 11: cell count for cell_grid groups
+	CellCount int      `json:"cellCount,omitempty"` // Phase 11: cell count for cell_grid groups
 }
 
 // PackSchemaContext identifies a pack drill-down schema (distinguishes from BMS overview).
@@ -235,7 +235,7 @@ type SectionSchemaMessage struct {
 	Type        string             `json:"type"`
 	Section     string             `json:"section"`
 	Groups      []SchemaGroup      `json:"groups"`
-	PackContext *PackSchemaContext `json:"pack_context,omitempty"` // Phase 11: pack drill-down context
+	PackContext *PackSchemaContext `json:"packContext,omitempty"` // Phase 11: pack drill-down context
 }
 
 // NewRegisterValue creates a register_value message for a single probe result.

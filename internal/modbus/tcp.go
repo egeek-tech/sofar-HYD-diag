@@ -13,7 +13,7 @@ import (
 func ReadHoldingRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte, startAddr, quantity uint16) ([]byte, error) {
 	logger.Debug("modbus tcp read", "slaveID", slaveID, "addr", fmt.Sprintf("0x%04X", startAddr), "qty", quantity)
 
-	txID := uint16(transactionID.Add(1))
+	txID := uint16(transactionID.Add(1)) //nolint:gosec // G115: Modbus TCP txID is 16-bit per spec; wraparound is intentional
 
 	req := make([]byte, 12)
 	binary.BigEndian.PutUint16(req[0:2], txID)
@@ -84,7 +84,7 @@ func ReadHoldingRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte, s
 func WriteMultipleRegistersTCP(conn net.Conn, logger *slog.Logger, slaveID byte, regAddr, value uint16) error {
 	logger.Debug("modbus tcp write", "slaveID", slaveID, "addr", fmt.Sprintf("0x%04X", regAddr), "value", value)
 
-	txID := uint16(transactionID.Add(1))
+	txID := uint16(transactionID.Add(1)) //nolint:gosec // G115: Modbus TCP txID is 16-bit per spec; wraparound is intentional
 
 	// MBAP header (7 bytes) + PDU: funcCode(1) + regAddr(2) + quantity(2) + byteCount(1) + data(2) = 8
 	req := make([]byte, 15)
