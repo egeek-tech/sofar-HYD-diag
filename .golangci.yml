@@ -37,6 +37,13 @@ linters:
     - usestdlibvars
     - usetesting
     - wastedassign
+  settings:
+    tagliatelle:
+      # Lock the wire-format policy enforced repo-wide in PR #13: every JSON
+      # tag on Go structs serialized to the WS or HTTP API must be camelCase.
+      case:
+        rules:
+          json: camel
   exclusions:
     rules:
       - path: _test\.go
