@@ -157,7 +157,7 @@ func TestAnalyzeBatchPlan_ASCII(t *testing.T) {
 func TestAnalyzeBatchPlan_MaxRegisters(t *testing.T) {
 	// SAFE-02: 61 contiguous single-register probes should split into 60 + 1
 	var probes []Probe
-	for i := 0; i < 61; i++ {
+	for i := range 61 {
 		probes = append(probes, Probe{Name: fmt.Sprintf("Reg%d", i), Addr: 0x1000 + uint16(i), Count: 1})
 	}
 	groups := []ProbeGroup{{Name: "Test", Probes: probes}}

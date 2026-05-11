@@ -269,7 +269,7 @@ func TestSpanTracker_ProbeScheduling(t *testing.T) {
 	st.RecordFailure(0x0484)
 
 	// Tick 10 times -> probe interval hit
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		st.Tick()
 	}
 	if got := st.ShouldProbe(0x0484); !got {
@@ -287,7 +287,7 @@ func TestSpanTracker_ProbeNotForNormal(t *testing.T) {
 	st := hub.NewSpanTracker(3, slog.Default())
 
 	// Tick 10 times
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		st.Tick()
 	}
 
@@ -311,7 +311,7 @@ func TestSpanTracker_ProbeForSkipped(t *testing.T) {
 	}
 
 	// Tick 10 times -> probe interval
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		st.Tick()
 	}
 	if got := st.ShouldProbe(0x0484); !got {
@@ -334,7 +334,7 @@ func TestSpanTracker_Reset(t *testing.T) {
 	st.RecordIndividualFailure(0x0488)
 
 	// Tick several times
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		st.Tick()
 	}
 

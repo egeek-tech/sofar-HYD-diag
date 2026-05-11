@@ -20,7 +20,7 @@ import (
 
 func TestBrokerSatisfiesInterface(t *testing.T) {
 	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
+	synctest.Test(t, func(_ *testing.T) {
 		// Compile-time check that broker.Broker satisfies hub.BrokerInterface
 		var _ hub.BrokerInterface = (*broker.Broker)(nil)
 	})
@@ -70,7 +70,7 @@ func newMockBroker() *mockBroker {
 	}
 }
 
-func (m *mockBroker) Reconfigure(ctx context.Context, addr string, slaveID byte) error {
+func (m *mockBroker) Reconfigure(_ context.Context, addr string, slaveID byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reconfigureCalls = append(m.reconfigureCalls, reconfigureCall{Addr: addr, SlaveID: slaveID})
@@ -79,7 +79,7 @@ func (m *mockBroker) Reconfigure(ctx context.Context, addr string, slaveID byte)
 	return nil
 }
 
-func (m *mockBroker) Disconnect(ctx context.Context) error {
+func (m *mockBroker) Disconnect(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.disconnectCalls++
@@ -88,7 +88,7 @@ func (m *mockBroker) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockBroker) ReadBatch(ctx context.Context, reads []broker.ReadRequest) []broker.Result {
+func (m *mockBroker) ReadBatch(_ context.Context, reads []broker.ReadRequest) []broker.Result {
 	m.mu.Lock()
 	m.batchCallCount++
 	delay := m.batchDelay
@@ -121,7 +121,7 @@ func (m *mockBroker) ReadBatch(ctx context.Context, reads []broker.ReadRequest) 
 	return out
 }
 
-func (m *mockBroker) WriteRegister(ctx context.Context, addr uint16, value uint16) error {
+func (m *mockBroker) WriteRegister(_ context.Context, addr uint16, value uint16) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.writeCalls = append(m.writeCalls, writeCall{Addr: addr, Value: value})
@@ -198,7 +198,7 @@ func (m *mockBroker) ReadRegisters(ctx context.Context, addr uint16, count uint1
 	return nil, fmt.Errorf("no mock result")
 }
 
-func (m *mockBroker) SetDelayRuntime(ctx context.Context, d time.Duration) error {
+func (m *mockBroker) SetDelayRuntime(_ context.Context, d time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastDelay = d
@@ -596,7 +596,7 @@ func TestSubscribeTriggerImmediateRead(t *testing.T) {
 				regCount++
 			}
 		}
-		assert.Greater(t, regCount, 0, "expected register_value messages from streaming read")
+		assert.Positive(t, regCount, "expected register_value messages from streaming read")
 
 		// Verify ReadRegisters/ReadBatch was called (mock routes ReadRegisters through ReadBatch)
 		assert.GreaterOrEqual(t, mb.getBatchCallCount(), 1, "expected at least 1 read call")
@@ -691,7 +691,7 @@ func TestSkipOverlappingReadCycle(t *testing.T) {
 		mb.mu.Unlock()
 
 		// Send multiple read_cycle rapidly while read is in progress
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "grid"})
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -1161,11 +1161,11 @@ func TestSystemSectionTimeComposition(t *testing.T) {
 			for _, pm := range span.Probes {
 				if pm.Probe.Name == "System time" && pm.ByteLength >= 12 {
 					// 2026-03-16 14:30:45
-					binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 26)    // Year
-					binary.BigEndian.PutUint16(data[pm.ByteOffset+2:pm.ByteOffset+4], 3)   // Month
-					binary.BigEndian.PutUint16(data[pm.ByteOffset+4:pm.ByteOffset+6], 16)  // Day
-					binary.BigEndian.PutUint16(data[pm.ByteOffset+6:pm.ByteOffset+8], 14)  // Hour
-					binary.BigEndian.PutUint16(data[pm.ByteOffset+8:pm.ByteOffset+10], 30) // Min
+					binary.BigEndian.PutUint16(data[pm.ByteOffset:pm.ByteOffset+2], 26)     // Year
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+2:pm.ByteOffset+4], 3)    // Month
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+4:pm.ByteOffset+6], 16)   // Day
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+6:pm.ByteOffset+8], 14)   // Hour
+					binary.BigEndian.PutUint16(data[pm.ByteOffset+8:pm.ByteOffset+10], 30)  // Min
 					binary.BigEndian.PutUint16(data[pm.ByteOffset+10:pm.ByteOffset+12], 45) // Sec
 				}
 			}
@@ -1567,7 +1567,7 @@ func makePackRTData() []byte {
 	// 0x9047-0x9050 = Serial Number (10 registers, offsets 6-26) - leave as zeros (ASCII)
 
 	// Cell voltages 0x9051-0x9060 (offsets 26-58): 16 cells at 3200+i mV (D-05)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		offset := (0x9051 - 0x9044 + uint16(i)) * 2
 		binary.BigEndian.PutUint16(data[offset:offset+2], uint16(3200+i))
 	}
@@ -1581,7 +1581,7 @@ func makePackRTData() []byte {
 	binary.BigEndian.PutUint16(data[minOffset:minOffset+2], 3200)
 
 	// Temps 1-4: 0x906B-0x906E = 285 (28.5C as S16 * 0.1)
-	for i := uint16(0); i < 4; i++ {
+	for i := range uint16(4) {
 		tOffset := (0x906B - 0x9044 + i) * 2
 		binary.BigEndian.PutUint16(data[tOffset:tOffset+2], 285)
 	}
@@ -1623,7 +1623,7 @@ func makePackInfoData() []byte {
 // makePackTemps58Data builds an 8-byte (4 register) block of mock temps 5-8 data.
 func makePackTemps58Data() []byte {
 	data := make([]byte, 8) // 4 registers * 2 bytes
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		binary.BigEndian.PutUint16(data[i*2:(i+1)*2], 275) // 27.5C
 	}
 	return data
@@ -1660,9 +1660,9 @@ func TestHandleSelectPack(t *testing.T) {
 		// Set up per-call batch results: 3 ReadBatch calls (RT, Info, Temps58)
 		mb.mu.Lock()
 		mb.batchResultQueue = [][]broker.Result{
-			{{Data: makePackRTData(), Err: nil}},     // RT block: 1 read request
+			{{Data: makePackRTData(), Err: nil}},      // RT block: 1 read request
 			{{Data: makePackInfoData(), Err: nil}},    // Info block: 1 read request
-			{{Data: makePackTemps58Data(), Err: nil}},  // Temps58 block: 1 read request
+			{{Data: makePackTemps58Data(), Err: nil}}, // Temps58 block: 1 read request
 		}
 		mb.mu.Unlock()
 
@@ -1723,7 +1723,7 @@ func TestPackDataMessageShape(t *testing.T) {
 		copy(mfgData, []byte("TESTMFG"))
 		mb.registerResults[0x9106] = broker.Result{Data: mfgData}
 		// Cell voltages: Cell 1 = 3200mV, incrementing
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			data := make([]byte, 2)
 			binary.BigEndian.PutUint16(data, 3200+uint16(i))
 			mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: data}
@@ -1812,7 +1812,7 @@ func TestPackDataMessageShape(t *testing.T) {
 		}
 
 		// Verify we got register_value messages for pack probes
-		assert.Greater(t, regValueCount, 0, "no register_value messages received")
+		assert.Positive(t, regValueCount, "no register_value messages received")
 
 		assert.True(t, hasComplete, "no section_complete message received")
 	})
@@ -2361,7 +2361,7 @@ func TestPackStreamingMessages(t *testing.T) {
 		copy(mfgData, []byte("TESTMFG"))
 		mb.registerResults[0x9106] = broker.Result{Data: mfgData}
 		// Cell voltages
-		for i := 0; i < 16; i++ {
+		for i := range 16 {
 			data := make([]byte, 2)
 			binary.BigEndian.PutUint16(data, 3300+uint16(i))
 			mb.registerResults[uint16(0x9051+i)] = broker.Result{Data: data}
@@ -2467,7 +2467,7 @@ func TestPackSpanDegradation(t *testing.T) {
 		for _, span := range packPlan.Spans {
 			data := make([]byte, int(span.TotalCount)*2)
 			// Fill with valid default data (100 per register)
-			for i := 0; i < int(span.TotalCount); i++ {
+			for i := range span.TotalCount {
 				binary.BigEndian.PutUint16(data[i*2:], 100)
 			}
 			mb.registerResults[span.StartAddr] = broker.Result{Data: data}
@@ -2520,7 +2520,7 @@ func TestPackSpanDegradation(t *testing.T) {
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
 		collectRawMessages(t, send, 5*time.Second)
 		time.Sleep(100 * time.Millisecond)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			h.Command(client, hub.InboundMessage{Type: "read_cycle", Section: "bms"})
 			collectRawMessages(t, send, 5*time.Second)
 			time.Sleep(100 * time.Millisecond)
@@ -2566,7 +2566,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 		// Set up all spans to succeed at batch level
 		for _, span := range packPlan.Spans {
 			data := make([]byte, int(span.TotalCount)*2)
-			for i := 0; i < int(span.TotalCount); i++ {
+			for i := range span.TotalCount {
 				binary.BigEndian.PutUint16(data[i*2:], 100)
 			}
 			mb.registerResults[span.StartAddr] = broker.Result{Data: data}
@@ -2612,7 +2612,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 		h.Command(client, hub.InboundMessage{Type: "select_pack", Section: "bms", Input: 1, Tower: 1, Pack: 1})
 		collectRawMessages(t, send, 5*time.Second)
 		time.Sleep(100 * time.Millisecond)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			h.Command(client, hub.InboundMessage{Type: "read_cycle", Section: "bms"})
 			collectRawMessages(t, send, 5*time.Second)
 			time.Sleep(100 * time.Millisecond)
@@ -2627,7 +2627,7 @@ func TestPackSpanResetOnSwitch(t *testing.T) {
 		delete(mb.spanFailAddrs, 0x9104)
 		// Restore full 16-byte span data (was overwritten by individual probe setup)
 		infoSpanData := make([]byte, 8*2)
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			binary.BigEndian.PutUint16(infoSpanData[i*2:], 100)
 		}
 		mb.registerResults[0x9104] = broker.Result{Data: infoSpanData}
@@ -2658,8 +2658,8 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 		// Set up all spans to succeed at batch level
 		for _, span := range packPlan.Spans {
 			data := make([]byte, int(span.TotalCount)*2)
-			for i := 0; i < int(span.TotalCount); i++ {
-				binary.BigEndian.PutUint16(data[i*2:], 100+uint16(i))
+			for i := range span.TotalCount {
+				binary.BigEndian.PutUint16(data[i*2:], 100+i)
 			}
 			mb.registerResults[span.StartAddr] = broker.Result{Data: data}
 		}
@@ -2679,8 +2679,8 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 		binary.BigEndian.PutUint16(infoData[0:], 500)  // Balanced Bus Voltage
 		binary.BigEndian.PutUint16(infoData[2:], 10)   // Balanced Bus Current
 		copy(infoData[4:12], []byte("TESTMFG\x00"))    // Manufacturer ASCII
-		binary.BigEndian.PutUint16(infoData[12:], 99)   // SOH
-		binary.BigEndian.PutUint16(infoData[14:], 200)  // Rated Capacity
+		binary.BigEndian.PutUint16(infoData[12:], 99)  // SOH
+		binary.BigEndian.PutUint16(infoData[14:], 200) // Rated Capacity
 		mb.registerResults[0x9104] = broker.Result{Data: infoData}
 
 		h := hub.NewTestHub(mb)
@@ -2738,7 +2738,7 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 			lastMsgType = msg.Type
 		}
 
-		require.True(t, len(regValues) > 0, "should have register_value messages")
+		require.NotEmpty(t, regValues, "should have register_value messages")
 		assert.True(t, hasSchema, "should have section_schema message")
 
 		// Verify all 5 groups are represented
@@ -2773,7 +2773,7 @@ func TestStreamPackBatchReadAllProbes(t *testing.T) {
 		for _, g := range allProbes {
 			totalProbes += len(g.Probes)
 		}
-		assert.Equal(t, totalProbes, len(regValues), "should have register_value for every pack probe")
+		assert.Len(t, regValues, totalProbes, "should have register_value for every pack probe")
 	})
 }
 
@@ -2801,7 +2801,7 @@ func TestConfigurationSectionRegistered(t *testing.T) {
 
 		// Configuration section should have groups
 		groups := h.GetSectionGroups("configuration")
-		assert.True(len(groups) > 0, "configuration section should have probe groups")
+		assert.NotEmpty(groups, "configuration section should have probe groups")
 	})
 }
 
@@ -3269,10 +3269,10 @@ func TestStreamStandardRead_SpanTrackerDegradation(t *testing.T) {
 				regValCount++
 			}
 		}
-		assert.Greater(t, regValCount, 0, "should have register_value messages from fallback")
+		assert.Positive(t, regValCount, "should have register_value messages from fallback")
 
 		// Trigger 2 more read cycles (total 3 batch failures = degradation threshold)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3311,7 +3311,7 @@ func TestStreamStandardRead_SpanTrackerSkipped(t *testing.T) {
 		require.GreaterOrEqual(t, idx, 0)
 
 		// Trigger 2 more read cycles (3 total = degraded)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3326,7 +3326,7 @@ func TestStreamStandardRead_SpanTrackerSkipped(t *testing.T) {
 		}
 
 		// Trigger 2 more read cycles (individual reads all fail -> transitions to Skipped)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3372,7 +3372,7 @@ func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
 		require.GreaterOrEqual(t, idx, 0)
 
 		// 2 more cycles to degrade (3 total batch failures)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3383,7 +3383,7 @@ func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
 		}
 
 		// 2 more cycles (individual all-fail -> skipped); total cycles = 5
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3403,7 +3403,7 @@ func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
 		// DefaultProbeInterval=10, cycle counter is at 5 after the 5 cycles above.
 		// Probe happens when cycle % 10 == 0, so at cycle 10.
 		// We need 5 more cycles (cycles 6,7,8,9,10) to reach the probe.
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3454,7 +3454,7 @@ func TestStreamStandardRead_SpanTrackerResetOnReconnect(t *testing.T) {
 		_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
 		require.GreaterOrEqual(t, idx, 0)
 
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			triggerGridReadCycle(t, h, c, send)
 		}
 
@@ -3678,7 +3678,7 @@ func TestBatteryBatchRead_AutoDetect(t *testing.T) {
 			if hasChannel4 {
 				foundAutoDetectSchema = true
 				// 4 Channel groups + Global Stats + Internal Info = 6 groups
-				assert.Equal(t, 6, len(schema.Groups),
+				assert.Len(t, schema.Groups, 6,
 					"4-channel schema should have 6 groups (4 channels + Global Stats + Internal Info)")
 				break
 			}
@@ -3987,7 +3987,7 @@ func TestPackBatchRead_SpanDegradation(t *testing.T) {
 		collectRawMessages(t, send, 5*time.Second)
 		time.Sleep(100 * time.Millisecond)
 
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			h.Command(c, hub.InboundMessage{Type: hub.MsgTypeReadCycle, Section: "bms"})
 			collectRawMessages(t, send, 5*time.Second)
 			time.Sleep(100 * time.Millisecond)
@@ -4092,7 +4092,7 @@ func TestBatteryBatchRead_ReconnectResetsChannels(t *testing.T) {
 			}
 			// Verify 2-channel layout: 2 Channel groups + Global Stats + Internal Info = 4 groups
 			foundReconnectSchema = true
-			assert.Equal(t, 4, len(schema.Groups),
+			assert.Len(t, schema.Groups, 4,
 				"reconnect schema should have 4 groups (2 channels + Global Stats + Internal Info)")
 			// Ensure no Channel 3 or Channel 4 groups exist (proving it is 2-channel, not 4-channel)
 			for _, g := range schema.Groups {
@@ -4108,7 +4108,7 @@ func TestBatteryBatchRead_ReconnectResetsChannels(t *testing.T) {
 		groups2 := append(register.GenerateBatteryGroups(2), register.InternalInfoGroups()...)
 		expectedPlan := register.AnalyzeBatchPlan(groups2)
 		actualPlan := h.GetSectionBatchPlan("battery")
-		assert.Equal(t, len(expectedPlan.Spans), len(actualPlan.Spans),
+		assert.Len(t, actualPlan.Spans, len(expectedPlan.Spans),
 			"BatchPlan span count should match 2-channel plan after reconnect")
 
 		// Verify SpanTracker was reset (all spans should be SpanNormal).

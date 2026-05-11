@@ -3,7 +3,6 @@ package web_test
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +19,7 @@ import (
 
 // newTestRouter creates a chi router with web routes wired to a disconnected broker and hub.
 func newTestRouter() *chi.Mux {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
 	h := hub.NewHub(b, logger, 2)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,7 +146,7 @@ func TestStatusInfoEndpoint(t *testing.T) {
 }
 
 func TestWSUpgrade(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	b := broker.New(logger, "127.0.0.1:1", 1, false)
 	h := hub.NewHub(b, logger, 2)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -168,8 +167,8 @@ func TestWSUpgrade(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if resp.StatusCode != 101 {
-		t.Errorf("expected 101, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("expected %d, got %d", http.StatusSwitchingProtocols, resp.StatusCode)
 	}
 
 	// Should receive initial connection_state message

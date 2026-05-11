@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sofar-hyd-diag/internal/broker"
+	"sofar-hyd-diag/internal/modbus"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,9 +15,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"sofar-hyd-diag/internal/broker"
-	"sofar-hyd-diag/internal/modbus"
 )
 
 // discardLogger returns a logger that discards all output.
@@ -36,7 +35,7 @@ func mockModbusServer(t *testing.T, listener net.Listener, numRequests int, regi
 	}
 	defer conn.Close()
 
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 
 		// Read Modbus TCP request: 12 bytes (MBAP header 7 + PDU 5)
@@ -92,8 +91,8 @@ func buildReadResponse(txID uint16, slaveID byte, value uint16) []byte {
 	// PDU: funcCode(1) + byteCount(1) + data(2) = 4
 	resp := make([]byte, 11)
 	binary.BigEndian.PutUint16(resp[0:2], txID)
-	binary.BigEndian.PutUint16(resp[2:4], 0)     // protocol ID
-	binary.BigEndian.PutUint16(resp[4:6], 5)     // length: unitID(1) + PDU(4)
+	binary.BigEndian.PutUint16(resp[2:4], 0) // protocol ID
+	binary.BigEndian.PutUint16(resp[4:6], 5) // length: unitID(1) + PDU(4)
 	resp[6] = slaveID
 	resp[7] = 0x03 // function code
 	resp[8] = 2    // byte count
@@ -107,8 +106,8 @@ func buildWriteResponse(txID uint16, slaveID byte, regAddr, quantity []byte) []b
 	// PDU: funcCode(1) + regAddr(2) + quantity(2) = 5
 	resp := make([]byte, 12)
 	binary.BigEndian.PutUint16(resp[0:2], txID)
-	binary.BigEndian.PutUint16(resp[2:4], 0)     // protocol ID
-	binary.BigEndian.PutUint16(resp[4:6], 6)     // length: unitID(1) + PDU(5)
+	binary.BigEndian.PutUint16(resp[2:4], 0) // protocol ID
+	binary.BigEndian.PutUint16(resp[4:6], 6) // length: unitID(1) + PDU(5)
 	resp[6] = slaveID
 	resp[7] = 0x10 // function code
 	copy(resp[8:10], regAddr)
@@ -289,7 +288,7 @@ func TestBrokerSerialization(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]error, 3)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -442,9 +441,12 @@ func TestBrokerReadBatch(t *testing.T) {
 	results := b.ReadBatch(ctx, reads)
 	elapsed := time.Since(start)
 
-	// Verify all 3 results succeeded
+	// Verify all 3 results succeeded.
+	// Diagnostic loop: keep `assert + continue` over `require` so a single
+	// failure still reports the status of the other reads and lets the
+	// inter-read-delay assertion below run.
 	for i, r := range results {
-		if !assert.NoError(t, r.Err, "batch read %d failed", i) {
+		if !assert.NoError(t, r.Err, "batch read %d failed", i) { //nolint:testifylint // see comment above
 			continue
 		}
 		if !assert.Len(t, r.Data, 2, "batch read %d data length", i) {
@@ -517,7 +519,7 @@ func TestBrokerAbortRead(t *testing.T) {
 	// The blocked read should also have returned (with an error)
 	select {
 	case err := <-readDone:
-		assert.Error(t, err, "expected read to fail after abort")
+		require.Error(t, err, "expected read to fail after abort")
 	case <-time.After(3 * time.Second):
 		require.Fail(t, "read goroutine did not return within 3s after disconnect")
 	}
@@ -564,7 +566,7 @@ func TestBrokerRetryThreeAttempts(t *testing.T) {
 
 	var attemptCount int32
 	go func() {
-		for i := 0; i < 6; i++ { // enough accepts for connect + 3 read attempts (each reconnects)
+		for range 6 { // enough accepts for connect + 3 read attempts (each reconnects)
 			conn, err := listener.Accept()
 			if err != nil {
 				return

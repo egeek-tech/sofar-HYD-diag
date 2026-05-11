@@ -199,7 +199,7 @@ func TestGridGroups(t *testing.T) {
 	for i, re := range rExpected {
 		assert.Equal(t, re.name, phaseR.Probes[i].Name, "Phase R[%d].Name", i)
 		assert.Equal(t, re.addr, phaseR.Probes[i].Addr, "Phase R[%d].Addr", i)
-		assert.Equal(t, re.scale, phaseR.Probes[i].Scale, "Phase R[%d].Scale", i)
+		assert.InDelta(t, re.scale, phaseR.Probes[i].Scale, 1e-9, "Phase R[%d].Scale", i)
 	}
 	// Power factor has no Unit
 	assert.Empty(t, phaseR.Probes[4].Unit, "Phase R power factor Unit")
@@ -225,7 +225,7 @@ func TestGridGroups(t *testing.T) {
 	assert.Equal(t, uint16(0x04AF), load.Probes[1].Addr, "Load total load power addr")
 	assert.Equal(t, uint16(0x04BD), load.Probes[2].Addr, "Load total power factor addr")
 	assert.True(t, load.Probes[2].Signed, "Load total power factor should be signed")
-	assert.Equal(t, 0.001, load.Probes[2].Scale, "Load total power factor scale")
+	assert.InDelta(t, 0.001, load.Probes[2].Scale, 1e-9, "Load total power factor scale")
 	assert.Equal(t, uint16(0x04BF), load.Probes[3].Addr, "Load generation efficiency addr")
 }
 
@@ -470,14 +470,14 @@ func TestGeneratePVGroups2(t *testing.T) {
 	assert.Equal(t, "column", groups[0].Layout)
 	require.Len(t, groups[0].Probes, 3, "PV 1 probes")
 	assert.Equal(t, uint16(0x0584), groups[0].Probes[0].Addr, "PV 1 voltage addr")
-	assert.Equal(t, 0.1, groups[0].Probes[0].Scale, "PV 1 voltage scale")
+	assert.InDelta(t, 0.1, groups[0].Probes[0].Scale, 1e-9, "PV 1 voltage scale")
 	assert.Equal(t, "V", groups[0].Probes[0].Unit, "PV 1 voltage unit")
 	assert.Equal(t, uint16(0x0585), groups[0].Probes[1].Addr, "PV 1 current addr")
 	assert.True(t, groups[0].Probes[1].Signed, "PV 1 current should be signed")
-	assert.Equal(t, 0.01, groups[0].Probes[1].Scale, "PV 1 current scale")
+	assert.InDelta(t, 0.01, groups[0].Probes[1].Scale, 1e-9, "PV 1 current scale")
 	assert.Equal(t, "A", groups[0].Probes[1].Unit, "PV 1 current unit")
 	assert.Equal(t, uint16(0x0586), groups[0].Probes[2].Addr, "PV 1 power addr")
-	assert.Equal(t, 0.01, groups[0].Probes[2].Scale, "PV 1 power scale")
+	assert.InDelta(t, 0.01, groups[0].Probes[2].Scale, 1e-9, "PV 1 power scale")
 	assert.Equal(t, "kW", groups[0].Probes[2].Unit, "PV 1 power unit")
 
 	// PV 2
@@ -506,13 +506,13 @@ func TestGeneratePVGroupsTotalPower(t *testing.T) {
 	assert.Equal(t, "Total PV Power", total.Name)
 	require.Len(t, total.Probes, 1, "Total PV Power probes")
 	assert.Equal(t, uint16(0x05C4), total.Probes[0].Addr, "Total PV Power addr")
-	assert.Equal(t, 0.1, total.Probes[0].Scale, "Total PV Power scale")
+	assert.InDelta(t, 0.1, total.Probes[0].Scale, 1e-9, "Total PV Power scale")
 	assert.Equal(t, "kW", total.Probes[0].Unit, "Total PV Power unit")
 }
 
 func TestGeneratePVGroupsColumnLayout(t *testing.T) {
 	groups := GeneratePVGroups(3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		assert.Equal(t, "column", groups[i].Layout, "PV %d layout", i+1)
 	}
 	assert.Empty(t, groups[3].Layout, "Total PV Power layout")
@@ -724,7 +724,7 @@ func TestBMSInfoGroups(t *testing.T) {
 
 func TestBMSProtectionInGroups(t *testing.T) {
 	groups := BMSInfoGroups()
-	require.True(t, len(groups) >= 2, "BMSInfoGroups returned fewer than 2 groups")
+	require.GreaterOrEqual(t, len(groups), 2, "BMSInfoGroups returned fewer than 2 groups")
 	prot := groups[1]
 	assert.Equal(t, "Protection", prot.Name)
 	assert.Equal(t, "protection", prot.Type)
@@ -759,12 +759,12 @@ func TestStatisticsGroups(t *testing.T) {
 
 	// Today scale = 0.01
 	for j, p := range groups[0].Probes {
-		assert.Equal(t, 0.01, p.Scale, "Today.Probes[%d].Scale", j)
+		assert.InDelta(t, 0.01, p.Scale, 1e-9, "Today.Probes[%d].Scale", j)
 	}
 
 	// Total scale = 0.1
 	for j, p := range groups[1].Probes {
-		assert.Equal(t, 0.1, p.Scale, "Total.Probes[%d].Scale", j)
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "Total.Probes[%d].Scale", j)
 	}
 }
 
@@ -874,20 +874,20 @@ func TestPackRTProbes(t *testing.T) {
 	// Total Voltage
 	if p, ok := byName["Total Voltage"]; assert.True(t, ok, "missing Total Voltage probe") {
 		assert.Equal(t, uint16(0x9079), p.Addr, "Total Voltage Addr")
-		assert.Equal(t, 0.1, p.Scale, "Total Voltage Scale")
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "Total Voltage Scale")
 		assert.Equal(t, "V", p.Unit, "Total Voltage Unit")
 	}
 
 	// Check Cell 1
 	if p, ok := byName["Cell 1"]; assert.True(t, ok, "missing Cell 1 probe") {
 		assert.Equal(t, uint16(0x9051), p.Addr, "Cell 1 Addr")
-		assert.Equal(t, 0.001, p.Scale, "Cell 1 Scale")
+		assert.InDelta(t, 0.001, p.Scale, 1e-9, "Cell 1 Scale")
 		assert.Equal(t, "V", p.Unit, "Cell 1 Unit")
 	}
 	// Check Cell 16 (last cell per D-05)
 	if p, ok := byName["Cell 16"]; assert.True(t, ok, "missing Cell 16 probe") {
 		assert.Equal(t, uint16(0x9060), p.Addr, "Cell 16 Addr")
-		assert.Equal(t, 0.001, p.Scale, "Cell 16 Scale")
+		assert.InDelta(t, 0.001, p.Scale, 1e-9, "Cell 16 Scale")
 	}
 
 	// Cell 17 should NOT exist (only 16 cells per D-05)
@@ -907,7 +907,7 @@ func TestPackRTProbes(t *testing.T) {
 	if p, ok := byName["Current"]; assert.True(t, ok, "missing Current probe") {
 		assert.Equal(t, uint16(0x9071), p.Addr, "Current Addr")
 		assert.True(t, p.Signed, "Current should be Signed")
-		assert.Equal(t, 0.1, p.Scale, "Current Scale")
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "Current Scale")
 		assert.Equal(t, "A", p.Unit, "Current Unit")
 	}
 
@@ -920,19 +920,19 @@ func TestPackRTProbes(t *testing.T) {
 		}
 		assert.Equal(t, wantAddr, p.Addr, "%s Addr", name)
 		assert.True(t, p.Signed, "%s should be Signed", name)
-		assert.Equal(t, 0.1, p.Scale, "%s Scale", name)
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "%s Scale", name)
 	}
 
 	// MOS Temp and Env Temp: signed, scale 0.1
 	if p, ok := byName["MOS Temp"]; assert.True(t, ok, "missing MOS Temp probe") {
 		assert.Equal(t, uint16(0x906F), p.Addr, "MOS Temp Addr")
 		assert.True(t, p.Signed, "MOS Temp should be Signed")
-		assert.Equal(t, 0.1, p.Scale, "MOS Temp Scale")
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "MOS Temp Scale")
 	}
 	if p, ok := byName["Env Temp"]; assert.True(t, ok, "missing Env Temp probe") {
 		assert.Equal(t, uint16(0x9070), p.Addr, "Env Temp Addr")
 		assert.True(t, p.Signed, "Env Temp should be Signed")
-		assert.Equal(t, 0.1, p.Scale, "Env Temp Scale")
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "Env Temp Scale")
 	}
 
 	// Balance State, Alarm Status, Protection Status, Fault Status
@@ -953,12 +953,12 @@ func TestPackRTProbes(t *testing.T) {
 	// Min/Max Cell Voltage
 	if p, ok := byName["Min Cell Voltage"]; assert.True(t, ok, "missing Min Cell Voltage probe") {
 		assert.Equal(t, uint16(0x906A), p.Addr, "Min Cell Voltage Addr")
-		assert.Equal(t, 0.001, p.Scale, "Min Cell Voltage Scale")
+		assert.InDelta(t, 0.001, p.Scale, 1e-9, "Min Cell Voltage Scale")
 		assert.Equal(t, "V", p.Unit, "Min Cell Voltage Unit")
 	}
 	if p, ok := byName["Max Cell Voltage"]; assert.True(t, ok, "missing Max Cell Voltage probe") {
 		assert.Equal(t, uint16(0x9069), p.Addr, "Max Cell Voltage Addr")
-		assert.Equal(t, 0.001, p.Scale, "Max Cell Voltage Scale")
+		assert.InDelta(t, 0.001, p.Scale, 1e-9, "Max Cell Voltage Scale")
 	}
 }
 
@@ -974,14 +974,14 @@ func TestPackInfoProbes(t *testing.T) {
 	// SOH
 	if p, ok := byName["SOH"]; assert.True(t, ok, "missing SOH probe") {
 		assert.Equal(t, uint16(0x910A), p.Addr, "SOH Addr")
-		assert.Equal(t, 0.1, p.Scale, "SOH Scale")
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "SOH Scale")
 		assert.Equal(t, "%", p.Unit, "SOH Unit")
 	}
 
 	// Rated Capacity
 	if p, ok := byName["Rated Capacity"]; assert.True(t, ok, "missing Rated Capacity probe") {
 		assert.Equal(t, uint16(0x910B), p.Addr, "Rated Capacity Addr")
-		assert.Equal(t, 0.1, p.Scale, "Rated Capacity Scale")
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "Rated Capacity Scale")
 		assert.Equal(t, "Ah", p.Unit, "Rated Capacity Unit")
 	}
 
@@ -1016,7 +1016,7 @@ func TestPackTemps58Probes(t *testing.T) {
 		wantName := "Temp " + string(rune('5'+i))
 		assert.Equal(t, wantAddrs[i], p.Addr, "probe %d Addr", i)
 		assert.True(t, p.Signed, "%s should be Signed", wantName)
-		assert.Equal(t, 0.1, p.Scale, "%s Scale", wantName)
+		assert.InDelta(t, 0.1, p.Scale, 1e-9, "%s Scale", wantName)
 		assert.Equal(t, "\u00b0C", p.Unit, "%s Unit", wantName)
 	}
 }
@@ -1146,7 +1146,7 @@ func TestFormatRawValue(t *testing.T) {
 			p:    Probe{Addr: 0x042C, Count: 6, Composite: "system_time"},
 			data: func() []byte {
 				d := make([]byte, 12)
-				for i := 0; i < 6; i++ {
+				for i := range 6 {
 					binary.BigEndian.PutUint16(d[i*2:i*2+2], uint16(i+1))
 				}
 				return d
@@ -1195,7 +1195,7 @@ func TestPackProbeGroupOrder(t *testing.T) {
 	// Cell Voltages group: 16 cell probes + Max Cell Voltage + Min Cell Voltage = 18 probes
 	cellGroup := groups[1]
 	require.Len(t, cellGroup.Probes, 18, "Cell Voltages group probes")
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		wantName := fmt.Sprintf("Cell %d", i+1)
 		assert.Equal(t, wantName, cellGroup.Probes[i].Name, "Cell Voltages probe[%d].Name", i)
 	}
