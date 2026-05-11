@@ -1,3 +1,5 @@
+// Package register defines the Sofar G3 register map (probes, groups, batch
+// plans) and value formatters that turn raw Modbus bytes into UI strings.
 package register
 
 import "sort"
@@ -45,7 +47,7 @@ func AnalyzeBatchPlan(groups []ProbeGroup) BatchPlan {
 	for _, g := range groups {
 		totalProbes += len(g.Probes)
 	}
-	real := make([]annotatedProbe, 0, totalProbes)
+	realProbes := make([]annotatedProbe, 0, totalProbes)
 	var unbatchable []ProbeMapping
 
 	for _, g := range groups {
@@ -57,33 +59,33 @@ func AnalyzeBatchPlan(groups []ProbeGroup) BatchPlan {
 				})
 				continue
 			}
-			real = append(real, annotatedProbe{probe: p, groupName: g.Name})
+			realProbes = append(realProbes, annotatedProbe{probe: p, groupName: g.Name})
 		}
 	}
 
-	if len(real) == 0 {
+	if len(realProbes) == 0 {
 		return BatchPlan{Unbatchable: unbatchable}
 	}
 
 	// Sort by address ascending.
-	sort.Slice(real, func(i, j int) bool {
-		return real[i].probe.Addr < real[j].probe.Addr
+	sort.Slice(realProbes, func(i, j int) bool {
+		return realProbes[i].probe.Addr < realProbes[j].probe.Addr
 	})
 
 	// Walk sorted probes building spans.
 	var spans []BatchSpan
 	cur := BatchSpan{
-		StartAddr:  real[0].probe.Addr,
-		TotalCount: real[0].probe.Count,
+		StartAddr:  realProbes[0].probe.Addr,
+		TotalCount: realProbes[0].probe.Count,
 		Probes: []ProbeMapping{{
-			Probe:      real[0].probe,
-			GroupName:  real[0].groupName,
+			Probe:      realProbes[0].probe,
+			GroupName:  realProbes[0].groupName,
 			ByteOffset: 0,
-			ByteLength: int(real[0].probe.Count) * 2,
+			ByteLength: int(realProbes[0].probe.Count) * 2,
 		}},
 	}
 
-	for _, ap := range real[1:] {
+	for _, ap := range realProbes[1:] {
 		spanEnd := cur.StartAddr + cur.TotalCount // next expected address after current span
 
 		if ap.probe.Addr < spanEnd {

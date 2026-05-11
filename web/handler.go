@@ -1,3 +1,5 @@
+// Package web wires HTTP routes, WebSocket upgrades, and embedded static
+// assets to the broker and hub for the Sofar HYD diagnostic web UI.
 package web
 
 import (
@@ -47,7 +49,7 @@ type DefaultsConfig struct {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
+	CheckOrigin: func(_ *http.Request) bool {
 		return true
 	},
 }
@@ -55,11 +57,11 @@ var upgrader = websocket.Upgrader{
 // SetupRoutes configures the chi router with API endpoints, WebSocket handler, and embedded static file serving.
 func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsConfig, startTime time.Time, version string, logger *slog.Logger) {
 	// Health/readiness/status endpoints for container orchestration (D-01)
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	r.Get("/status", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/status", func(w http.ResponseWriter, _ *http.Request) {
 		info := StatusInfo{
 			Status:  "ok",
 			Version: version,
@@ -73,7 +75,7 @@ func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsCo
 	})
 
 	// API routes
-	r.Get("/api/status", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/api/status", func(w http.ResponseWriter, _ *http.Request) {
 		status := StatusResponse{
 			Uptime:          time.Since(startTime).Round(time.Second).String(),
 			ConnectionState: b.CurrentState().String(),
@@ -88,7 +90,7 @@ func SetupRoutes(r chi.Router, b *broker.Broker, h *hub.Hub, defaults DefaultsCo
 
 	// GET /api/defaults returns CLI flag defaults as JSON (D-14).
 	// Browser uses this to pre-populate the connection form.
-	r.Get("/api/defaults", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/api/defaults", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(defaults); err != nil {
 			_ = err

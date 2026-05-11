@@ -1,7 +1,8 @@
+// Package modbus implements Modbus TCP and RTU frame encoding, transaction
+// handling, and the CRC-16 algorithm used to talk to the Sofar HYD inverter.
 package modbus
 
 import (
-	"io"
 	"log/slog"
 	"net"
 	"sync/atomic"
@@ -55,5 +56,5 @@ func Connect(addr string) (net.Conn, error) {
 
 // DiscardLogger returns a logger that discards all output (for callers that don't need logging).
 func DiscardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }

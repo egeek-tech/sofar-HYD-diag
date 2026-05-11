@@ -2,7 +2,6 @@ package modbus
 
 import (
 	"encoding/binary"
-	"io"
 	"log/slog"
 	"net"
 	"testing"
@@ -13,7 +12,7 @@ import (
 )
 
 func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 // TestCRC16 verifies CRC-16/MODBUS against a known test vector.

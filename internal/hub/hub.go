@@ -374,7 +374,7 @@ func (h *Hub) unsubscribeClient(c *Client, sectionName string) {
 
 // handleReadCycle handles a browser-driven read_cycle message (REFR-01).
 // Triggers a section read if connected, has subscribers, and no read is in progress.
-func (h *Hub) handleReadCycle(c *Client, msg InboundMessage) {
+func (h *Hub) handleReadCycle(_ *Client, msg InboundMessage) {
 	if !h.connected {
 		return
 	}
@@ -401,7 +401,7 @@ func (h *Hub) handleReadCycle(c *Client, msg InboundMessage) {
 		readCtx, cancel := context.WithCancel(h.ctx)
 		sec.readCancel = cancel
 		sec.reading.Store(true)
-		h.streamPackBatchRead(h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client, readCtx)
+		h.streamPackBatchRead(readCtx, h.selectedPack.input, h.selectedPack.tower, h.selectedPack.pack, h.selectedPack.client)
 		return
 	}
 	h.triggerSectionRead(msg.Section)
@@ -427,15 +427,15 @@ func (h *Hub) triggerSectionRead(sectionName string) {
 	// Dispatch to streaming read handlers (Phase 07: per-register streaming)
 	switch sectionName {
 	case "bms":
-		h.streamBMSBatchRead(sec, readCtx)
+		h.streamBMSBatchRead(readCtx, sec)
 		return
 	case "battery":
-		h.streamBatteryBatchRead(sec, readCtx)
+		h.streamBatteryBatchRead(readCtx, sec)
 		return
 	}
 
 	// Standard streaming read path for system, grid, eps, pv
-	h.streamStandardRead(sectionName, sec, readCtx)
+	h.streamStandardRead(readCtx, sectionName, sec)
 }
 
 // buildProtectionGroup creates a GroupData with Type="protection" from BMS protection/alarm registers.
@@ -712,7 +712,7 @@ func (h *Hub) handleSelectPack(cmd ClientCommand) {
 	sec.readCancel = cancel
 	sec.reading.Store(true)
 
-	h.streamPackBatchRead(input, tower, pack, cmd.Client, readCtx)
+	h.streamPackBatchRead(readCtx, input, tower, pack, cmd.Client)
 }
 
 // sendPackError sends a pack_error message to a specific client.

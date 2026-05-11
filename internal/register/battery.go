@@ -130,7 +130,7 @@ func PackRTProbes() []Probe {
 	}
 
 	// 16 cell voltages: 0x9051-0x9060, millivolt resolution (scale 0.001, per D-05)
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		probes = append(probes, Probe{
 			Name:  fmt.Sprintf("Cell %d", i+1),
 			Addr:  uint16(0x9051 + i),
@@ -225,7 +225,7 @@ func PackProbeGroups() []ProbeGroup {
 			Type: "cell_grid",
 			Probes: func() []Probe {
 				probes := make([]Probe, 0, 18)
-				for i := 0; i < 16; i++ {
+				for i := range 16 {
 					probes = append(probes, Probe{
 						Name:  fmt.Sprintf("Cell %d", i+1),
 						Addr:  uint16(0x9051 + i),

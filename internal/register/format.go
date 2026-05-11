@@ -16,7 +16,7 @@ func FormatValue(p Probe, data []byte) string {
 			return "<no data>"
 		}
 		var vals [6]uint16
-		for i := 0; i < 6; i++ {
+		for i := range 6 {
 			vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
 		}
 		return ComposeSystemTime(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
@@ -125,7 +125,7 @@ func FormatRawValue(p Probe, data []byte) string {
 			return ""
 		}
 		var vals [6]uint16
-		for i := 0; i < 6; i++ {
+		for i := range 6 {
 			vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
 		}
 		endAddr := p.Addr + p.Count - 1
@@ -148,7 +148,7 @@ func FormatRawValue(p Probe, data []byte) string {
 			return ""
 		}
 		var vals [4]uint16
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			vals[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
 		}
 		endAddr := p.Addr + p.Count - 1
@@ -171,21 +171,21 @@ func FormatRawValue(p Probe, data []byte) string {
 
 // ComposeSystemTime takes the 6 time register values and returns a formatted datetime string.
 // The year value is offset by 2000 (e.g., 26 -> 2026).
-func ComposeSystemTime(year, month, day, hour, min, sec uint16) string {
-	return fmt.Sprintf("%02d:%02d:%02d %02d-%02d-%04d", hour, min, sec, day, month, year+2000)
+func ComposeSystemTime(year, month, day, hour, minute, second uint16) string {
+	return fmt.Sprintf("%02d:%02d:%02d %02d-%02d-%04d", hour, minute, second, day, month, year+2000)
 }
 
 // DecodeBMSClock unpacks a 32-bit BMS system clock value into a formatted datetime string.
 // The packed format stores fields as bit ranges within a single uint32:
 // bits [5:0]=seconds, [11:6]=minutes, [16:12]=hours, [21:17]=day, [25:22]=month, [31:26]=year(offset 2000).
 func DecodeBMSClock(val uint32) string {
-	sec := val & 0x3F
-	min := (val >> 6) & 0x3F
+	second := val & 0x3F
+	minute := (val >> 6) & 0x3F
 	hr := (val >> 12) & 0x1F
 	day := (val >> 17) & 0x1F
 	mon := (val >> 22) & 0x0F
 	yr := (val >> 26) & 0x3F
-	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d", 2000+yr, mon, day, hr, min, sec)
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d", 2000+yr, mon, day, hr, minute, second)
 }
 
 // DecodeTopology unpacks a 16-bit topology parameter register (0x900D) into
@@ -204,7 +204,7 @@ func DecodeBalanceState(val uint16) string {
 		return "Balanced"
 	}
 	var cells []string
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if val&(1<<uint(i)) != 0 {
 			cells = append(cells, fmt.Sprintf("Cell %d", i+1))
 		}
