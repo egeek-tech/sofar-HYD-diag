@@ -1,2 +1,17 @@
 .planning/
 /fyne-poc
+
+# Go build artifacts (root-level outputs from `go build`)
+/config-sweep
+/modbus_reader
+/server
+/sofar-hyd-diag
+/xlsx-discover
+
+# Tool binaries built in-tree
+/tools/config-sweep/config-sweep
+/tools/section-sweep/section-sweep
+/tools/xlsx-discover/xlsx-discover
+
+# Throwaway screenshots and scratch images at repo root
+/image.png
