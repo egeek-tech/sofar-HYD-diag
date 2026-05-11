@@ -21,6 +21,18 @@ The application exposes the HTTP server, which communicates with Modbus TCP to R
                    register reads          protocol converter         slave device
 ```
 
+### Run with Docker
+
+A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub Container Registry on every release. The container runs the `server` binary directly, exposes port 8080, and accepts the same CLI flags as the bare binary:
+
+```bash
+docker run --rm -p 8080:8080 \
+  ghcr.io/richie-tt/sofar-hyd-diag:latest \
+  -inverter-host 192.168.1.100
+```
+
+Then open `http://localhost:8080` in your browser. Pin a specific release with `:v1.7.1` (or any other published tag) instead of `:latest` for reproducible deployments.
+
 ## Screenshots
 
 ![System View](assets/system.png)
