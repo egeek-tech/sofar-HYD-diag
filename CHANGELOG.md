@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.7.1...v1.7.2) (2026-05-11)
+
+
+### Bug Fixes
+
+* **lint:** lock camelCase JSON policy in tagliatelle config ([94e1621](https://github.com/richie-tt/sofar-HYD-diag/commit/94e1621b69f7487651cd0b1cacf8507c5d2b6975))
+
 ## [1.7.1](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.7.0...v1.7.1) (2026-04-20)
 
 
