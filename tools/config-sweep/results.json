@@ -1,0 +1,2116 @@
+{
+  "timestamp": "2026-04-15T11:31:06Z",
+  "host": "10.5.99.29",
+  "port": 4192,
+  "slave_id": 1,
+  "total_registers": 314,
+  "passed": 224,
+  "failed": 90,
+  "errors": 0,
+  "groups": [
+    {
+      "name": "System Config",
+      "probes": [
+        {
+          "name": "RS485 address",
+          "addr": "0x100B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "RS485 baud rate",
+          "addr": "0x100C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "RS485 stop bit",
+          "addr": "0x100D",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "RS485 parity",
+          "addr": "0x100E",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PV input mode",
+          "addr": "0x1010",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Input channel 1 type",
+          "addr": "0x1011",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Input channel 2 type",
+          "addr": "0x1012",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Anti-back-flow control",
+          "addr": "0x1023",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Anti-back-flow power",
+          "addr": "0x1024",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "IV curve scanning",
+          "addr": "0x1025",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Safety country code",
+          "addr": "0x1028",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Emergency power supply",
+          "addr": "0x1029",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "EPS wait time",
+          "addr": "0x102A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery auto activation",
+          "addr": "0x102B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Heating film enable",
+          "addr": "0x102F",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Language",
+          "addr": "0x1034",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Parallel mode",
+          "addr": "0x1035",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Parallel control mode",
+          "addr": "0x1036",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Parallel address",
+          "addr": "0x1037",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Imbalance support",
+          "addr": "0x1038",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Power generation multiplier",
+          "addr": "0x1039",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Buy power multiplier",
+          "addr": "0x103A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Sell power multiplier",
+          "addr": "0x103B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Charge amount multiplier",
+          "addr": "0x103C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Discharge volume multiplier",
+          "addr": "0x103D",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Battery Config",
+      "probes": [
+        {
+          "name": "Battery serial number",
+          "addr": "0x1044",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery address",
+          "addr": "0x1045",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Communication protocol",
+          "addr": "0x1046",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage protection",
+          "addr": "0x1047",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Charging voltage",
+          "addr": "0x1048",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage protection",
+          "addr": "0x1049",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Min discharge voltage",
+          "addr": "0x104A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Max charge current",
+          "addr": "0x104B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Max discharge current",
+          "addr": "0x104C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DOD grid-connected",
+          "addr": "0x104D",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "EOD off-grid",
+          "addr": "0x104E",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery capacity",
+          "addr": "0x104F",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rated voltage",
+          "addr": "0x1050",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Cell type",
+          "addr": "0x1051",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Off-grid recovery hysteresis",
+          "addr": "0x1052",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery address 2",
+          "addr": "0x1054",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery address 3",
+          "addr": "0x1055",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery address 4",
+          "addr": "0x1056",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Lead acid temp coefficient",
+          "addr": "0x1057",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Lead acid recovery voltage",
+          "addr": "0x1058",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Lead acid float voltage",
+          "addr": "0x105A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Maximum charging SOC",
+          "addr": "0x105B",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Energy Storage Mode",
+      "probes": [
+        {
+          "name": "Operating mode",
+          "addr": "0x1110",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Passive mode timeout",
+          "addr": "0x1184",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Passive mode timeout action",
+          "addr": "0x1185",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Manual mode desired grid power",
+          "addr": "0x1187",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Manual mode min battery power",
+          "addr": "0x1189",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Manual mode max battery power",
+          "addr": "0x118B",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Manual mode permissible sell",
+          "addr": "0x118D",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Manual mode purchase of power",
+          "addr": "0x118F",
+          "count": 2,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Function Config",
+      "probes": [
+        {
+          "name": "PCC device config",
+          "addr": "0x1060",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Resonance detection",
+          "addr": "0x1061",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "CT ratio",
+          "addr": "0x1062",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Hard anti-back-flow",
+          "addr": "0x1063",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Dry contact control",
+          "addr": "0x1064",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Wet contact control",
+          "addr": "0x1065",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PV branch over-current",
+          "addr": "0x1066",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Grid detection",
+          "addr": "0x1067",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Missing phase domain",
+          "addr": "0x1068",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PCC bias power",
+          "addr": "0x1069",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Purchase power limit enable",
+          "addr": "0x106A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Purchase power limit",
+          "addr": "0x106B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Intelligent load mode",
+          "addr": "0x106C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Intelligent load power",
+          "addr": "0x106F",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Parallel module number",
+          "addr": "0x1070",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DRMs control",
+          "addr": "0x1071",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery usage config",
+          "addr": "0x1073",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Grid side port type",
+          "addr": "0x1075",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Generator side port type",
+          "addr": "0x1076",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Function Config 2",
+      "probes": [
+        {
+          "name": "Arc detection enable",
+          "addr": "0x1084",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Peak to peak value",
+          "addr": "0x1085",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Variance setting",
+          "addr": "0x1086",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Harmonic energy setting",
+          "addr": "0x1087",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Amplitude variance",
+          "addr": "0x1088",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Time domain weight",
+          "addr": "0x1089",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Frequency domain weight",
+          "addr": "0x108A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Arc detection sensitivity",
+          "addr": "0x108B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Arc alarm threshold",
+          "addr": "0x108C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PLC operation control",
+          "addr": "0x10A0",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "BLE Bluetooth running",
+          "addr": "0x10A5",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PID control word",
+          "addr": "0x10AF",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PID start auto-run",
+          "addr": "0x10B0",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Generator control",
+          "addr": "0x10B9",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Generator power",
+          "addr": "0x10BA",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Generator startup voltage",
+          "addr": "0x10BB",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Generator stop voltage",
+          "addr": "0x10BC",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Generator SOC",
+          "addr": "0x10BD",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Comm interruption control",
+          "addr": "0x10C0",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Comm interruption timeout",
+          "addr": "0x10C1",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Comm interruption preset",
+          "addr": "0x10C2",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Power enable control",
+          "addr": "0x10CC",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Active power output",
+          "addr": "0x10CD",
+          "count": 2,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Reactive power output",
+          "addr": "0x10CF",
+          "count": 2,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Fan self-test control",
+          "addr": "0x10E0",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Fan noise mode",
+          "addr": "0x10E1",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Fan speed control",
+          "addr": "0x10E4",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Unbalanced power control",
+          "addr": "0x10EB",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Unbalanced R-phase",
+          "addr": "0x10EC",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Unbalanced S-phase",
+          "addr": "0x10ED",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Unbalanced T-phase",
+          "addr": "0x10EE",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Relay configuration",
+          "addr": "0x10F0",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Standby monitoring",
+          "addr": "0x10F1",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "Remote Control",
+      "probes": [
+        {
+          "name": "Remote on/off",
+          "addr": "0x1104",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Power control mode",
+          "addr": "0x1105",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Export power limit",
+          "addr": "0x1106",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Import power limit",
+          "addr": "0x1107",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reactive power percent",
+          "addr": "0x1108",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Power factor",
+          "addr": "0x1109",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Active power change rate",
+          "addr": "0x110A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reactive response time",
+          "addr": "0x110B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Fixed reactive power (SVG)",
+          "addr": "0x110C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "SVG PF compensation",
+          "addr": "0x110D",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Timed Charge/Discharge",
+      "probes": [
+        {
+          "name": "Rule serial number",
+          "addr": "0x1111",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Charge/discharge enable",
+          "addr": "0x1112",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Charge start time",
+          "addr": "0x1113",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Charge end time",
+          "addr": "0x1114",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Discharge start time",
+          "addr": "0x1115",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Discharge end time",
+          "addr": "0x1116",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Charging power",
+          "addr": "0x1117",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Discharge power",
+          "addr": "0x1119",
+          "count": 2,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Time Sharing Control",
+      "probes": [
+        {
+          "name": "Rule serial number",
+          "addr": "0x1120",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Enable control",
+          "addr": "0x1121",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Start time",
+          "addr": "0x1122",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "End time",
+          "addr": "0x1123",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Target SOC",
+          "addr": "0x1124",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Target power",
+          "addr": "0x1125",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Effective date",
+          "addr": "0x1127",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Expiration date",
+          "addr": "0x1128",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Effective week",
+          "addr": "0x1129",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Control mode",
+          "addr": "0x112A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Additional feature",
+          "addr": "0x112B",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Peak Shaving",
+      "probes": [
+        {
+          "name": "Upper limit purchase power",
+          "addr": "0x1130",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Upper limit sell power",
+          "addr": "0x1132",
+          "count": 2,
+          "status": "PASS"
+        },
+        {
+          "name": "Buy to charge batteries",
+          "addr": "0x1134",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Battery backup SOC",
+          "addr": "0x1135",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Power Feeding Priority",
+      "probes": [
+        {
+          "name": "Feed-in power",
+          "addr": "0x113A",
+          "count": 2,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Off-Grid Mode",
+      "probes": [
+        {
+          "name": "Charging source",
+          "addr": "0x1144",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Grid draw power",
+          "addr": "0x1145",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Max generator power draw",
+          "addr": "0x1146",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Communication Protection",
+      "probes": [
+        {
+          "name": "Comm interruption protection",
+          "addr": "0x11C4",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Comm interruption recovery",
+          "addr": "0x11C5",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Comm interruption threshold",
+          "addr": "0x11C6",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Comm interruption data source",
+          "addr": "0x11C7",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period Enable",
+      "probes": [
+        {
+          "name": "Time period enable bits",
+          "addr": "0x1204",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period 1",
+      "probes": [
+        {
+          "name": "Start time",
+          "addr": "0x1205",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "End time",
+          "addr": "0x1206",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Work mode",
+          "addr": "0x1207",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power upper",
+          "addr": "0x1208",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power lower",
+          "addr": "0x1209",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery charge upper limit",
+          "addr": "0x120A",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery discharge lower limit",
+          "addr": "0x120B",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Allow grid to charge",
+          "addr": "0x120C",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Inverter power",
+          "addr": "0x120D",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Force charge/discharge power",
+          "addr": "0x120E",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Self use excess grid",
+          "addr": "0x120F",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period 2",
+      "probes": [
+        {
+          "name": "Start time",
+          "addr": "0x1212",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "End time",
+          "addr": "0x1213",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Work mode",
+          "addr": "0x1214",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power upper",
+          "addr": "0x1215",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power lower",
+          "addr": "0x1216",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery charge upper limit",
+          "addr": "0x1217",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery discharge lower limit",
+          "addr": "0x1218",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Allow grid to charge",
+          "addr": "0x1219",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Inverter power",
+          "addr": "0x121A",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Force charge/discharge power",
+          "addr": "0x121B",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Self use excess grid",
+          "addr": "0x121C",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period 3",
+      "probes": [
+        {
+          "name": "Start time",
+          "addr": "0x121F",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "End time",
+          "addr": "0x1220",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Work mode",
+          "addr": "0x1221",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power upper",
+          "addr": "0x1222",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power lower",
+          "addr": "0x1223",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery charge upper limit",
+          "addr": "0x1224",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery discharge lower limit",
+          "addr": "0x1225",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Allow grid to charge",
+          "addr": "0x1226",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Inverter power",
+          "addr": "0x1227",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Force charge/discharge power",
+          "addr": "0x1228",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Self use excess grid",
+          "addr": "0x1229",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period 4",
+      "probes": [
+        {
+          "name": "Start time",
+          "addr": "0x122C",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "End time",
+          "addr": "0x122D",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Work mode",
+          "addr": "0x122E",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power upper",
+          "addr": "0x122F",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power lower",
+          "addr": "0x1230",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery charge upper limit",
+          "addr": "0x1231",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery discharge lower limit",
+          "addr": "0x1232",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Allow grid to charge",
+          "addr": "0x1233",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Inverter power",
+          "addr": "0x1234",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Force charge/discharge power",
+          "addr": "0x1235",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Self use excess grid",
+          "addr": "0x1236",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period 5",
+      "probes": [
+        {
+          "name": "Start time",
+          "addr": "0x1244",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "End time",
+          "addr": "0x1245",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Work mode",
+          "addr": "0x1246",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power upper",
+          "addr": "0x1247",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power lower",
+          "addr": "0x1248",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery charge upper limit",
+          "addr": "0x1249",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery discharge lower limit",
+          "addr": "0x124A",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Allow grid to charge",
+          "addr": "0x124B",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Inverter power",
+          "addr": "0x124C",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Force charge/discharge power",
+          "addr": "0x124D",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Self use excess grid",
+          "addr": "0x124E",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "EMS Time Period 6",
+      "probes": [
+        {
+          "name": "Start time",
+          "addr": "0x1251",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "End time",
+          "addr": "0x1252",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Work mode",
+          "addr": "0x1253",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power upper",
+          "addr": "0x1254",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Grid point power lower",
+          "addr": "0x1255",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery charge upper limit",
+          "addr": "0x1256",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Battery discharge lower limit",
+          "addr": "0x1257",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Allow grid to charge",
+          "addr": "0x1258",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Inverter power",
+          "addr": "0x1259",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Force charge/discharge power",
+          "addr": "0x125A",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Self use excess grid",
+          "addr": "0x125B",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    },
+    {
+      "name": "Safety: Power On",
+      "probes": [
+        {
+          "name": "Grid connection wait time",
+          "addr": "0x0800",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rise rate",
+          "addr": "0x0801",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reconnect wait time",
+          "addr": "0x0802",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rise speed after recovery",
+          "addr": "0x0803",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Start-up voltage high",
+          "addr": "0x0804",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Start-up voltage low",
+          "addr": "0x0805",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Start-up frequency high",
+          "addr": "0x0806",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Start-up frequency low",
+          "addr": "0x0807",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reconnect voltage high",
+          "addr": "0x0808",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reconnect voltage low",
+          "addr": "0x0809",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reconnect frequency high",
+          "addr": "0x080A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Reconnect frequency low",
+          "addr": "0x080B",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Safety: Voltage Protection",
+      "probes": [
+        {
+          "name": "Protection enable",
+          "addr": "0x0840",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rated grid voltage",
+          "addr": "0x0841",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage 1 value",
+          "addr": "0x0842",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage 1 time",
+          "addr": "0x0843",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage 2 value",
+          "addr": "0x0844",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage 2 time",
+          "addr": "0x0845",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage 3 value",
+          "addr": "0x0846",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-voltage 3 time",
+          "addr": "0x0847",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage 1 value",
+          "addr": "0x0848",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage 1 time",
+          "addr": "0x0849",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage 2 value",
+          "addr": "0x084A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage 2 time",
+          "addr": "0x084B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage 3 value",
+          "addr": "0x084C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-voltage 3 time",
+          "addr": "0x084D",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "10-min over-voltage value",
+          "addr": "0x084E",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "OV1 time high",
+          "addr": "0x084F",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "OV2 time high",
+          "addr": "0x0850",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "OV3 time high",
+          "addr": "0x0851",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Safety: Frequency Protection",
+      "probes": [
+        {
+          "name": "Protection enable",
+          "addr": "0x0880",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rated frequency",
+          "addr": "0x0881",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-frequency 1 value",
+          "addr": "0x0882",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-frequency 1 time",
+          "addr": "0x0883",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-frequency 2 value",
+          "addr": "0x0884",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-frequency 2 time",
+          "addr": "0x0885",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-frequency 3 value",
+          "addr": "0x0886",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Over-frequency 3 time",
+          "addr": "0x0887",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-frequency 1 value",
+          "addr": "0x0888",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-frequency 1 time",
+          "addr": "0x0889",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-frequency 2 value",
+          "addr": "0x088A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-frequency 2 time",
+          "addr": "0x088B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-frequency 3 value",
+          "addr": "0x088C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Under-frequency 3 time",
+          "addr": "0x088D",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "OF1 time high",
+          "addr": "0x088E",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "OF2 time high",
+          "addr": "0x088F",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "OF3 time high",
+          "addr": "0x0890",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "UF1 time high",
+          "addr": "0x0891",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "UF2 time high",
+          "addr": "0x0892",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "UF3 time high",
+          "addr": "0x0893",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rate of change value",
+          "addr": "0x0894",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Rate of change time",
+          "addr": "0x0895",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Safety: DCI Protection",
+      "probes": [
+        {
+          "name": "DCI enable",
+          "addr": "0x08C0",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 1 value",
+          "addr": "0x08C1",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 1 time",
+          "addr": "0x08C2",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 2 value",
+          "addr": "0x08C3",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 2 time",
+          "addr": "0x08C4",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 3 value",
+          "addr": "0x08C5",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 3 time",
+          "addr": "0x08C6",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI R-phase test",
+          "addr": "0x08C7",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI S-phase test",
+          "addr": "0x08C8",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI T-phase test",
+          "addr": "0x08C9",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 1 ratio",
+          "addr": "0x08CA",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 2 ratio",
+          "addr": "0x08CB",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "DCI level 3 ratio",
+          "addr": "0x08CC",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Safety: Island/GFCI/ISO",
+      "probes": [
+        {
+          "name": "Island detection enable",
+          "addr": "0x0A00",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "GFCI enable",
+          "addr": "0x0A01",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "ISO enable",
+          "addr": "0x0A02",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Insulation impedance",
+          "addr": "0x0A03",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Leakage current limit",
+          "addr": "0x0A04",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Leakage current value",
+          "addr": "0x0A05",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "PE and N control",
+          "addr": "0x0A06",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Island detection sensitivity",
+          "addr": "0x0A07",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Ground fault threshold",
+          "addr": "0x0A08",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Power calculation control",
+          "addr": "0x0A09",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Safety: Reactive Power",
+      "probes": [
+        {
+          "name": "Reactive control enable",
+          "addr": "0x0980",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Power factor",
+          "addr": "0x0981",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Fixed reactive percent",
+          "addr": "0x0982",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "First PF value",
+          "addr": "0x0983",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "First power percent",
+          "addr": "0x0984",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Second PF value",
+          "addr": "0x0985",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Second power percent",
+          "addr": "0x0986",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Third PF value",
+          "addr": "0x0987",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Third power percent",
+          "addr": "0x0988",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Fourth PF value",
+          "addr": "0x0989",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Fourth power percent",
+          "addr": "0x098A",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "LockinV voltage percent",
+          "addr": "0x098B",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "LockoutV voltage percent",
+          "addr": "0x098C",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Phase type",
+          "addr": "0x099F",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Regulation duration",
+          "addr": "0x09A0",
+          "count": 1,
+          "status": "PASS"
+        },
+        {
+          "name": "Max lag reactive percent",
+          "addr": "0x09A1",
+          "count": 1,
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "Network Config",
+      "probes": [
+        {
+          "name": "MAC address high",
+          "addr": "0x2504",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "MAC address mid",
+          "addr": "0x2505",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "MAC address low",
+          "addr": "0x2506",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "IP allocation mode",
+          "addr": "0x2507",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "IP address",
+          "addr": "0x2508",
+          "count": 2,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Gateway",
+          "addr": "0x250A",
+          "count": 2,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Subnet mask",
+          "addr": "0x250C",
+          "count": 2,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        },
+        {
+          "name": "Modbus TCP port",
+          "addr": "0x2512",
+          "count": 1,
+          "status": "FAIL",
+          "error": "illegal data address (0x02)"
+        }
+      ]
+    }
+  ]
+}
