@@ -1,3 +1,5 @@
+// Command server is the Sofar HYD diagnostic web binary: it wires CLI
+// configuration to the broker, hub, and HTTP/WebSocket routes.
 package main
 
 import (

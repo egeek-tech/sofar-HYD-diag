@@ -20,6 +20,7 @@ var ErrBrokerClosed = errors.New("broker closed")
 // CmdType represents the type of command sent to the broker.
 type CmdType int
 
+// Command types routed through the broker's serialized command channel.
 const (
 	CmdRead CmdType = iota
 	CmdWrite
@@ -122,8 +123,8 @@ func (b *Broker) SetInterReadDelay(d time.Duration) {
 
 // SetBackoff overrides the default backoff parameters.
 // Must be called before Run().
-func (b *Broker) SetBackoff(base, max time.Duration) {
-	b.backoff = NewBackoff(base, max)
+func (b *Broker) SetBackoff(base, maxDelay time.Duration) {
+	b.backoff = NewBackoff(base, maxDelay)
 }
 
 // Run starts the broker's command processing loop. It blocks until ctx is cancelled.

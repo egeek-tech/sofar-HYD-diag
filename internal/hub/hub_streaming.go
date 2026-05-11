@@ -45,7 +45,7 @@ func countBatteryChannels(groups []register.ProbeGroup) int {
 // readSpanIndividualFallbackAccum reads each probe in a span individually,
 // emitting sectionResult per probe AND accumulating results into probeResults.
 // Returns true if ALL individual reads failed. Returns early on context cancel.
-func (h *Hub) readSpanIndividualFallbackAccum(sectionName string, span register.BatchSpan, readCtx context.Context, probeResults []broker.Result, addrToIdx map[uint16]int) bool {
+func (h *Hub) readSpanIndividualFallbackAccum(readCtx context.Context, sectionName string, span register.BatchSpan, probeResults []broker.Result, addrToIdx map[uint16]int) bool {
 	allFailed := true
 	for _, pm := range span.Probes {
 		if readCtx.Err() != nil {
@@ -86,7 +86,7 @@ func (h *Hub) readSpanIndividualFallbackAccum(sectionName string, span register.
 // three-state degradation. For each probe, it emits a sectionResult to the UI
 // (streaming) and accumulates the broker.Result in probeResults[probeIndex].
 // Returns probeResults aligned with sec.Probes indexing (nil on context cancel).
-func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.Context) []broker.Result {
+func (h *Hub) readBatchSpans(readCtx context.Context, sectionName string, sec *Section) []broker.Result {
 	start := time.Now()
 	spanCount := len(sec.BatchPlan.Spans)
 	var totalRegisters uint16
@@ -125,7 +125,7 @@ func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.C
 
 		// Degraded (not probing): individual reads only.
 		if state == SpanDegraded && !shouldProbe {
-			allIndivFailed := h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
+			allIndivFailed := h.readSpanIndividualFallbackAccum(readCtx, sectionName, span, probeResults, addrToIdx)
 			if readCtx.Err() != nil {
 				return nil
 			}
@@ -150,7 +150,7 @@ func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.C
 				"span_count", span.TotalCount,
 				"error", err,
 			)
-			h.readSpanIndividualFallbackAccum(sectionName, span, readCtx, probeResults, addrToIdx)
+			h.readSpanIndividualFallbackAccum(readCtx, sectionName, span, probeResults, addrToIdx)
 			if readCtx.Err() != nil {
 				return nil
 			}
@@ -205,14 +205,14 @@ func (h *Hub) readBatchSpans(sectionName string, sec *Section, readCtx context.C
 // BatchPlan. Uses the shared readBatchSpans helper for span iteration (D-07).
 // Section timing is logged by readBatchSpans. Fault reading and section_complete
 // are handled after spans complete.
-func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx context.Context) {
+func (h *Hub) streamStandardRead(readCtx context.Context, sectionName string, sec *Section) {
 	isFault := sec.faultSection
 
 	go func() {
 		defer sec.reading.Store(false)
 
 		// Use shared helper for batch span reads (D-07).
-		_ = h.readBatchSpans(sectionName, sec, readCtx)
+		_ = h.readBatchSpans(readCtx, sectionName, sec)
 		if readCtx.Err() != nil {
 			return
 		}
@@ -229,7 +229,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 				if i >= len(faultResults) || faultResults[i].Err != nil {
 					continue
 				}
-				for reg := uint16(0); reg < fp.Count; reg++ {
+				for reg := range fp.Count {
 					offset := int(reg) * 2
 					if offset+2 <= len(faultResults[i].Data) {
 						faultData[fp.Addr+reg] = binary.BigEndian.Uint16(faultResults[i].Data[offset : offset+2])
@@ -265,7 +265,7 @@ func (h *Hub) streamStandardRead(sectionName string, sec *Section, readCtx conte
 // 0x066A individually to detect the active channel count. If the count changed,
 // it rebuilds Groups/Probes/BatchPlan with InternalInfoGroups re-appended,
 // resets SpanTracker, and re-triggers the read with the new plan (D-01 through D-05).
-func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
+func (h *Hub) streamBatteryBatchRead(readCtx context.Context, sec *Section) {
 	go func() {
 		retrigger := false
 		defer func() {
@@ -322,7 +322,7 @@ func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
 		}
 
 		// Step 2: Read all spans via shared helper (D-07).
-		_ = h.readBatchSpans("battery", sec, readCtx)
+		_ = h.readBatchSpans(readCtx, "battery", sec)
 		if readCtx.Err() != nil {
 			return
 		}
@@ -337,12 +337,12 @@ func (h *Hub) streamBatteryBatchRead(sec *Section, readCtx context.Context) {
 // streamBMSBatchRead reads the BMS section using the shared readBatchSpans helper,
 // then performs BMS-specific post-processing: topology detection, tower bitmap widget,
 // and protection decoding. Per D-06, keeps BMS post-processing isolated from standard path.
-func (h *Hub) streamBMSBatchRead(sec *Section, readCtx context.Context) {
+func (h *Hub) streamBMSBatchRead(readCtx context.Context, sec *Section) {
 	go func() {
 		defer sec.reading.Store(false)
 
 		// Step 1: Read all spans via shared helper (D-07).
-		probeResults := h.readBatchSpans("bms", sec, readCtx)
+		probeResults := h.readBatchSpans(readCtx, "bms", sec)
 		if probeResults == nil || readCtx.Err() != nil {
 			return
 		}
@@ -374,7 +374,7 @@ func (h *Hub) streamBMSBatchRead(sec *Section, readCtx context.Context) {
 		}
 
 		onlineBitmaps := make([]uint16, TopoTowers)
-		for t := 0; t < TopoTowers; t++ {
+		for t := range TopoTowers {
 			if (towerBitmap>>uint(t))&1 == 1 {
 				onlineBitmaps[t] = (1 << uint(TopoPacksPerTower)) - 1
 			}
@@ -464,7 +464,7 @@ func (h *Hub) buildPackSchema(input, tower, pack int, groups []register.ProbeGro
 // streamPackBatchRead reads pack registers using batch spans via the shared
 // readBatchSpans helper. Preserves the 0x9020 write + settle delay from the
 // legacy streamPackRead. Per D-01, pack-specific logic stays isolated.
-func (h *Hub) streamPackBatchRead(input, tower, pack int, client *Client, readCtx context.Context) {
+func (h *Hub) streamPackBatchRead(readCtx context.Context, input, tower, pack int, client *Client) {
 	groups := register.PackProbeGroups()
 	towersPerInput := TopoTowers
 	queryWord := register.EncodePackQuery(input, tower, pack, towersPerInput)
@@ -518,7 +518,7 @@ func (h *Hub) streamPackBatchRead(input, tower, pack int, client *Client, readCt
 			SpanTracker: packTracker,
 			Probes:      probes,
 		}
-		_ = h.readBatchSpans("bms", tempSec, readCtx)
+		_ = h.readBatchSpans(readCtx, "bms", tempSec)
 		if readCtx.Err() != nil {
 			return
 		}

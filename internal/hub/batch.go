@@ -1,3 +1,5 @@
+// Package hub coordinates streaming Modbus reads from the broker, tracks
+// per-section subscriber state, and emits structured messages to web clients.
 package hub
 
 import (
@@ -8,6 +10,8 @@ import (
 // SpanState represents the degradation level of a batch span.
 type SpanState int
 
+// SpanState lifecycle values used by SpanTracker to throttle reads after
+// repeated batch failures.
 const (
 	SpanNormal   SpanState = iota // batch reads as usual
 	SpanDegraded                  // skip batch, individual reads only

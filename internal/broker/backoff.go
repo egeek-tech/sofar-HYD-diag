@@ -1,3 +1,6 @@
+// Package broker serializes all Modbus operations through a single goroutine,
+// owning the TCP connection, handling auto-reconnection with exponential
+// backoff, and emitting connection state change events.
 package broker
 
 import "time"
@@ -9,9 +12,9 @@ type Backoff struct {
 	current time.Duration
 }
 
-// NewBackoff creates a backoff starting at base, capping at max.
-func NewBackoff(base, max time.Duration) *Backoff {
-	return &Backoff{base: base, max: max, current: base}
+// NewBackoff creates a backoff starting at base, capping at maxDelay.
+func NewBackoff(base, maxDelay time.Duration) *Backoff {
+	return &Backoff{base: base, max: maxDelay, current: base}
 }
 
 // Next returns the current delay and doubles it for next call (capped at max).

@@ -3,6 +3,8 @@ package broker
 // State represents the broker's connection state.
 type State int
 
+// Broker connection lifecycle states. StateDormant means no host configured;
+// the other states track active connection attempts and outcomes.
 const (
 	StateDormant      State = -1
 	StateDisconnected State = 0
