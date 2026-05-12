@@ -116,7 +116,10 @@ class WSClient {
         this.ws = null;
         this.reconnectDelay = 1000;
         this.maxReconnectDelay = 30000;
-        this.handlers = {};
+        // Object.create(null): prototype-free dictionary so a malformed
+        // ws message with type="hasOwnProperty" / "toString" / "valueOf" /
+        // "__defineSetter__" / ... cannot resolve to an inherited method.
+        this.handlers = Object.create(null);
         this.connected = false;
     }
 
@@ -157,7 +160,7 @@ class WSClient {
                 return;
             }
             const handler = this.handlers[msg.type];
-            if (handler) {
+            if (typeof handler === 'function') {
                 handler(msg);
             }
         };
