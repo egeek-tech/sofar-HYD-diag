@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.3](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.7.2...v1.7.3) (2026-05-12)
+
+
+### Bug Fixes
+
+* **web:** block prototype-method dispatch in WebSocket onmessage ([be58875](https://github.com/richie-tt/sofar-HYD-diag/commit/be58875ecd6ea9331839f6d09f235d07728403a5))
+* **web:** block prototype-method dispatch in ws onmessage ([0bad8a3](https://github.com/richie-tt/sofar-HYD-diag/commit/0bad8a36c47c421b243206a623688fb573781246))
+
 ## [1.7.2](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.7.1...v1.7.2) (2026-05-11)
 
 
