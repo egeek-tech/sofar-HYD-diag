@@ -3232,6 +3232,12 @@ func setupGridSpanTest(t *testing.T) (*mockBroker, register.BatchPlan, uint16) {
 func triggerGridReadCycle(t *testing.T, h *hub.Hub, c *hub.Client, send chan []byte) []hub.OutboundMessage {
 	t.Helper()
 	hub.SendReadCycle(h, c, "grid")
+	// Block until the hub goroutine has processed the command (and broadcast
+	// section_complete) before draining. Without this barrier, synctest can
+	// advance virtual time past the broadcast under multi-test parallel
+	// scheduling pressure (observed on GOMAXPROCS=2 / 2-core CI runners),
+	// surfacing as "idle timeout waiting for section_complete: got types []".
+	synctest.Wait()
 	msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
 	require.GreaterOrEqual(t, idx, 0, "section_complete not received")
 	return msgs
@@ -3260,6 +3266,7 @@ func TestStreamStandardRead_SpanTrackerDegradation(t *testing.T) {
 
 		// Subscribe to grid (triggers first read cycle)
 		h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+		synctest.Wait()
 		msgs, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
 		require.GreaterOrEqual(t, idx, 0, "section_complete not received on subscribe")
 
@@ -3308,6 +3315,7 @@ func TestStreamStandardRead_SpanTrackerSkipped(t *testing.T) {
 
 		// Subscribe to grid (triggers first read cycle)
 		h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+		synctest.Wait()
 		_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
 		require.GreaterOrEqual(t, idx, 0)
 
@@ -3369,6 +3377,7 @@ func TestStreamStandardRead_SpanTrackerProbeRecovery(t *testing.T) {
 
 		// Subscribe triggers first read
 		h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+		synctest.Wait()
 		_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
 		require.GreaterOrEqual(t, idx, 0)
 
@@ -3452,6 +3461,7 @@ func TestStreamStandardRead_SpanTrackerResetOnReconnect(t *testing.T) {
 
 		// Subscribe and trigger 3 read cycles to degrade span 0
 		h.Command(c, hub.InboundMessage{Type: "subscribe", Section: "grid"})
+		synctest.Wait()
 		_, idx := waitForMessageType(t, send, "section_complete", 10*time.Second)
 		require.GreaterOrEqual(t, idx, 0)
 
