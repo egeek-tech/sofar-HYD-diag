@@ -1,4 +1,5 @@
 VERSION ?= dev
+HOST_ARCH := $(shell go env GOARCH)
 
 .PHONY: all server discover clean test test-discover check-size docker docker-run
 
@@ -12,6 +13,7 @@ discover:
 
 clean:
 	rm -f server xlsx-discover
+	rm -rf dist/
 
 test:
 	go test ./...
@@ -23,10 +25,18 @@ check-size: server
 	@size=$$(stat -c%s server 2>/dev/null || stat -f%z server); \
 	echo "Server binary size: $$size bytes"
 
-docker:
-	docker build --build-arg VERSION=$(VERSION) -t sofar-hyd-diag:$(VERSION) .
+# Cross-compile a linux binary for any GOARCH. Used by the docker target
+# and by the release workflow.
+dist/server-%:
+	@mkdir -p dist
+	GOOS=linux GOARCH=$* CGO_ENABLED=0 go build \
+		-ldflags="-s -w -X main.version=$(VERSION)" \
+		-o $@ ./cmd/server
 
-docker-run:
+docker: dist/server-$(HOST_ARCH)
+	docker build -t sofar-hyd-diag:$(VERSION) .
+
+docker-run: docker
 	docker run --rm -p 8080:8080 \
 		-e INVERTER_HOST=10.5.99.29 \
 		-e INVERTER_PORT=4192 \
