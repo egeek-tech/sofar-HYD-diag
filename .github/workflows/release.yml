@@ -48,17 +48,6 @@ jobs:
             echo "Releasing $CURRENT -> $NEXT"
           fi
 
-      - name: Create GitHub release
-        if: steps.ver.outputs.release == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.ver.outputs.version }}
-          TARGET_SHA: ${{ github.sha }}
-        run: |
-          gh release create "$VERSION" \
-            --generate-notes \
-            --target "$TARGET_SHA"
-
   build:
     needs: tag
     if: needs.tag.outputs.release == 'true'
@@ -90,11 +79,17 @@ jobs:
             dist/server-amd64
             dist/server-arm64
 
-      - name: Upload tars to GitHub release
+      # Atomic create-with-assets so it works with "Immutable releases" enabled.
+      - name: Create GitHub release with tar assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.tag.outputs.version }}
-        run: gh release upload "$VERSION" dist/sofar-hyd-diag-*.tar.gz
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          gh release create "$VERSION" \
+            --generate-notes \
+            --target "$TARGET_SHA" \
+            dist/sofar-hyd-diag-*.tar.gz
 
       - name: Hand binaries off to docker job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
