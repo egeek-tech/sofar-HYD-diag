@@ -116,10 +116,12 @@ class WSClient {
         this.ws = null;
         this.reconnectDelay = 1000;
         this.maxReconnectDelay = 30000;
-        // Object.create(null): prototype-free dictionary so a malformed
-        // ws message with type="hasOwnProperty" / "toString" / "valueOf" /
-        // "__defineSetter__" / ... cannot resolve to an inherited method.
-        this.handlers = Object.create(null);
+        // Map: prototype-free key/value store. A malformed ws message
+        // with type="hasOwnProperty" / "toString" / "valueOf" /
+        // "__defineSetter__" / ... cannot resolve to an inherited
+        // Object.prototype method because Map.get returns only entries
+        // we explicitly registered via Map.set.
+        this.handlers = new Map();
         this.connected = false;
     }
 
@@ -159,7 +161,7 @@ class WSClient {
             } catch (e) {
                 return;
             }
-            const handler = this.handlers[msg.type];
+            const handler = this.handlers.get(msg.type);
             if (typeof handler === 'function') {
                 handler(msg);
             }
@@ -189,7 +191,7 @@ class WSClient {
     }
 
     on(type, handler) {
-        this.handlers[type] = handler;
+        this.handlers.set(type, handler);
     }
 }
 
