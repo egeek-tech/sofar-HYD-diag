@@ -1,20 +1,8 @@
-# Builder stage -- runs natively on build platform, cross-compiles for target
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
-ARG TARGETOS
-ARG TARGETARCH
-WORKDIR /build
-COPY go.mod go.sum ./
-RUN go mod download
-COPY cmd/ cmd/
-COPY internal/ internal/
-COPY web/ web/
-ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /server ./cmd/server
-
-# Runtime stage
+# Runtime-only image. Binary is cross-compiled by the release workflow
+# and dropped into dist/ before docker build runs.
+# For local builds: `make docker` produces dist/server-amd64 first.
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=builder /server /server
+ARG TARGETARCH
+COPY dist/server-${TARGETARCH} /server
 EXPOSE 8080
 ENTRYPOINT ["/server"]

@@ -1,5 +1,5 @@
 name: PR Validation
-# Validates build, test, lint, and Docker on every PR to master
+# Validates build, test, lint on every PR to master.
 
 on:
   pull_request:
@@ -16,34 +16,7 @@ permissions:
   checks: write
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      src: ${{ steps.filter.outputs.src }}
-      docker: ${{ steps.filter.outputs.docker }}
-    steps:
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
-        id: filter
-        with:
-          filters: |
-            src:
-              - '**.go'
-              - 'go.mod'
-              - 'go.sum'
-              - 'web/**'
-              - '.golangci.yml'
-            docker:
-              - 'Dockerfile'
-              - '.dockerignore'
-              - 'go.mod'
-              - 'go.sum'
-              - 'cmd/**'
-              - 'internal/**'
-              - 'web/**'
-
   lint:
-    needs: changes
-    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -55,8 +28,6 @@ jobs:
           version: v2.11
 
   test:
-    needs: changes
-    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -76,8 +47,6 @@ jobs:
           reporter: java-junit
 
   build:
-    needs: changes
-    if: needs.changes.outputs.src == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -86,12 +55,3 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: go build ./cmd/server
-
-  docker:
-    needs: changes
-    if: needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Docker build
-        run: docker build --build-arg VERSION=ci-${{ github.sha }} -t sofar-hyd-diag:ci .

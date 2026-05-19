@@ -13,8 +13,9 @@ updates:
       all-go-deps:
         patterns:
           - "*"
+    # Use "fix" so svu picks dep bumps up as a patch release.
     commit-message:
-      prefix: "chore"
+      prefix: "fix"
       include: "scope"
     labels:
       - "dependencies"
@@ -32,8 +33,9 @@ updates:
       all-actions:
         patterns:
           - "*"
+    # Use "fix" so svu picks dep bumps up as a patch release.
     commit-message:
-      prefix: "chore"
+      prefix: "fix"
       include: "scope"
     labels:
       - "dependencies"
@@ -51,8 +53,9 @@ updates:
       all-docker:
         patterns:
           - "*"
+    # Use "fix" so svu picks dep bumps up as a patch release.
     commit-message:
-      prefix: "chore"
+      prefix: "fix"
       include: "scope"
     labels:
       - "dependencies"
