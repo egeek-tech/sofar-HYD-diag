@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.7.4](https://github.com/egeek-tech/sofar-HYD-diag/compare/v1.7.3...v1.7.4) (2026-05-19)
+
+
+### Bug Fixes
+
+* **hub:** close synctest race in TestStreamStandardRead_* tests ([549d390](https://github.com/egeek-tech/sofar-HYD-diag/commit/549d3901b707174763e174511c84e0d5b4ea4c1f))
+* **hub:** close synctest race in TestStreamStandardRead_* tests ([ca5ba21](https://github.com/egeek-tech/sofar-HYD-diag/commit/ca5ba21c5f2c384c4e5608a43f00d2fb262ebadb))
+* **web:** use Map for ws handlers (closes CodeQL alert [#1](https://github.com/egeek-tech/sofar-HYD-diag/issues/1)) ([fc04938](https://github.com/egeek-tech/sofar-HYD-diag/commit/fc04938d86e65f23bc7c5b2acc1c3148e676c99b))
+* **web:** use Map for ws handlers (closes CodeQL alert [#1](https://github.com/egeek-tech/sofar-HYD-diag/issues/1)) ([e222dac](https://github.com/egeek-tech/sofar-HYD-diag/commit/e222dac927f154aa7a63d69a461f3ba6f7fb1027))
+
 ## [1.7.3](https://github.com/richie-tt/sofar-HYD-diag/compare/v1.7.2...v1.7.3) (2026-05-12)
 
 
