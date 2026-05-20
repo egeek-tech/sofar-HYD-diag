@@ -3,7 +3,7 @@
 ## Reporting a Vulnerability
 
 Please report security vulnerabilities privately via
-[GitHub Security Advisories](https://github.com/richie-tt/sofar-HYD-diag/security/advisories/new).
+[GitHub Security Advisories](https://github.com/egeek-tech/sofar-HYD-diag/security/advisories/new).
 
 Do not open public issues or pull requests for security problems.
 

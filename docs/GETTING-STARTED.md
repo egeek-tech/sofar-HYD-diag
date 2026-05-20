@@ -18,7 +18,7 @@ No external runtime libraries, databases, or containers are required. The tool c
 
 1. Clone the repository:
    ```bash
-   git clone git@github.com:richie-tt/sofar-HYD-diag.git
+   git clone git@github.com:egeek-tech/sofar-HYD-diag.git
    ```
 
 2. Change into the project directory:

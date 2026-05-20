@@ -8,7 +8,7 @@ Guide for setting up, building, and contributing to the Sofar HYD Diagnostic Too
 1. **Clone the repository:**
 
    ```bash
-   git clone git@github.com:richie-tt/sofar-HYD-diag.git
+   git clone git@github.com:egeek-tech/sofar-HYD-diag.git
    cd sofar-HYD-diag
    ```
 

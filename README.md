@@ -27,7 +27,7 @@ A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GitHub Contain
 
 ```bash
 docker run --rm -p 8080:8080 \
-  ghcr.io/richie-tt/sofar-hyd-diag:latest \
+  ghcr.io/egeek-tech/sofar-hyd-diag:latest \
   -inverter-host 192.168.1.100
 ```
 
@@ -49,7 +49,7 @@ Then open `http://localhost:8080` in your browser. Pin a specific release with `
 ### Build from source
 
 ```bash
-git clone git@github.com:richie-tt/sofar-HYD-diag.git
+git clone git@github.com:egeek-tech/sofar-HYD-diag.git
 cd sofar-HYD-diag
 make server
 ```

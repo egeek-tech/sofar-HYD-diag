@@ -10,7 +10,7 @@ See [README.md](README.md) for prerequisites (Go 1.26+, network access to an inv
 Quick setup summary:
 
 ```bash
-git clone git@github.com:richie-tt/sofar-HYD-diag.git
+git clone git@github.com:egeek-tech/sofar-HYD-diag.git
 cd sofar-HYD-diag
 make server
 ```
