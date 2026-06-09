@@ -119,7 +119,7 @@ func main() {
 	// Create chi router with middleware
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.RealIP)
+	r.Use(middleware.ClientIPFromRemoteAddr)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			logger.Debug("http request", "method", req.Method, "path", req.URL.Path)
