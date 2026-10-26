@@ -68,10 +68,25 @@ Common types used in this project:
 | `fix` | Bug fix |
 | `test` | Adding or updating tests |
 | `docs` | Documentation changes |
-| `chore` | Maintenance, cleanup, dependency updates |
+| `ci` | CI and workflow changes |
+| `chore` | Maintenance and cleanup |
 | `revert` | Reverting a previous change |
 
 The scope typically references a phase number or module area (e.g., `fix(26): description` or `test(22-03): description`). Keep the description concise and lowercase.
+
+## Releases
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please) in two stages (`.github/workflows/release.yml`):
+
+1. **Release PR.** On every push to `master`, release-please reads the conventional commits since the last release and opens or updates a Release PR (`chore(master): release X.Y.Z`) that bumps the version in `.release-please-manifest.json` and prepends the entry to `CHANGELOG.md`.
+2. **Release.** Merging the Release PR pushes the `vX.Y.Z` tag and creates a draft GitHub Release. The workflow then builds and attests the `linux/amd64` and `linux/arm64` binaries, attaches the tarballs to the draft, pushes the multi-arch image to `ghcr.io/egeek-tech/sofar-hyd-diag` with a provenance attestation, and publishes the release. Published releases are immutable, which is why the assets are attached while the release is still a draft.
+
+The commit type decides whether a change ships:
+
+- `feat:` → minor version bump
+- `fix:`, `perf:`, `revert:`, `deps:` → patch version bump (Dependabot uses `fix(deps):` for Go modules and Docker base images)
+- `feat!:` / `fix!:` or a `BREAKING CHANGE:` footer → major version bump
+- `docs`, `ci`, `chore`, `refactor`, `test`, `build`, `style` → recorded in the history but never cut a release on their own (Dependabot uses `ci(deps):` for GitHub Actions bumps)
 
 ## Branch Conventions
 
