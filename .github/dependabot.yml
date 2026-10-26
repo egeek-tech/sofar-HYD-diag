@@ -13,7 +13,7 @@ updates:
       all-go-deps:
         patterns:
           - "*"
-    # Use "fix" so svu picks dep bumps up as a patch release.
+    # Use "fix" so release-please picks Go module bumps up as a patch release.
     commit-message:
       prefix: "fix"
       include: "scope"
@@ -33,9 +33,10 @@ updates:
       all-actions:
         patterns:
           - "*"
-    # Use "fix" so svu picks dep bumps up as a patch release.
+    # Use "ci" so action bumps never cut a release on their own (ci is a hidden
+    # section in release-please-config.json — nothing user-facing ships).
     commit-message:
-      prefix: "fix"
+      prefix: "ci"
       include: "scope"
     labels:
       - "dependencies"
@@ -53,7 +54,7 @@ updates:
       all-docker:
         patterns:
           - "*"
-    # Use "fix" so svu picks dep bumps up as a patch release.
+    # Use "fix" so release-please picks base-image bumps up as a patch release.
     commit-message:
       prefix: "fix"
       include: "scope"
