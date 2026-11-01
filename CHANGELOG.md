@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.25](https://github.com/egeek-tech/sofar-HYD-diag/compare/v1.7.24...v1.7.25) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ci:** switch releases to a two-stage release-please flow ([9fa06c6](https://github.com/egeek-tech/sofar-HYD-diag/commit/9fa06c63c251afbab115c40f503e284d95e8a77b))
+* **ci:** switch releases to a two-stage release-please flow ([f28c5de](https://github.com/egeek-tech/sofar-HYD-diag/commit/f28c5de5254bb22cb0ff4a78e55a3f7b7dbf1f3d))
+
 ## [1.7.3](https://github.com/egeek-tech/sofar-HYD-diag/compare/v1.7.2...v1.7.3) (2026-05-12)
 
 
